@@ -1,4 +1,5 @@
 import { NativeArrivals } from "@/src/components/native-arrivals";
+import * as Sentry from "@sentry/react-native";
 import {
   Figtree_400Regular,
   Figtree_500Medium,
@@ -10,6 +11,7 @@ import {
   DefaultTheme,
   Stack,
   ThemeProvider,
+  useNavigationContainerRef,
   useRouter,
   useSegments,
 } from "expo-router";
@@ -23,6 +25,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { AppLockProvider } from "@/src/lib/app-lock";
+import { BillingProvider } from "@/src/lib/billing";
 import { SessionProvider, useSession } from "@/src/lib/session";
 import { FamilyProvider, useFamily } from "@/src/lib/family-context";
 import { isOnboardingComplete, needsWelcomeIntro } from "@/src/lib/family";
@@ -36,6 +39,20 @@ export {
 export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
+
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+const navigationIntegration = Sentry.reactNavigationIntegration({
+  enableTimeToInitialDisplay: true,
+});
+
+Sentry.init({
+  dsn: sentryDsn,
+  enabled: Boolean(sentryDsn),
+  environment: __DEV__ ? "development" : "production",
+  sendDefaultPii: false,
+  tracesSampleRate: __DEV__ ? 0 : 0.05,
+  integrations: [navigationIntegration],
+});
 
 // Prevent the splash screen from auto-hiding before fonts are ready.
 void SplashScreen.preventAutoHideAsync();
@@ -59,7 +76,8 @@ const ordiloTheme = {
   },
 };
 
-export default function RootLayout() {
+function RootLayout() {
+  const navigationContainerRef = useNavigationContainerRef();
   const [fontsLoaded, fontError] = useFonts({
     Figtree_400Regular,
     Figtree_500Medium,
@@ -77,6 +95,10 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
+  useEffect(() => {
+    navigationIntegration.registerNavigationContainer(navigationContainerRef);
+  }, [navigationContainerRef]);
+
   if (!fontsLoaded) {
     return null;
   }
@@ -87,10 +109,12 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <SessionProvider>
             <FamilyProvider>
-              <AppLockProvider>
-                <StatusBar style="dark" />
-                <RootLayoutNav />
-              </AppLockProvider>
+              <BillingProvider>
+                <AppLockProvider>
+                  <StatusBar style="dark" />
+                  <RootLayoutNav />
+                </AppLockProvider>
+              </BillingProvider>
             </FamilyProvider>
           </SessionProvider>
         </SafeAreaProvider>
@@ -98,6 +122,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);
 
 function RootLayoutNav() {
   const { session, isLoading: sessionLoading, signOut } = useSession();
@@ -237,6 +263,13 @@ function RootLayoutNav() {
         />
         <Stack.Screen
           name="suche"
+          options={{
+            gestureEnabled: true,
+            presentation: "modal",
+          }}
+        />
+        <Stack.Screen
+          name="paywall"
           options={{
             gestureEnabled: true,
             presentation: "modal",

@@ -4,9 +4,11 @@ import {
   Check,
   ChevronRight,
   Clock3,
+  FileText,
   Inbox,
   ListChecks,
   MapPin,
+  Plus,
   ScanLine,
   Sparkles,
 } from "lucide-react-native";
@@ -28,10 +30,10 @@ import {
 } from "react-native";
 import Animated from "react-native-reanimated";
 
-import { AmbientFields } from "@/src/components/ambient-fields";
 import { FirstValueExample } from "@/src/components/first-value-example";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
+import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import { AvatarStack, PersonAvatar } from "@/src/components/person";
 import { TaskCheck } from "@/src/components/task-check";
@@ -45,7 +47,6 @@ import {
   ListSkeleton,
   OrdiloButton,
   Screen,
-  ScreenHeader,
   SectionHeader,
   Skeleton,
 } from "@/src/components/ui";
@@ -86,6 +87,7 @@ import {
   type HeuteTask,
 } from "@/src/lib/heute";
 import { memberToPerson } from "@/src/lib/people";
+import { useSession } from "@/src/lib/session";
 import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
 
@@ -101,6 +103,7 @@ import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
 export default function HeuteScreen() {
   const router = useRouter();
   const { family } = useFamily();
+  const { session } = useSession();
   const [data, setData] = useState<HeuteData | null>(null);
   const [tasks, setTasks] = useState<HeuteTask[]>([]);
   const [discoveries, setDiscoveries] = useState<HeuteInboundDiscovery[]>([]);
@@ -190,6 +193,13 @@ export default function HeuteScreen() {
   );
   const members = useMemo(() => data?.members ?? [], [data?.members]);
   const people = useMemo(() => members.map(memberToPerson), [members]);
+  const currentMember = useMemo(
+    () =>
+      members.find((member) => member.linkedUserId === session?.user.id) ??
+      members[0] ??
+      null,
+    [members, session?.user.id],
+  );
   const datedTasks = useMemo(() => getDatedOpenTasks(tasks), [tasks]);
   const undatedOpenTasks = useMemo(
     () => getOpenTasksWithoutDueDate(tasks),
@@ -358,33 +368,19 @@ export default function HeuteScreen() {
   );
 
   const header = (
-    <ScreenHeader
-      eyebrow={dateLine}
-      subtitle={loading ? undefined : daySummary ?? undefined}
-      title={getHomeGreeting(referenceDate)}
-      trailing={
-        <Pressable
-          accessibilityHint="Öffnet Familie und Einstellungen"
-          accessibilityLabel="Familie"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.push("/familie")}
-          style={({ pressed }) => [styles.familyButton, pressed && styles.pressed]}
-        >
-          {people.length > 0 ? (
-            <AvatarStack max={3} people={people} size={34} />
-          ) : (
-            <View style={styles.familyPlaceholder} />
-          )}
-        </Pressable>
-      }
+    <HomeHeader
+      dateLine={dateLine}
+      greeting={getHomeGreeting(referenceDate)}
+      name={currentMember?.name ?? null}
+      onOpenFamily={() => router.push("/familie")}
+      people={people}
+      summary={loading ? null : daySummary}
     />
   );
 
   if (loading) {
     return (
       <Screen>
-        <AmbientFields style={styles.ambientBehind} variant="top" />
         {header}
         <View style={styles.loadingList}>
           <Skeleton height={124} radius={radii.lg} />
@@ -418,7 +414,6 @@ export default function HeuteScreen() {
 
   return (
     <Screen>
-      <AmbientFields style={styles.ambientBehind} variant="top" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -445,6 +440,7 @@ export default function HeuteScreen() {
             onCompleteTask={toggleTask}
             onOpenDocument={openDocument}
             onOpenLibrary={() => router.push("/(tabs)/ablage")}
+            onOpenPlan={() => router.push("/(tabs)/plan")}
             taskBusy={mutatingTaskId === heroTaskId}
           />
         )}
@@ -477,10 +473,9 @@ export default function HeuteScreen() {
           <>
             {todayEvents.length > 0 || todayTasks.some((task) => task.id !== heroTaskId) ? (
               <Section
-                action={{ label: "Plan", onPress: () => router.push("/(tabs)/plan") }}
-                title="Heute"
+                title="Heute bei euch"
               >
-                <ListGroup>
+                <ListGroup style={styles.todayList}>
                   {todayEvents.map((event, index) => (
                     <TodayEventRow
                       event={event}
@@ -624,6 +619,67 @@ export default function HeuteScreen() {
   );
 }
 
+function HomeHeader({
+  dateLine,
+  greeting,
+  name,
+  onOpenFamily,
+  people,
+  summary,
+}: {
+  dateLine: string;
+  greeting: string;
+  name: string | null;
+  onOpenFamily: () => void;
+  people: ReturnType<typeof memberToPerson>[];
+  summary: string | null;
+}) {
+  return (
+    <View style={styles.homeHeader}>
+      <View style={styles.brandRow}>
+        <View style={styles.wordmark}>
+          <OrdiloMark size={34} />
+          <View>
+            <Text style={styles.brandName}>Ordilo</Text>
+            <Text style={styles.brandPromise}>Für das, was euch trägt.</Text>
+          </View>
+        </View>
+        <View style={styles.familySummary}>
+          <Text numberOfLines={1} style={styles.dateLine}>
+            {dateLine}
+          </Text>
+          <Pressable
+            accessibilityHint="Öffnet Familie und Einstellungen"
+            accessibilityLabel="Familie"
+            accessibilityRole="button"
+            hitSlop={6}
+            onPress={onOpenFamily}
+            style={({ pressed }) => [
+              styles.familyButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            {people.length > 0 ? (
+              <AvatarStack max={3} people={people} size={32} />
+            ) : (
+              <View style={styles.familyPlaceholder} />
+            )}
+            <View style={styles.addFamilyMember}>
+              <Plus color={colors.mistDark} size={16} strokeWidth={1.8} />
+            </View>
+          </Pressable>
+        </View>
+      </View>
+      <View style={styles.greetingBlock}>
+        <Text style={styles.greeting}>
+          {name ? `${greeting},\n${name}.` : `${greeting}.`}
+        </Text>
+        {summary ? <Text style={styles.daySummary}>{summary}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 /**
  * The one card that answers "was ist jetzt wichtig?". Three moods, one
  * shape: a task (with its checkbox right there), documents waiting for a
@@ -636,6 +692,7 @@ function BriefingCard({
   onCompleteTask,
   onOpenDocument,
   onOpenLibrary,
+  onOpenPlan,
   taskBusy,
 }: {
   briefing: HeuteBriefing;
@@ -643,20 +700,45 @@ function BriefingCard({
   onCompleteTask: (task: HeuteTask) => Promise<boolean>;
   onOpenDocument: (documentId: string) => void;
   onOpenLibrary: () => void;
+  onOpenPlan: () => void;
   taskBusy: boolean;
 }) {
   if (briefing.kind === "event") {
-    return <Animated.View entering={contentEntering()} key={`event-${briefing.occurrence.id}`} style={styles.briefing}>
-      <Text style={styles.briefingLabel}>Heute im Plan</Text>
-      <TodayEventRow event={briefing.occurrence} first members={members} />
-    </Animated.View>;
+    const people = peopleForOccurrence(briefing.occurrence, members);
+    const time = briefing.occurrence.startsTime?.slice(0, 5);
+    return (
+      <DayBriefLead message="Ein Termin gehört heute dir.">
+        <Text style={styles.priorityLabel}>Heute bei euch</Text>
+        <Text style={styles.priorityTitle}>{briefing.occurrence.title}</Text>
+        <Text style={styles.priorityText}>
+          {[time ? `${time} Uhr` : "Ganztägig", briefing.occurrence.location]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
+        {people.length > 0 ? (
+          <AvatarStack people={people} size={28} style={styles.priorityPeople} />
+        ) : null}
+        <OrdiloButton onPress={onOpenPlan} title="Im Plan öffnen" />
+      </DayBriefLead>
+    );
   }
   if (briefing.kind === "processing") {
-    return <Animated.View entering={contentEntering()} key={`document-${briefing.document.id}`} style={styles.briefing}>
-      <Text style={styles.briefingTitle}>{briefing.document.status === "failed" ? "Ein Dokument braucht deine Hilfe" : "Ein Dokument wird noch gelesen"}</Text>
-      <Text style={styles.briefingText}>Noch sind nicht alle Informationen geprüft.</Text>
-      <OrdiloButton title="Dokument ansehen" onPress={() => onOpenDocument(briefing.document.id)} />
-    </Animated.View>;
+    return (
+      <DayBriefLead message="Ordilo kümmert sich gerade darum.">
+        <Text style={styles.priorityTitle}>
+          {briefing.document.status === "failed"
+            ? "Ein Dokument braucht deine Hilfe"
+            : "Ein Dokument wird noch gelesen"}
+        </Text>
+        <Text style={styles.priorityText}>
+          Noch sind nicht alle Informationen geprüft.
+        </Text>
+        <OrdiloButton
+          title="Dokument ansehen"
+          onPress={() => onOpenDocument(briefing.document.id)}
+        />
+      </DayBriefLead>
+    );
   }
   if (briefing.kind === "task") {
     const { task, due } = briefing;
@@ -667,56 +749,60 @@ function BriefingCard({
         ? "Heute dran"
         : "Morgen dran";
     return (
-      <Animated.View
-        entering={contentEntering()}
-        key={`task-${task.id}`}
-        style={[styles.briefing, due.overdue ? styles.briefingOverdue : styles.briefingTask]}
-      >
-        <View style={styles.briefingRow}>
-          <View style={styles.briefingCopy}>
-            <Text
-              style={[
-                styles.briefingLabel,
-                due.overdue && styles.briefingLabelOverdue,
-              ]}
-            >
-              {label}
-            </Text>
-            <Text numberOfLines={3} style={styles.briefingTitle}>
-              {task.title}
-            </Text>
-            <View style={styles.briefingMeta}>
-              {assignee ? (
-                <View style={styles.briefingPerson}>
-                  <PersonAvatar person={assignee} size={sizes.avatarSmall} />
-                  <Text style={styles.briefingMetaText}>{assignee.name}</Text>
-                </View>
-              ) : null}
-              <Text
-                style={[
-                  styles.briefingMetaText,
-                  due.overdue && styles.briefingMetaOverdue,
-                ]}
-              >
-                {due.overdue
-                  ? due.text
-                  : task.documentTitle
-                    ? `Aus „${task.documentTitle}“`
-                    : due.text}
-              </Text>
+      <DayBriefLead message="Eine Sache braucht heute deinen Blick.">
+        <Text
+          style={[
+            styles.priorityLabel,
+            due.overdue && styles.priorityLabelOverdue,
+          ]}
+        >
+          {label}
+        </Text>
+        <Text numberOfLines={3} style={styles.priorityTitle}>
+          {task.title}
+        </Text>
+        {task.description ? (
+          <Text numberOfLines={2} style={styles.priorityText}>
+            {task.description}
+          </Text>
+        ) : null}
+        <View style={styles.priorityMeta}>
+          {assignee ? (
+            <View style={styles.briefingPerson}>
+              <PersonAvatar person={assignee} size={sizes.avatarSmall} />
+              <Text style={styles.briefingMetaText}>{assignee.name}</Text>
             </View>
-          </View>
-          <View style={styles.briefingCheck}>
-            <TaskCheck
-              accessibilityLabel={`${task.title} als erledigt markieren`}
-              busy={taskBusy}
-              done={false}
-              onToggle={() => void onCompleteTask(task)}
-              size={34}
-            />
+          ) : null}
+          <View style={styles.sourceChip}>
+            <FileText color={colors.mistDark} size={15} strokeWidth={1.8} />
+            <Text numberOfLines={1} style={styles.sourceChipText}>
+              {task.documentTitle ?? due.text}
+            </Text>
           </View>
         </View>
-      </Animated.View>
+        <View style={styles.priorityActions}>
+          <OrdiloButton
+            onPress={() =>
+              task.documentId ? onOpenDocument(task.documentId) : onOpenPlan()
+            }
+            title={task.documentId ? "Brief öffnen" : "Im Plan öffnen"}
+          />
+          <Pressable
+            accessibilityLabel={`${task.title} als erledigt markieren`}
+            accessibilityRole="button"
+            disabled={taskBusy}
+            onPress={() => void onCompleteTask(task)}
+            style={({ pressed }) => [
+              styles.doneAction,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.doneActionText}>
+              {taskBusy ? "Einen Moment …" : "Schon erledigt"}
+            </Text>
+          </Pressable>
+        </View>
+      </DayBriefLead>
     );
   }
 
@@ -724,18 +810,14 @@ function BriefingCard({
     const kind = getDocumentKind(briefing.document.documentType);
     const KindIcon = kind.icon;
     return (
-      <Animated.View
-        entering={contentEntering()}
-        key="review"
-        style={[styles.briefing, styles.briefingReview]}
-      >
-        <Text style={styles.briefingLabel}>Neu für euch</Text>
-        <Text style={styles.briefingTitle}>
+      <DayBriefLead message="Etwas Neues braucht deinen Blick.">
+        <Text style={styles.priorityLabel}>Neu für euch</Text>
+        <Text style={styles.priorityTitle}>
           {briefing.count === 1
             ? "Ordilo hat ein Dokument gelesen"
             : `Ordilo hat ${briefing.count} Dokumente gelesen`}
         </Text>
-        <Text style={styles.briefingText}>
+        <Text style={styles.priorityText}>
           {briefing.count === 1
             ? "Ein kurzer Blick genügt, dann ist es abgelegt."
             : "Ein kurzer Blick pro Dokument genügt, dann sind sie abgelegt."}
@@ -773,32 +855,41 @@ function BriefingCard({
             <Text style={styles.briefingLinkText}>Alle neuen Dokumente ansehen</Text>
           </Pressable>
         ) : null}
-      </Animated.View>
+      </DayBriefLead>
     );
   }
 
   return (
-    <Animated.View
-      entering={contentEntering()}
-      key="calm"
-      style={[styles.briefing, styles.briefingCalm]}
-    >
-      <View style={styles.briefingRow}>
-        <View style={styles.briefingCopy}>
-          <Text style={styles.briefingLabel}>Ein ruhiger Moment</Text>
-          <Text style={styles.briefingTitle}>Keine offenen Fristen für heute.</Text>
-          <Text style={styles.briefingText}>
-            {briefing.upcomingCount === 0
-              ? "In eurem Plan sind für heute und morgen keine offenen Aufgaben mit Frist."
-              : briefing.upcomingCount === 1
-                ? "Eine Sache steht in den nächsten Tagen an."
-                : `${briefing.upcomingCount} Dinge stehen in den nächsten Tagen an.`}
-          </Text>
+    <DayBriefLead message="Heute ist alles in guten Händen.">
+      <Text style={styles.priorityLabel}>Ein ruhiger Moment</Text>
+      <Text style={styles.priorityTitle}>Keine offenen Fristen für heute.</Text>
+      <Text style={styles.priorityText}>
+        {briefing.upcomingCount === 0
+          ? "Für heute und morgen ist alles erledigt."
+          : briefing.upcomingCount === 1
+            ? "Eine Sache steht in den nächsten Tagen an."
+            : `${briefing.upcomingCount} Dinge stehen in den nächsten Tagen an.`}
+      </Text>
+    </DayBriefLead>
+  );
+}
+
+function DayBriefLead({
+  children,
+  message,
+}: {
+  children: ReactNode;
+  message: string;
+}) {
+  return (
+    <Animated.View entering={contentEntering()} style={styles.dayBrief}>
+      <View style={styles.dayBriefIntro}>
+        <View style={styles.dayBriefCharacter}>
+          <OrdiloCharacter animated={false} size={108} />
         </View>
-        <View style={styles.calmCharacter}>
-          <OrdiloCharacter animated={false} size={64} />
-        </View>
+        <Text style={styles.dayBriefMessage}>{message}</Text>
       </View>
+      <View style={styles.priorityPanel}>{children}</View>
     </Animated.View>
   );
 }
@@ -1177,17 +1268,50 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   loadingGap: { height: spacing.lg },
-  // The fields sit behind the padded content and bleed to the edges.
-  ambientBehind: {
-    marginHorizontal: -spacing.md,
-  },
   scrollContent: {
-    gap: spacing.lg,
+    gap: spacing.xl,
     paddingBottom: MOBILE_DOCK_CONTENT_INSET,
   },
   pressed: { opacity: 0.78 },
+  homeHeader: {
+    gap: spacing.xl,
+    paddingTop: spacing.xs,
+  },
+  brandRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  wordmark: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  brandName: {
+    color: colors.graphite,
+    fontFamily: typography.largeTitle.fontFamily,
+    fontSize: 25,
+    letterSpacing: -0.5,
+    lineHeight: 28,
+  },
+  brandPromise: {
+    color: colors.mistDark,
+    ...typography.label,
+  },
+  familySummary: {
+    alignItems: "flex-end",
+    gap: 2,
+    maxWidth: "55%",
+  },
+  dateLine: {
+    color: colors.mistDark,
+    textTransform: "capitalize",
+    ...typography.timestamp,
+  },
   familyButton: {
     alignItems: "center",
+    flexDirection: "row",
     justifyContent: "center",
     minHeight: 44,
     minWidth: 44,
@@ -1198,35 +1322,72 @@ const styles = StyleSheet.create({
     height: 34,
     width: 34,
   },
-  briefing: {
-    borderRadius: radii.lg,
-    gap: spacing.sm,
-    padding: spacing.lg,
+  addFamilyMember: {
+    alignItems: "center",
+    backgroundColor: colors.sandLight,
+    borderColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    borderWidth: 2,
+    height: 32,
+    justifyContent: "center",
+    marginLeft: -8,
+    width: 32,
   },
-  briefingTask: { backgroundColor: colors.washBlue },
-  briefingOverdue: { backgroundColor: "#FAE8DE" },
-  briefingReview: { backgroundColor: colors.washSage },
-  briefingCalm: { backgroundColor: colors.washSageSoft },
-  briefingRow: {
-    alignItems: "flex-start",
+  greetingBlock: { gap: spacing.xs },
+  greeting: {
+    color: colors.graphite,
+    fontFamily: typography.largeTitle.fontFamily,
+    fontSize: 38,
+    letterSpacing: -1.1,
+    lineHeight: 41,
+  },
+  daySummary: {
+    color: colors.mistDark,
+    ...typography.timestamp,
+  },
+  dayBrief: {
+    gap: spacing.md,
+  },
+  dayBriefIntro: {
+    alignItems: "center",
     flexDirection: "row",
     gap: spacing.md,
   },
-  briefingCopy: { flex: 1, gap: spacing.xs, minWidth: 0 },
-  briefingLabel: {
+  dayBriefCharacter: {
+    alignItems: "center",
+    height: 108,
+    justifyContent: "center",
+    width: 148,
+  },
+  dayBriefMessage: {
+    color: colors.graphite,
+    flex: 1,
+    ...typography.heading,
+    fontFamily: typography.body.fontFamily,
+  },
+  priorityPanel: {
+    borderLeftColor: colors.harborBlue,
+    borderLeftWidth: 1,
+    gap: spacing.sm,
+    marginLeft: spacing.xs,
+    paddingBottom: spacing.sm,
+    paddingLeft: spacing.lg,
+    paddingRight: spacing.xs,
+  },
+  priorityLabel: {
     color: colors.harborBlue,
     ...typography.caption,
   },
-  briefingLabelOverdue: { color: colors.warmApricot },
-  briefingTitle: {
+  priorityLabelOverdue: { color: colors.warmApricot },
+  priorityTitle: {
     color: colors.graphite,
-    ...typography.heading,
+    ...typography.display,
   },
-  briefingText: {
+  priorityText: {
     color: colors.mistDark,
     ...typography.body,
   },
-  briefingMeta: {
+  priorityMeta: {
     alignItems: "center",
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1242,13 +1403,40 @@ const styles = StyleSheet.create({
     color: colors.mistDark,
     ...typography.timestamp,
   },
-  briefingMetaOverdue: {
-    color: colors.warmApricot,
-    fontFamily: typography.title.fontFamily,
+  sourceChip: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderRadius: radii.base,
+    flexDirection: "row",
+    gap: 6,
+    maxWidth: "100%",
+    minHeight: 32,
+    paddingHorizontal: 10,
   },
-  briefingCheck: {
-    marginRight: -spacing.sm,
-    marginTop: -spacing.xs,
+  sourceChipText: {
+    color: colors.mistDark,
+    flexShrink: 1,
+    ...typography.caption,
+  },
+  priorityActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  priorityPeople: {
+    marginVertical: spacing.xs,
+  },
+  doneAction: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: sizes.touch,
+    paddingHorizontal: spacing.sm,
+  },
+  doneActionText: {
+    color: colors.harborBlue,
+    ...typography.caption,
   },
   briefingDocument: {
     alignItems: "center",
@@ -1278,10 +1466,6 @@ const styles = StyleSheet.create({
     color: colors.harborBlue,
     ...typography.caption,
   },
-  calmCharacter: {
-    marginRight: -spacing.xs,
-    marginTop: -spacing.sm,
-  },
   firstVisit: {
     alignItems: "center",
     gap: spacing.sm,
@@ -1310,6 +1494,12 @@ const styles = StyleSheet.create({
     ...typography.caption,
   },
   section: { gap: spacing.sm },
+  todayList: {
+    backgroundColor: "transparent",
+    borderLeftWidth: 0,
+    borderRadius: 0,
+    borderRightWidth: 0,
+  },
   rowContent: { flex: 1, gap: 2, minWidth: 0 },
   rowTitle: { color: colors.graphite },
   rowSubtitle: { color: colors.mistDark },

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -223,40 +222,27 @@ export function ScreenHeader({
   subtitle?: string;
   trailing?: ReactNode;
 }) {
-  const { fontScale } = useWindowDimensions();
   return (
     <View style={styles.header}>
       <View style={styles.headerCopy}>
         {eyebrow ? (
           <Text
             numberOfLines={1}
-            style={[
-              typography.caption,
-              styles.headerEyebrow,
-              { lineHeight: typography.caption.lineHeight * fontScale },
-            ]}
+            style={[typography.caption, styles.headerEyebrow]}
           >
             {eyebrow}
           </Text>
         ) : null}
         <Text
           numberOfLines={2}
-          style={[
-            typography.largeTitle,
-            styles.headerTitle,
-            { lineHeight: typography.largeTitle.lineHeight * fontScale },
-          ]}
+          style={[typography.largeTitle, styles.headerTitle]}
         >
           {title}
         </Text>
         {subtitle ? (
           <Text
             numberOfLines={2}
-            style={[
-              typography.timestamp,
-              styles.headerSubtitle,
-              { lineHeight: typography.timestamp.lineHeight * fontScale },
-            ]}
+            style={[typography.timestamp, styles.headerSubtitle]}
           >
             {subtitle}
           </Text>
@@ -654,11 +640,19 @@ export function DetailTopBar({
       </SpringPressable>
       {title ? (
         <View style={styles.detailTopCopy}>
-          <Text numberOfLines={1} style={styles.detailTopTitle}>
+          <Text
+            maxFontSizeMultiplier={1.4}
+            numberOfLines={1}
+            style={styles.detailTopTitle}
+          >
             {title}
           </Text>
           {subtitle ? (
-            <Text numberOfLines={1} style={styles.detailTopSubtitle}>
+            <Text
+              maxFontSizeMultiplier={1.4}
+              numberOfLines={1}
+              style={styles.detailTopSubtitle}
+            >
               {subtitle}
             </Text>
           ) : null}
@@ -1023,13 +1017,15 @@ const styles = StyleSheet.create({
   },
   buttonDefault: {
     borderRadius: radii.sm,
-    height: 36,
+    minHeight: 36,
     paddingHorizontal: spacing.md,
+    paddingVertical: 6,
   },
   buttonLg: {
     borderRadius: radii.md,
-    height: 48,
+    minHeight: 48,
     paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
   },
   buttonPrimary: {
     backgroundColor: colors.harborBlue,
@@ -1046,8 +1042,10 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   buttonText: {
+    flexShrink: 1,
     fontFamily: typography.body.fontFamily,
     fontSize: typography.body.fontSize,
+    textAlign: "center",
   },
   buttonTextPrimary: {
     color: colors.warmWhite,

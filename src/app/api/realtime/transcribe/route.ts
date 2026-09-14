@@ -4,6 +4,7 @@ import { reserveVoiceTranscription } from "@/lib/ai/voice-rate-limit";
 import { getM4aDurationMillis } from "@/lib/audio-duration";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { familyHasPlus } from "@/lib/billing/revenuecat";
 
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 const MAX_AUDIO_DURATION_MILLIS = 2 * 60 * 1_000;
@@ -71,6 +72,12 @@ async function handleTranscription(request: Request): Promise<Response> {
     return Response.json(
       { error: "Kein Zugriff auf diese Familie.", code: "FAMILY_ACCESS_DENIED" },
       { status: 403 },
+    );
+  }
+  if (!(await familyHasPlus(familyId))) {
+    return Response.json(
+      { error: "Spracheingabe gehört zu Ordilo Plus.", code: "PLUS_REQUIRED" },
+      { status: 402 },
     );
   }
 

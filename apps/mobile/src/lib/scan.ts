@@ -363,7 +363,20 @@ export async function uploadScannedDocument(
   } catch {
     throw new ApiError("Keine Verbindung. Dein Dokument bleibt gespeichert.", 0);
   }
-  if (response.status < 200 || response.status >= 300) throw new ApiError("Der Upload konnte nicht abgeschlossen werden.", response.status);
+  if (response.status < 200 || response.status >= 300) {
+    try {
+      const body = z
+        .object({ error: z.string().min(1), code: z.string().optional() })
+        .parse(JSON.parse(response.body));
+      throw new ApiError(body.error, response.status);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(
+        "Der Upload konnte nicht abgeschlossen werden.",
+        response.status,
+      );
+    }
+  }
   try {
     return z.object({ document_id: z.string().min(1), status: z.literal("uploaded"), server_pipeline: z.boolean() }).parse(JSON.parse(response.body));
   } catch {

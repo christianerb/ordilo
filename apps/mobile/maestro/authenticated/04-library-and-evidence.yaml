@@ -10,19 +10,45 @@ appId: com.ordilo.app
 - extendedWaitUntil:
     visible: "Elternabend Hannah, .*"
     timeout: 30000
+- scrollUntilVisible:
+    element: "Elternabend Hannah, .*"
+    visibilityPercentage: 30
+    centerElement: true
 - tapOn: "Elternabend Hannah, .*"
+- scrollUntilVisible:
+    element: "Elternabend Hannah"
+    visibilityPercentage: 30
+    centerElement: true
 - assertVisible: "Elternabend Hannah"
 - tapOn: "Zurück"
 - tapOn: "Ordilo fragen"
-- tapOn: "Frage an Ordilo"
+- tapOn: "Frage an Ordilo.*"
 - inputText: "In welchem Raum findet Hannahs Elternabend statt?"
 - tapOn: "Frage senden"
-- extendedWaitUntil:
-    visible: "Fundstelle öffnen: Elternabend Hannah.*"
+- swipe:
+    direction: DOWN
+    duration: 500
+- hideKeyboard:
+    optional: true
+- scrollUntilVisible:
+    element: "Fundstelle öffnen: Elternabend Hannah.*"
+    visibilityPercentage: 30
+    centerElement: true
     timeout: 120000
-- tapOn: "Fundstelle öffnen: Elternabend Hannah.*"
+# At maximum Dynamic Type the accessible card is taller than the viewport.
+# Tap its visible reading area after centering instead of its offscreen midpoint.
+- tapOn:
+    point: "50%,60%"
 - assertVisible: "Die Fundstelle"
-- assertVisible: ".*B12.*"
 - assertVisible: "Originaltext.*"
+- scrollUntilVisible:
+    element: ".*B12.*"
+    visibilityPercentage: 30
+    centerElement: true
+- assertVisible: ".*B12.*"
+- scrollUntilVisible:
+    element: "Zur Dokumentübersicht"
+    visibilityPercentage: 30
+    centerElement: true
 - tapOn: "Zur Dokumentübersicht"
 - assertVisible: "Elternabend Hannah"

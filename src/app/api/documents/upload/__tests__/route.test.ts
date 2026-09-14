@@ -11,12 +11,22 @@ vi.mock("@/lib/jobs", () => ({
   enqueueJob: vi.fn(),
   runPendingJobs: vi.fn(),
 }));
+vi.mock("@/lib/billing/quota", () => ({
+  billingEntitlementsEnabled: vi.fn(() => false),
+  reserveMonthlyUsage: vi.fn(),
+  releaseMonthlyUsage: vi.fn(),
+}));
 
 import { POST } from "@/app/api/documents/upload/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { MAX_FILE_SIZE } from "@/lib/schemas/document";
 import { enqueueJob } from "@/lib/jobs";
+import {
+  billingEntitlementsEnabled,
+  releaseMonthlyUsage,
+  reserveMonthlyUsage,
+} from "@/lib/billing/quota";
 
 /**
  * Build a mock server Supabase client.
@@ -182,6 +192,18 @@ describe("POST /api/documents/upload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(enqueueJob).mockResolvedValue(false);
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(false);
+    vi.mocked(reserveMonthlyUsage).mockResolvedValue({
+      allowed: true,
+      duplicate: false,
+      plan: "free",
+      metric: "document_processing",
+      used: 1,
+      limit: 10,
+      period_start: "2026-09-01",
+      period_end: "2026-10-01",
+    });
+    vi.mocked(releaseMonthlyUsage).mockResolvedValue(true);
   });
 
   // --- Authentication ---
@@ -443,6 +465,30 @@ describe("POST /api/documents/upload", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it("releases monthly quota when Storage upload fails", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    const serverClient = mockServerClient({});
+    const adminClient = mockAdminClient({
+      uploadError: new Error("Storage error"),
+    });
+    vi.mocked(createServerClient).mockResolvedValue(serverClient);
+    vi.mocked(createAdminClient).mockReturnValue(adminClient);
+
+    const response = await POST(
+      createUploadRequest(
+        createMockFile("test.pdf", "application/pdf"),
+        "550e8400-e29b-41d4-a716-446655440000",
+      ),
+    );
+    expect(response.status).toBe(500);
+    expect(releaseMonthlyUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        familyId: "550e8400-e29b-41d4-a716-446655440000",
+        metric: "document_processing",
+      }),
+    );
+  });
+
   // --- DB insert failure (cleans up Storage) ---
 
   it("returns 500 and cleans up Storage when DB insert fails", async () => {
@@ -459,6 +505,55 @@ describe("POST /api/documents/upload", () => {
     expect(body.code).toBe("DB_INSERT_FAILED");
     // Verify Storage remove was called (cleanup).
     expect(adminClient.storage.from).toHaveBeenCalledWith("documents");
+  });
+
+  it("returns monthly quota 429 without touching Storage", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(reserveMonthlyUsage).mockResolvedValue({
+      allowed: false,
+      duplicate: false,
+      plan: "free",
+      metric: "document_processing",
+      used: 10,
+      limit: 10,
+      period_start: "2026-09-01",
+      period_end: "2026-10-01",
+    });
+    const adminClient = mockAdminClient({});
+    vi.mocked(createServerClient).mockResolvedValue(mockServerClient({}));
+    vi.mocked(createAdminClient).mockReturnValue(adminClient);
+
+    const response = await POST(
+      createUploadRequest(
+        createMockFile("test.pdf", "application/pdf"),
+        "550e8400-e29b-41d4-a716-446655440000",
+      ),
+    );
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({
+      code: "MONTHLY_DOCUMENT_QUOTA_EXCEEDED",
+    });
+    expect(adminClient.storage.from).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when document quota cannot be checked", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(reserveMonthlyUsage).mockRejectedValue(new Error("database"));
+    const adminClient = mockAdminClient({});
+    vi.mocked(createServerClient).mockResolvedValue(mockServerClient({}));
+    vi.mocked(createAdminClient).mockReturnValue(adminClient);
+
+    const response = await POST(
+      createUploadRequest(
+        createMockFile("test.pdf", "application/pdf"),
+        "550e8400-e29b-41d4-a716-446655440000",
+      ),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "ENTITLEMENT_CHECK_UNAVAILABLE",
+    });
+    expect(adminClient.storage.from).not.toHaveBeenCalled();
   });
 
   // --- Success ---
@@ -585,6 +680,7 @@ describe("POST /api/documents/upload", () => {
   // --- Rate limiting (daily upload limit) ---
 
   it("returns 429 when daily upload limit is exceeded", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockServerClient({ todayUploadCount: 50 }),
     );
@@ -598,6 +694,7 @@ describe("POST /api/documents/upload", () => {
 
     expect(response.status).toBe(429);
     expect(body.code).toBe("UPLOAD_LIMIT_EXCEEDED");
+    expect(reserveMonthlyUsage).not.toHaveBeenCalled();
   });
 
   it("allows upload when daily upload limit is not yet reached", async () => {
@@ -627,6 +724,12 @@ describe("durable native upload retries", () => {
     data.append("upload_key", "shared-stable-delivery");
     return createMockRequest(data);
   }
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(enqueueJob).mockResolvedValue(false);
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(false);
+    vi.mocked(releaseMonthlyUsage).mockResolvedValue(true);
+  });
   it("returns the existing document even after the daily limit is reached", async () => {
     vi.mocked(createServerClient).mockResolvedValue(mockServerClient({ existing: { id: "original", status: "analyzed" }, todayUploadCount: 50 }));
     const admin = mockAdminClient({});
@@ -635,6 +738,41 @@ describe("durable native upload retries", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ document_id: "original", server_pipeline: true });
     expect(admin.storage.from).not.toHaveBeenCalled();
+  });
+  it("returns the existing document before monthly quota checks", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(createServerClient).mockResolvedValue(
+      mockServerClient({
+        existing: { id: "original", status: "analyzed" },
+      }),
+    );
+    const admin = mockAdminClient({});
+    vi.mocked(createAdminClient).mockReturnValue(admin);
+    const response = await POST(keyedRequest());
+    expect(response.status).toBe(200);
+    expect(reserveMonthlyUsage).not.toHaveBeenCalled();
+    expect(admin.storage.from).not.toHaveBeenCalled();
+  });
+  it("uses the stable upload key for monthly reservation idempotency", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(reserveMonthlyUsage).mockResolvedValue({
+      allowed: true,
+      duplicate: false,
+      plan: "free",
+      metric: "document_processing",
+      used: 1,
+      limit: 10,
+      period_start: "2026-09-01",
+      period_end: "2026-10-01",
+    });
+    vi.mocked(createServerClient).mockResolvedValue(mockServerClient({}));
+    vi.mocked(createAdminClient).mockReturnValue(mockAdminClient({}));
+    expect((await POST(keyedRequest())).status).toBe(200);
+    expect(reserveMonthlyUsage).toHaveBeenCalledWith({
+      familyId,
+      metric: "document_processing",
+      operationKey: "shared-stable-delivery",
+    });
   });
   it("does not upload if the retry lookup is unavailable", async () => {
     vi.mocked(createServerClient).mockResolvedValue(mockServerClient({ lookupError: new Error("offline") }));

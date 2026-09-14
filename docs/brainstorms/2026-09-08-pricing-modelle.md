@@ -1,600 +1,590 @@
-# Pricing-Modelle für Ordilo — Kostenanalyse und drei Vorschläge
-
-Stand: 2026-09-08. Ziel: Aus „Free for All" wird ein Modell, das die Kosten
-trägt, zur Familien-App-Marke passt und sich im Prelaunch messbar testen
-lässt. Dieses Dokument ist die Entscheidungsgrundlage — noch keine
-Implementierung.
-
-## 1. Ausgangslage
-
-- Aktuell zahlt niemand, es gibt keine Pläne, keine Entitlements.
-- Kostenbremse heute nur über harte Tageslimits pro Familie
-  (`src/lib/ai/rate-limit.ts`, `src/lib/ai/voice-rate-limit.ts`,
-  E-Mail-Import): 50 Chat-Nachrichten/Tag, 50 Spracheingaben/Tag,
-  50 Dokumente/Tag.
-- Der Verbrauch wird bereits sauber gemessen: `api_usage`-Ledger
-  (Migration `0079_api_usage.sql`) mit Modell, Tokens und USD-Kosten je
-  Aufruf, aggregiert im Admin-Tab „Kosten" (`src/app/admin/costs-tab.tsx`).
-- Provider-Tarife (Stand 2026-09-07, `docs/quality/beta-usage.md`):
-
-  | Modell | Input / 1M | Cached / 1M | Output / 1M |
-  | --- | --- | --- | --- |
-  | gpt-5.6-terra (Analyse, Chat) | $2,00 | $0,20 | $12,00 |
-  | gpt-5.6-luna (Suche, Rerank) | $0,20 | $0,02 | $1,20 |
-  | text-embedding-3-large | $0,13 | — | — |
-  | Datalab OCR | ca. $0,01 pro Seite (Synthetik-Probe) |
-
-## 2. Kosten je Vorgang (Schätzung)
-
-Annahmen aus dem Pipeline-Aufbau; die Spanne deckt kurze Briefe bis
-mehrseitige Verträge ab.
-
-| Vorgang | Treiber | Kosten |
-| --- | --- | --- |
-| Dokument komplett (OCR + Analyse + Embeddings) | ~2 Seiten OCR ($0,02), ~6k Input / 1,5k Output auf terra ($0,03), Embeddings <$0,001 | **$0,04–0,08** |
-| Chatfrage („Ordilo fragen") | ~8k Input (teils gecacht), ~600 Output, Tool-Runden | **$0,02–0,05** |
-| Suchanfrage | luna Augmentierung + Rerank + Embedding | **<$0,005** |
-| Spracheingabe (Transkript) | gpt-4o-mini-transcribe | **<$0,01** |
-| Browser-Sprachsitzung (Realtime) | gpt-realtime-2.1 | **unbekannt — noch nicht bepreist** |
-
-## 3. Kosten je Familie und Monat
-
-| Profil | Nutzung / Monat | Variable Kosten |
-| --- | --- | --- |
-| Wenig | 5 Dokumente, 10 Chatfragen, 15 Suchen | **~$0,60** |
-| Typisch | 20 Dokumente, 30 Chatfragen, 50 Suchen | **~$2,00** |
-| Power | 80 Dokumente, 120 Chatfragen, 150 Suchen, Sprache | **~$8–9** |
-| **Free-Plan, realistisch** | ~8 Dokumente, ~5 KI-Fragen, ~20 Suchen | **~$0,55** |
-| **Free-Plan, am Anschlag** | 10 Dokumente, 10 KI-Fragen, Suchen frei | **~$0,80/Monat** + einmalig ~$2,50 Start-Kontingent (50 Dok.) |
-| Anschlag heute (alle Tageslimits × 30) | 1.500 Dokumente, 1.500 Chats | **~$120** — zeigt, warum Limits bleiben müssen |
-
-Selbst eine Free-Familie, die jeden Monat beide Limits voll ausreizt,
-kostet nach dem Startmonat ~0,80 $ — weniger als der
-Zahlungsgebühren-Anteil eines einzigen Plus-Monats. 100 Free-Familien
-am Anschlag ≈ 80 $/Monat laufend plus einmalig ~250 $ Start-Kontingente:
-das ist das tatsächliche Budget, das der Free-Plan als Marketing
-kostet. Speicher und Datenbank fallen nicht ins Gewicht (wenige MB pro
-Dokument; Bruchteile von Cents).
-
-Fixkosten dazu: Vercel Pro, Supabase Pro, Resend — grob 50–80 €/Monat,
-bei wenigen hundert Familien vernachlässigbar pro Familie.
-
-**Kernaussage:** Eine typische Familie kostet ~2 €/Monat variabel. Jeder
-Preis ab ~5 €/Monat trägt die Kosten mit deutlicher Marge
-(Zahlungsgebühren ~0,30–0,50 € pro Abo-Buchung eingerechnet).
-
-## 4. Drei Vorschläge
-
-### Vorschlag A — Freemium
-
-- **Free:** 50 Start-Dokumente in den ersten 30 Tagen, danach
-  10 Dokumente/Monat, 10 KI-Fragen/Monat, 2 Familienmitglieder, kein
-  E-Mail-Import (Synthese 4g). **Suchen werden nicht gemessen** — unter
-  einem halben Cent pro Anfrage, das ist Messrauschen, und ein dritter
-  Zähler macht das Modell nur komplizierter.
-- **Warum Dokumente großzügig und Fragen knapp (nicht umgekehrt):**
-  Ein Dokument kostet einmalig ~5 ct (OCR ~2 ct, Analyse ~3 ct,
-  Embeddings ≈ 0) und liegt danach praktisch kostenlos im Archiv.
-  Jedes Dokument erhöht den Wert und die Wechselkosten — ein Archiv mit
-  200 Dokumenten ersetzt keine Konkurrenz-App mehr. Eine KI-Frage
-  kostet ~3 ct, **wiederholt sich aber ewig** und baut keinerlei
-  Bindung auf. Dokumente sind außerdem natürlich begrenzt (niemand
-  bekommt 500 Briefe im Monat), Chat skaliert mit Spielfreude und ist
-  die Missbrauchsfläche. Free-Dokumente sind also eine Investition in
-  Unersetzbarkeit, Free-Fragen sind laufender Verbrauch. Anker:
-  Trustworthy gibt free 10 KI-Antworten/Monat, fileee 10 Dokumente —
-  wir drehen das Verhältnis bewusst um, weil unsere Stückkosten und
-  unsere Lock-in-Logik das Gegenteil nahelegen.
-- **Familie Plus:** 5,99 €/Monat oder 59 €/Jahr: großzügige Fair-Use-
-  Limits (200 Dokumente/Monat, 50 Chats/Tag), E-Mail-Import, Sprache,
-  beliebig viele Mitglieder.
-- **Pro:** Niedrige Einstiegshürde, Free-Nutzer werden zu zahlenden
-  Familien, sobald das Limit „spürbar" wird; bewährtes Muster.
-- **Contra:** Free-Kontingent kostet bei Erfolg reales Geld (~0,60–2 €
-  pro Free-Familie/Monat); zwei Produktklassen müssen gepflegt werden;
-  Limit-Kommunikation muss warm bleiben, sonst kippt sie in Scanner-App-
-  Nerverei (Anti-Pattern laut PRODUCT.md).
-- **Messbar im Prelaunch:** Quote der Familien, die ans Free-Limit stoßen
-  (429er und `api_usage` liefern das heute schon).
-
-### Vorschlag B — Pay-per-Use (Credits)
-
-- Scan-Pakete, z. B. 100 Dokumente für 4,99 €; Chat-Kontingent monatlich
-  inklusive, Aufladung bei Bedarf.
-- **Pro:** Jede Nutzung bezahlt sich selbst; kein Abo-Druck; attraktiv
-  für Gelegenheitsnutzer.
-- **Contra:** Familien beginnen zu rationieren („lohnt sich der Scan
-  dieses Briefes?") — genau das Gegenteil der Gewohnheit, die Ordilo
-  aufbauen will. Der Wert entsteht durch Vollständigkeit des Archivs;
-  Rationierung zerstört ihn. Fühlt sich nach Scanner-App-Nickel-and-
-  Diming an und kollidiert mit der Markenlinie. Unplanbarer Umsatz.
-- **Fazit:** Passt ökonomisch, aber nicht zum Produkt. Nicht empfohlen.
-
-### Vorschlag C — Familien-Flatrate mit Founding-Angebot
-
-- **Ein Preis pro Familie, alles drin:** 4,99 €/Monat oder 49 €/Jahr
-  (2 Monate geschenkt). Keine Feature-Klassen, keine Credits.
-- **Prelaunch:** „Founding-Familien" — 2,99 €/Monat auf Lebenszeit für
-  die ersten N Familien, alternativ 29 €/Jahr. Erzeugt frühen Umsatz,
-  Bindung und Testimonials; Preiserhöhungen treffen nur Neukunden.
-- **30 Tage kostenlos testen** statt Free-Tier: voller Funktionsumfang,
-  danach Entscheidung.
-- **Pro:** Eine Entscheidung statt Tarifdschungel („eine Flatrate für
-  die ganze Familie" passt zur warmen Marke); planbarer MRR; keine
-  Rationierung; Limits bleiben unsichtbarer Missbrauchsschutz.
-- **Contra:** Ohne Free-Tier braucht es Überzeugung vor der Registrierung
-  (Landing Page, Trial); Trial-Missbrauch muss adressiert werden
-  (E-Mail-Verifizierung, ggf. Zahlungsdaten bei Trial-Start).
-
-## 4b. Competitor-Benchmark (Listenpreise, Stand 09/2026)
-
-Quellenlage: ✓ = auf der offiziellen Anbieterseite verifiziert, ~ = aus
-Zweitquelle (Review/Preisblog, teils von Wettbewerbern betrieben — mit
-Vorsicht). SEO-Preisblogs wie usecalendara.com gehören selbst
-Konkurrenzprodukten und sind keine neutralen Quellen.
-
-**Familien-Organizer (Kalender/Listen, teils Dokumentenablage):**
-
-| Produkt | Modell | Preis | Quelle |
-| --- | --- | --- | --- |
-| FamilyWall Premium | Freemium + Abo, 30 Tage Trial | $4,99/Monat, $44,99/Jahr | ✓ |
-| Cozi Gold | Freemium (Werbung) + Jahresabo; ein Kauf gilt für die ganze Familie auf allen Geräten | $39/Jahr, kein Monatsabo | ✓ |
-| TimeTree Premium | Freemium + Abo | $4,49/Monat, $44,99/Jahr | ✓ |
-| Maple | Freemium + Abo | Preis nicht öffentlich sauber belegt | ~ |
-| Skylight Calendar | Hardware + optionales Plus-Abo | ~$300 Gerät + $79/Jahr | ~ |
-| Hearth Display | Hardware + Membership | $699 Gerät + Membership | ~ |
-
-**Dokumenten-/Vertrags-Apps (DE-nah):**
-
-| Produkt | Modell | Preis | Quelle |
-| --- | --- | --- | --- |
-| fileee Free | Freemium-Stufe | 0 €, 10 Dokumente/Monat, werbefrei | ✓ |
-| fileee Basic | Abo | €4,99/Monat (€3,99 im Jahresabo), 50 Dok/Monat | ✓ |
-| fileee Smart | Abo + Overage | €9,99/Monat (€7,99 im Jahresabo), 100 Dok/Monat, danach €0,10/Dokument | ✓ |
-| Volders | Kostenlos, Monetarisierung über Kündigungs-/Wechselservices | 0 € | ✓ |
-| SwiftScan | Freemium + Abo/Lifetime | Lifetime-Deals ~$40; Abo-Historie öffentlich als „Abo-Monster" kritisiert | ~ |
-| Evernote | Freemium + Abo | zweistellig/Monat; Preiserhöhung 2026 mit massivem Backlash | ~ |
-| Google One | Abo | 100 GB für €19,99/Jahr | ✓ |
-
-**KI-Familienassistenten (die eigentliche neue Kategorie):**
-
-| Produkt | Modell | Preis | Quelle |
-| --- | --- | --- | --- |
-| **Trustworthy (US) — „The Family Operating System®"** | Freemium, 4 Stufen, Jahresabo | s. Detailtabelle unten | ✓ |
-| Ohai.ai (US) | Freemium + Premium | Free-Version + Premium ab $9,99/Monat; KI + menschliche Assistenten dahinter | ✓ |
-| Duckbill (US) | Membership, 3 Stufen | $99/Monat Individual, $169 Family, $449 VIP — KI + Menschen, „Execution statt Dashboards" | ~ (CNET) |
-| Yohana (Panasonic) | High-Touch-Concierge | nicht mehr als eigenständiges Produkt — in PanasonicWELL aufgegangen | ✓ (Panasonic) |
-| FamilyOS (familyos.systems) | On-Device, privacy-first | neu, unklar | ~ |
-
-**Trustworthy im Detail** (offizielle Pricing-Seite, 09/2026) — das
-nächstliegende Produkt zu Ordilo: Dokumente reinwerfen, automatische
-Organisation, Erinnerungen, Chat-Antworten aus dem Archiv, E-Mail-
-Import („Inbox Autopilot"). Preise jeweils bei jährlicher Zahlung:
-
-| Stufe | Preis/Monat | Mitglieder | KI-Antworten | Speicher | Bemerkenswert |
-| --- | --- | --- | --- | --- | --- |
-| Free | $0 (für immer) | 1 | 10/Monat | 2 GB | **keine Erinnerungen**, kein Teilen |
-| Silver | $10 | 5 | 25/Monat | 10 GB | Erinnerungen, SecureLinks |
-| Gold | $20 | 10 | unbegrenzt | 100 GB | alle Berechtigungen |
-| Platinum | $40 | unbegrenzt | unbegrenzt | unbegrenzt | dedizierter Concierge (3 h inkl.) |
-
-Dazu: 50 % Dauerrabatt für Militär, Lehrer, Pflege etc. Die Stufen
-metern exakt zwei Dinge: **Mitgliederanzahl** und **KI-Antworten pro
-Monat** — beides Entitlements, die wir bereits technisch abbilden
-könnten (`chat_usage` zählt Nachrichten pro Familie schon heute).
-
-**Was der Markt uns sagt:**
-
-1. **Der Preisanker für Familien-Organizer ist ~40–50 €/Jahr.** Cozi,
-   FamilyWall und TimeTree sitzen alle in diesem Korridor. Unsere
-   Empfehlung (49 €/Jahr, 4,99 €/Monat) liegt damit genau im
-   etablierten Rahmen — nicht mutig, nicht billig. Founding-Preis
-   29 €/Jahr liegt glaubwürdig darunter.
-2. **Freemium ist die Markt-Norm in dieser Kategorie.** Alle drei
-   Organizer-Konkurrenten haben ein brauchbares Free-Kontingent. Ein
-   reines „30 Tage Trial, danach zahlen" (Vorschlag C pur) ist dort die
-   Ausnahme. Das schwächt das Argument gegen Vorschlag A: Ein kleines
-   Free-Kontingent ist kein Nice-to-have, sondern die Erwartung.
-3. **Scanner-Apps leiden unter Abo-Müdigkeit.** SwiftScan wird für
-   Abo-Umbauten öffentlich kritisiert, Lifetime-Deals verkaufen sich.
-   Bestätigt die Ablehnung von Pay-per-Use/Credits (B) — und erklärt,
-   warum ein Founding-Angebot mit Bestandsgarantie funktionieren kann.
-4. **Preiserhöhungen bei Bestandskunden sind der Backlash-Fall**
-   (Evernote 2026). Ein Founding-Versprechen („2,99 € auf Lebenszeit")
-   muss gehalten werden, sonst zerstört es genau das Vertrauen, das die
-   Marke aufbaut.
-5. **Dokumentenverwaltung allein ist in Deutschland ein Gratis-
-   Angebot** (Volders, Google One: 100 GB für ~1,67 €/Monat). Der Preis
-   von Ordilo muss am KI-Assistenten und am Familien-Nutzen hängen,
-   nicht an „wir scannen eure Briefe".
-6. **Kein Wettbewerber verbindet Familien-Organizer mit einem KI-
-   Dokumenten-Assistenten.** FamilyWall hat Dokumente als Ablage, aber
-   keine Extraktion, keine Fristen, keine Fragen ans Archiv. fileee hat
-   Extraktion, aber keinen Familienplan (die eigene FAQ bewirbt ihn als
-   „kommt noch") und keinen dialogfähigen Assistenten. Ohai hat den
-   Assistenten, aber kein deutsches Dokumentenarchiv mit OCR-Intake.
-7. **fileee belegt: Quoten-Freemium funktioniert im deutschen
-   Dokumentenmarkt.** 10 Dokumente gratis, 50/100 in den Paid-Stufen,
-   €0,10 Overage pro Dokument nur als Nebenmechanik im teuersten Plan.
-   Unser Free-Kontingent (25/Monat) ist großzügiger als fileees — bei
-   unseren ~5 ct Stückkosten vertretbar, aber die Obergrenze sollte beim
-   Launch geprüft werden.
-8. **Ohai zeigt Preis-Kopfraum nach oben.** $9,99/Monat (mit Menschen
-   im Loop) für genau unser Kernversprechen — Foto vom Schulbrief →
-   Termine und Aufgaben. Wer den Assistenten in den Vordergrund stellt,
-   kann mehr als €4,99 verlangen; die Organizer-Positionierung
-   (Kalender + Listen) deckelt bei ~$45/Jahr.
-9. **Duckbill und Yohana markieren Decke und Warnsignal.** Menschen-
-   gestützter Concierge für $99–449/Monat ist ein anderes Marktsegment;
-   Yohana ist als eigenständiges Produkt in PanasonicWELL aufgegangen —
-   High-Touch skaliert nicht in den Familien-Massenmarkt. Ordilos Lücke
-   liegt dazwischen: reine Software, Assistenten-Qualität, ~5 €.
-10. **Trustworthy beweist, dass Familien für genau dieses Produkt
-    $10–20/Monat zahlen.** Automatische Organisation, Erinnerungen,
-    KI-Antworten, E-Mail-Import — das ist Ordilos Feature-Set, zum 2–4-
-    fachen unseres Zielpreises (US-Markt, USD). Ihre Metrik — KI-
-    Antworten pro Monat und Mitgliederanzahl — ist die sauberste
-    Entitlement-Achse im Markt und bei uns technisch schon gezählt
-    (`chat_usage`, Familienmitglieder). Zwei Lehren: (a) Unser 4,99-€-
-    Vorschlag ist eher konservativ; 7,99 €/Monat ist durch Trustworthy
-    und Ohai gedeckt. (b) Ihr Free-Plan ist hart kastriert (keine
-    Erinnerungen, kein Teilen) — für eine warme Familienmarke die
-    falsche Stelle zum Sparen; lieber Mengen (Dokumente, KI-Fragen)
-    begrenzen als Grundfunktionen sperren.
-11. **Ein Kauf gilt für die ganze Familie** (Cozi explizit, Trustworthy
-    über Mitgliederanzahl) — niemand verkauft Familien-Abos pro Person.
-    Bestätigt: Preis pro Familie, nicht pro Nutzer.
-
-**Konsequenz für die Vorschläge:** Die saubere Trennung „A oder C" war
-zu scharf. Der Markt zeigt: Free-Kontingent (A) als Eintritt +
-Flatrate-Abo (C) als Hauptprodukt + Founding-Angebot als Prelaunch-
-Motor. Genau diese Kombination wird in Abschnitt 5 empfohlen.
-
-## 4c. Einordnung: Indie-App-Pricing-Erfahrung (Video-Transkript, 09/2026)
-
-Praxisbericht eines Indie-Entwicklers ($200 → $4.000 MRR im Portfolio):
-Lifetime $19,99 + monatlich $3,99 mit 7-Tage-Trial, kein Jahresabo,
-harte Paywall statt Freemium, Preis-Lokalisierung nach Kaufkraft. Was
-davon auf Ordilo überträgt — und was nicht:
-
-**Überträgt sich:**
-
-1. **Lifetime ist ein legitimer Prelaunch-Hebel — mit Rechenpflicht.**
-   Sein Kernargument („KI-Kosten sind Cents pro Nutzer und Monat") ist
-   auch unsere Rechnung: ~2 €/Monat für eine typische Familie. Ein
-   Lifetime-Deal bei 149 € deckt also ~6 Jahre typischer Nutzung. Aber
-   Vorsicht: Sein zweites Argument („Nutzer hören eh nach ein paar
-   Wochen auf") gilt für Water-Tracker, nicht für ein Familienarchiv.
-   Ordilo wird mit jedem Dokument wertvoller — Retention ist hier das
-   Feature, nicht das Risiko. Eine Power-Familie (~9 €/Monat) macht
-   Lifetime ab ~1,5 Jahren verlustig. **Fazit: Lifetime nur als
-   begrenztes Founding-Angebot** (z. B. 100 Familien, 149 € einmalig,
-   Fair-Use-Limits bleiben), nicht als Daueroption. Cash im Prelaunch,
-   Validierung, Testimonials — ohne dauerhaftes Kostenrisiko.
-2. **Zwei Optionen, keine drei.** Sein „No-Brainer-Choice"-Prinzip
-   stützt Vorschlag C (ein Plan, ein Preis). Jahresabo als dritte
-   Option nennt er verwirrend — für unsere Kategorie (FamilyWall,
-   TimeTree, fileee zeigen alle Monat + Jahr mit ~20 % Rabatt) ist der
-   Jahrespreis aber Markt-Standard und passt zum Familien-Rhythmus.
-   Kompromiss: Free + ein Paid-Plan, dargestellt als „monatlich oder
-   jährlich", nicht als zwei Tarife.
-3. **Keine Dark Patterns im Paywall** (Timer, Fake-Deals, versteckte
-   Paywalls) — deckt sich zu 100 % mit der Markenlinie (DESIGN.md
-   lehnt Upsell-Banner explizit ab) und mit dem Apple-Review-Risiko.
-4. **Preis aus Sicht der Zielgruppe, nicht der eigenen Marge.**
-   Deutsche Familien mit klammer Kassenlage sind Teil der Zielgruppe —
-   4,99 € ist ein No-Brainer, 19,99 € nicht. Stützt den Preis-Korridor.
-
-**Überträgt sich nicht bzw. widerspricht:**
-
-5. **„Harte Paywall statt Freemium" — für Ordilo falsch.** Sein
-   Argument: Freemium lohnt sich nur für Top-1-%-Apps mit organischem
-   Sharing. Genau das hat eine Familien-App aber eingebaut: Der Partner-
-   Invite ist ein natürlicher Viral-Loop, den ein Wasser-Tracker nicht
-   hat. Dazu ist Free in dieser Kategorie Markt-Norm (alle Organizer,
-   fileee, Trustworthy, Ohai). Und Trustworthy zeigt die harte Variante
-   bereits im Markt — deren Free-Plan ist bewusst kastriert. Unsere
-   Position dazwischen: großzügiges Free in den Mengen, kein Kastrieren
-   von Grundfunktionen.
-6. **7-Tage-Trial ist für Wochen-Rhythmen zu kurz.** Seine Apps liefern
-   Wert beim ersten Öffnen. Ordilo liefert Wert, wenn der nächste Brief
-   kommt — das kann 10 Tage dauern. 30 Tage Trial bleibt; die
-   Trial-Länge (7/14/30) ist trotzdem eine offene Messfrage.
-7. **Wochen-Abo und aggressive Preis-Lokalisierung:** irrelevant für
-   den DE-first Launch (Lokalisierung notieren für spätere Märkte).
-
-Seine eigene Warnung gilt auch hier: Was für eine Vibe-coded Tracker-
-App mit null Serverkosten funktioniert, ist keine Blaupause für ein
-Archiv-Produkt mit echten laufenden KI-Kosten pro Familie.
-
-## 4d. Einheitsökonomie: Was von 4,99 € wirklich übrig bleibt
-
-Der Listenpreis ist nicht der Umsatz. Reihenfolge der Abzüge pro
-Monatsabo (4,99 €, inkl. 19 % MwSt.):
-
-| Kanal | Brutto | − MwSt. (19 %) | − Gebühr | = Netto |
-| --- | --- | --- | --- | --- |
-| Web (Stripe, EU-Karte ~1,4 % + 0,25 €) | 4,99 € | 4,19 € | −0,31 € | **~3,88 €** |
-| iOS (App Store, Small Business 15 %) | 4,99 € | 4,19 € | −0,63 € | **~3,56 €** |
-| iOS ohne Small Business (30 %) | 4,99 € | 4,19 € | −1,26 € | **~2,93 €** |
-| Jahresabo 49 € (Web, pro Monat gerechnet) | 4,08 € | 3,43 € | −0,08 €* | **~3,35 €** |
-
-\* eine Stripe-Gebühr pro Jahr statt zwölf. Jahresabo glättet zusätzlich
-Cashflow und Churn-Messung.
-
-Dagegen die variablen Kosten (Abschnitt 3):
-
-| Familien-Profil | Kosten/Monat | Marge Web (3,88 €) | Marge iOS (3,56 €) |
-| --- | --- | --- | --- |
-| Typisch (~2 $) | ~1,85 € | **~2,00 € (52 %)** | ~1,70 € (48 %) |
-| Engagiert (~5 $) | ~4,60 € | **−0,70 €** | −1,00 € |
-| Power am Fair-Use-Anschlag (~9 $) | ~8,30 € | **−4,40 €** | −4,70 € |
-
-**Ehrliche Antwort: Ja, bei voller Ausnutzung ist 4,99 € Casino.** Das
-Modell trägt sich nur unter drei Bedingungen:
-
-1. **Die Verteilung rettet uns, nicht der Preis.** Familien-Apps zeigen
-   starke Saisonalität (Schulanfang, Versicherungswechsel) und danach
-   ruhige Monate. Erwartbarer Mittelwert über zahlende Familien:
-   1,50–2,50 € Kosten. Die Power-Familie mit 8 €+ ist die Ausnahme —
-   aber genau deshalb braucht Plus **Fair-Use-Kappen** (z. B. 100
-   KI-Fragen/Monat, 100 Dokumente/Monat), die den p99 unter ~3 € halten.
-   Die heutigen Tageslimits (50/Tag!) sind als Obergrenze für ein
-   5-€-Abo viel zu hoch.
-2. **Bei ~1,70–2,00 € Deckungsbeitrag ist CAC der Engpass, nicht die
-   Marge.** Faustformel: 6 % Monats-Churn (Consumer-typisch) → ~16
-   Monate Lebensdauer → ~28 € Deckungsbeitrag auf Lebenszeit. CAC darf
-   also nur ~10 € betragen — klassische Paid Ads sind damit praktisch
-   unbezahlbar. **Konsequenz: Akquise muss über Invite-Loop, ASO und
-   Content laufen, nicht über Ads.** Das ist eine Strategie-Entscheidung,
-   keine Marketing-Feinheit.
-3. **7,99 € ändern die Welt mehr als jede Optimierung.** Bei 7,99 €
-   (Web ~6,20 €, iOS ~5,70 € netto) verdoppelt sich der Deckungsbeitrag
-   auf ~4 €/Monat, CAC-Decke steigt auf ~20 €, und selbst engagierte
-   Familien bleiben profitabel. Trustworthy ($10–20) und Ohai ($9,99)
-   belegen die Zahlungsbereitschaft. **Empfehlung daher: Fake-Door
-   testet 4,99 € gegen 7,99 € — nicht als Feinheit, sondern weil die
-   Einheitsökonomie bei 4,99 € von Disziplin abhängt und bei 7,99 €
-   robust ist.**
-
-Fixkosten-Einordnung: Vercel/Supabase/Resend ~60 €/Monat → ~35 zahlende
-Familien decken die Infrastruktur. Gründerzeit ist hier bewusst nicht
-eingerechnet.
-
-## 4e. Marktgröße und Wirtschaftlichkeit (DE/DACH)
-
-**Markt (Destatis/Mikrozensus):** ~8,2 Mio Familien mit minderjährigen
-Kindern in Deutschland (dabei 1,62 Mio Alleinerziehende), DACH grob
-~10 Mio. Unser Kernsegment: Eltern, die den „Papierkram-Haushalt"
-digital führen — konservativ 15–20 % zahlen grundsätzlich für Apps →
-**SAM ~1,5–2 Mio Familien**. Realistischer 3–5-Jahre-Anteil: 0,5–2 %
-davon = **10.000–40.000 zahlende Familien** (SOM).
-
-**Benchmarks (RevenueCat State of Subscription Apps 2026, 115k Apps):**
-
-| Kennzahl | Wert | Was es für uns heißt |
-| --- | --- | --- |
-| Freemium Download→Paid (Tag 35) | 2,1 % | Free konvertiert langsam — Geduld einplanen |
-| Hard Paywall Download→Paid | 10,7 % (5×) | Der Indie aus 4c hat datenseitig recht; unser Free bleibt trotzdem wegen Invite-Loop und Kategorie-Norm |
-| Trial→Paid, 17–32 Tage | 42,5 % | Unser 30-Tage-Trial ist der starke Hebel |
-| Trial→Paid, <4 Tage | 25,5 % | Kurze Trials opfern Conversion für schnelles Cash |
-| Jahresabo: Kündigung Auto-Renewal in Monat 1 | 35 % | Jahr 2 muss ab Woche 1 verdient werden |
-| Jahresabo: Erneuerung nach Jahr 1 | ~28 % | Jahresabo ≈ „1 Jahr sicher, danach neu gewinnen" |
-| KI-Apps: LTV-Premium Jahr 1 | +41 % ($30,16 vs. $21,37) | KI verkauft sich |
-| KI-Apps: Churn | 36 % schneller | KI-Novellety allein hält nicht — unser Archiv-Lock-in ist genau das Gegenmittel |
-| Median-Jahres-Retention (Jahresabo, Freemium) | 28 % | konsistent mit oben |
-| CAC Mobile (Benchmark) | $1–5 pro Install, $20–80 pro zahlendem Nutzer | Paid UA bei 5–8 €-Preisen nur organisch schönrechnbar |
-
-**Wirtschaftlichkeit bei 7,99 €/Monat (netto ~6,20 € Web / ~5,70 € iOS):**
-
-- Deckungsbeitrag pro typischer Familie: **~4 €/Monat** (nach ~2 €
-  KI-Kosten).
-- LTV-Deckungsbeitrag bei 6 % Monats-Churn (~16 Monate): **~65–70 €**
-  → CAC-Decke (3:1): **~20 €**. Paid Ads liegen bei $20–80 pro zahlen-
-  dem Nutzer: grenzwertig — der Invite-Loop bleibt der Hauptkanal.
-
-**Szenarien (50/50 Web/iOS-Mix, Jahresanteil 60 %):**
-
-| Zahlende Familien | Netto-Umsatz/Monat | − KI-Kosten | − Free-Kosten* | Deckungsbeitrag/Monat |
-| --- | --- | --- | --- | --- |
-| 1.000 | ~5.900 € | ~2.000 € | ~700 € | **~3.200 €** |
-| 5.000 | ~29.500 € | ~10.000 € | ~3.500 € | **~16.000 €** |
-| 20.000 | ~118.000 € | ~40.000 € | ~14.000 € | **~64.000 €** |
-
-\* angenommen: 10 Free-Familien pro zahlender Familie à 0,70 €.
-Fixkosten (~60 €/Monat Infrastruktur) sind hier vernachlässigbar;
-Gründergehälter sind es nicht — ~5.000 zahlende Familien tragen ca.
-zwei Vollzeitgehälter.
-
-**Einordnung:** Das ist ein gesundes Kleinunternehmen bei 5–20k
-Familien, kein Venture-Case. Der Hebel nach oben ist DACH → EU
-(Lokalisierung) und der Assistenten-Preis, nicht das Dokumentenvolumen.
-
-## 4f. Rückwärtsrechnung: Ab welcher Conversion trägt Free sich selbst?
-
-**Frage:** Wie viele zahlende Familien brauchen wir, damit deren
-Deckungsbeitrag die Free-Nutzer mitfinanziert?
-
-**Eingangswerte:** Deckungsbeitrag pro zahlender Familie ~4 €/Monat
-(7,99 € netto nach MwSt./Gebühr im Web-iOS-Mix ~5,95 €, minus ~2 €
-KI-Kosten). Free-Kosten pro Familie hängen an der Aktivität:
-realistisch aktiv 0,70 €/Monat, am Anschlag 1,55 € — aber die Mehrheit
-registrierter Free-Accounts ist inaktiv und kostet praktisch nichts;
-aktivitätsgewichtet eher **0,10–0,20 €/Monat**.
-
-**Formel:** Bei Free→Paid-Conversion c gibt es pro zahlender Familie
-(1−c)/c Free-Familien. Break-even: c × 4 € = (1−c) × f, also
-**c* = f / (4 € + f)**.
-
-| Free-Kosten f (pro Familie/Monat) | Break-even-Conversion c* |
+# Pricing-Modell für Ordilo
+
+Stand: 2026-09-09
+Status: Entscheidungsgrundlage, noch keine Implementierung
+
+## Kurzfassung
+
+Ordilo sollte mit **Free + einem Familienabo** starten:
+
+- **Free:** Kernprodukt dauerhaft nutzbar, aber mit monatlichen Mengenlimits
+- **Ordilo Plus:** ein Preis pro Familie, monatlich oder jährlich
+- **Testphase:** 30 Tage Plus ohne Zahlungsdaten, danach automatisch Free
+- **Launch-Preis:** zunächst **7,99 €/Monat oder 79 €/Jahr**
+- **Founding-Angebot:** **59 €/Jahr für die ersten zwei Jahre**, begrenzte
+  Kohorte; kein Lifetime-Angebot
+- **Keine Credits, keine Werbung, kein Preis pro Familienmitglied**
+
+Diese Empfehlung ist noch eine **zu testende Ausgangshypothese**. Die
+technische Kostenmessung ist vorhanden, aber es fehlen belastbare
+Nutzungs-, Conversion- und Retention-Daten echter zahlender Kohorten.
+
+## 1. Was wir wissen und was wir nur annehmen
+
+### Beobachtet
+
+- Aktuell gibt es keine bezahlten Pläne und keine Entitlements.
+- Harte Tageslimits begrenzen Missbrauch: 50 Chat-Nachrichten und 50
+  Spracheingaben pro Familie und Tag. Auch Dokument-Uploads sind begrenzt.
+- Das `api_usage`-Ledger erfasst Modell, Tokenverbrauch und geschätzte
+  Provider-Kosten je Aufruf. Der Admin-Bereich aggregiert diese Daten.
+- Datalab berechnete in einer synthetischen Probe etwa 0,01 $ pro OCR-Seite.
+- Die Abrechnung von Browser-Realtime-Sprache ist noch nicht vollständig
+  angebunden. Die Gesamtkostenmessung ist deshalb nicht vollständig.
+
+Technische Referenzen:
+
+- `src/lib/ai/rate-limit.ts`
+- `src/lib/ai/voice-rate-limit.ts`
+- `src/lib/analytics/api-usage.ts`
+- `supabase/migrations/0079_api_usage.sql`
+- `docs/quality/beta-usage.md`
+
+### Noch nicht beobachtet
+
+- durchschnittliche Kosten einer real aktiven Familie über mehrere Monate
+- Kostenverteilung p50, p90, p95 und p99
+- Verhältnis aktiver zu inaktiven Free-Familien
+- Free→Paid- und Trial→Paid-Conversion
+- Monats- und Jahres-Retention
+- Zahlungsbereitschaft bei 4,99 €, 7,99 €, 9,99 € oder anderen Preisen
+- Supportkosten pro Familie
+- Kosten und Nutzung von Realtime-Sprache
+
+Alle folgenden Profile und Szenarien sind daher Planungsannahmen, keine
+Prognosen.
+
+## 2. Kostenmodell
+
+Provider-Tarife laut `docs/quality/beta-usage.md`, Stand 2026-09-07:
+
+| Modell | Input / 1 Mio. | Cached / 1 Mio. | Output / 1 Mio. |
+| --- | ---: | ---: | ---: |
+| gpt-5.6-terra | 2,00 $ | 0,20 $ | 12,00 $ |
+| gpt-5.6-luna | 0,20 $ | 0,02 $ | 1,20 $ |
+| text-embedding-3-large | 0,13 $ | – | – |
+| Datalab OCR | ca. 0,01 $ pro Seite | – | – |
+
+### Geschätzte Kosten je Vorgang
+
+| Vorgang | Arbeitshypothese |
+| --- | ---: |
+| Dokument, vollständig verarbeitet | **0,04–0,08 $** |
+| KI-Frage an Ordilo | **0,02–0,05 $** |
+| Suchanfrage | **<0,005 $** |
+| Spracheingabe, Transkription | **<0,01 $** |
+| Browser-Realtime-Sitzung | **unbekannt** |
+
+Die Spannbreiten sind wichtiger als der Mittelwert. Mehrseitige Dokumente,
+mehrere Tool-Runden und lange Antworten können deutlich teurer sein.
+
+### Nutzungshypothesen je Familie
+
+| Profil | Nutzung pro Monat | Geschätzte Kosten |
+| --- | --- | ---: |
+| Wenig | 5 Dokumente, 10 KI-Fragen, 15 Suchen | **ca. 0,60 $** |
+| Typisch | 20 Dokumente, 30 KI-Fragen, 50 Suchen | **ca. 2,00 $** |
+| Engagiert | 50 Dokumente, 70 KI-Fragen, Sprache | **ca. 4–6 $** |
+| Power | 80 Dokumente, 120 KI-Fragen, Sprache | **ca. 8–9 $** |
+
+Die Bezeichnungen „typisch“ und „Power“ sind noch nicht empirisch belegt.
+Sie dürfen erst nach mehreren Wochen realer Nutzung als Benchmarks verwendet
+werden.
+
+### Was Mengenlimits tatsächlich leisten
+
+100 Dokumente plus 100 KI-Fragen können nach den obigen Stückkosten
+**6–13 $** kosten. Ein solches Limit garantiert deshalb keinen p99-Wert
+unter 3 €. Limits schützen vor ungebremstem Missbrauch, ersetzen aber keine
+Messung der realen Kostenverteilung.
+
+Die Paid-Limits sollten nach dem Beta-Zeitraum so gesetzt werden, dass:
+
+- die durchschnittlichen variablen Kosten einer zahlenden Familie
+  möglichst bei oder unter **2 €** liegen,
+- p95 möglichst bei oder unter **3,50 €** liegt,
+- ungewöhnliche Nutzung zuerst freundlich erklärt und erst danach begrenzt
+  wird,
+- Limits serverseitig konfigurierbar und ohne App-Update anpassbar bleiben.
+
+## 3. Die vier möglichen Modelle
+
+### Modell A: Free + Familienabo
+
+Ein dauerhaft nutzbarer Free-Plan führt in das Produkt. Ein Plus-Abo schaltet
+höhere Mengen und Komfortfunktionen frei.
+
+**Vorteile**
+
+- entspricht der Erwartung in Familien- und Dokumenten-Apps
+- senkt die Vertrauenshürde bei privaten Dokumenten
+- Familien können den Nutzen vor einer Zahlung erleben
+- ein einziges Abo bleibt einfach erklärbar
+
+**Nachteile**
+
+- Free-Nutzung verursacht reale Kosten
+- niedrige Conversion kann die Marge des Paid-Plans aufzehren
+- Limits und Upgrade-Momente müssen verständlich gestaltet werden
+
+**Bewertung:** Beste Ausgangsbasis, wenn Free-Kosten und Conversion als
+zusammengehörige Kennzahlen geführt werden.
+
+### Modell B: Vollständige Testphase, danach harte Paywall
+
+Alle erhalten 7–30 Tage den vollen Funktionsumfang. Danach ist eine Zahlung
+notwendig.
+
+**Vorteile**
+
+- höhere kurzfristige Conversion ist möglich
+- keine dauerhafte Free-Subvention
+- einfache Einheitsökonomie
+
+**Nachteile**
+
+- Nutzer müssen Ordilo vertrauen, bevor genügend Dokumente verarbeitet sind
+- ein Brief- und Familienrhythmus ist länger als ein typischer App-Test
+- nach Ende der Testphase entsteht Unsicherheit über bereits hochgeladene
+  Dokumente
+
+**Bewertung:** Wirtschaftlich attraktiv, aber für ein sensibles Archivprodukt
+zu hart. Als späterer Test denkbar, nicht als Launch-Standard.
+
+### Modell C: Credits oder Pay-per-Use
+
+Dokumente und KI-Fragen werden in Paketen verkauft.
+
+**Vorteile**
+
+- Nutzung und Umsatz sind direkt gekoppelt
+- Gelegenheitsnutzer zahlen kein laufendes Abo
+
+**Nachteile**
+
+- Familien rationieren das Scannen und Fragen
+- Vollständigkeit des Archivs wird bestraft
+- Kosten werden bei jeder Nutzung sichtbar
+- passt schlecht zur ruhigen, vertrauensvollen Marke
+
+**Bewertung:** Als Kernmodell verwerfen. Ein späteres, seltenes
+Overage-Angebot wäre nur dann sinnvoll, wenn reale Daten dafür Bedarf zeigen.
+
+### Modell D: Lifetime
+
+Eine einmalige Zahlung finanziert unbegrenzte zukünftige Nutzung.
+
+**Vorteile**
+
+- schneller Cashflow
+- starke Founding-Botschaft
+- keine Abo-Müdigkeit
+
+**Nachteile**
+
+- dauerhaft laufende KI- und Supportkosten
+- besonders gute Retention verschlechtert die Wirtschaftlichkeit
+- Preis-, Kosten- und Nutzungsrisiko liegt vollständig bei Ordilo
+
+149 € brutto entsprechen nach Umsatzsteuer und Zahlungsgebühr nur ungefähr
+123 € netto. Bei 1,85 € variablen Kosten pro Monat finanziert das rund
+5½ Jahre typischer Nutzung, nicht „lebenslang“. Engagierte Familien
+verbrauchen das Budget deutlich früher.
+
+**Bewertung:** Verwerfen. Ein begrenzter Founding-Rabatt ist sicherer und
+validiert wiederkehrende Zahlungsbereitschaft besser.
+
+## 4. Wettbewerbsvergleich
+
+Quellen wurden, soweit möglich, auf offiziellen Preis- und App-Store-Seiten
+geprüft. US-Preise sind nur eingeschränkt auf deutsche Familien übertragbar.
+
+### Direkte und nahe Wettbewerber
+
+| Produkt | Schwerpunkt | Modell | Listenpreis |
+| --- | --- | --- | ---: |
+| **FamilyMind** | deutsche Familien-KI, Kalender, Aufgaben, Mahlzeiten, Foto- und Spracheingabe | Free + 7 Tage Premium-Test | **9,99 €/Monat, 69,99 €/Jahr** |
+| **Trustworthy** | Familienarchiv, Erinnerungen, KI-Antworten, E-Mail-Import | Free + drei Paid-Stufen, jährlich | **10–40 $/Monat** |
+| **Ohai.ai** | KI-Haushaltsassistenz, Kalender und Aufgaben | Free + Premium | **ab 9,99 $/Monat** |
+| **fileee Free** | Dokumentenverwaltung und Extraktion | Free | **10 Dokumente/Monat** |
+| **fileee Basic** | mehr Dokumente und Komfortfunktionen | Abo | **4,99 €/Monat, 3,99 € jährlich abgerechnet** |
+| **fileee Smart** | hohe Dokumentmenge, Exporte, Overage | Abo | **9,99 €/Monat, 7,99 € jährlich abgerechnet** |
+| FamilyWall Premium | Familien-Organizer | Freemium + Abo | ca. **4,99 $/Monat, 44,99 $/Jahr** |
+| TimeTree Premium | gemeinsamer Kalender | Freemium + Abo | ca. **4,49 $/Monat, 44,99 $/Jahr** |
+| Cozi Gold | Familien-Organizer | werbefinanziertes Free + Jahresabo | ca. **39 $/Jahr** |
+
+Offizielle Kernquellen:
+
+- [FamilyMind für Familien](https://familymind.ai/families/)
+- [FamilyMind im deutschen App Store](https://apps.apple.com/de/app/familymind/id6740882851)
+- [Trustworthy Pricing](https://www.trustworthy.com/pricing)
+- [fileee Privatkundentarife](https://en.fileee.com/personal-pricing)
+- [Ohai Funktions- und Preisübersicht](https://www.ohai.ai/how-it-works/)
+
+### FamilyMind als wichtigster deutscher Vergleich
+
+FamilyMind ist näher an Ordilo als ein klassischer Familienkalender:
+
+- deutsche Zielgruppe
+- eine KI für die ganze Familie
+- Foto- und Spracheingabe
+- Kalender, Aufgaben und Erinnerungen
+- dauerhafter Free-Einstieg
+- ein Premium-Plan für die Familie
+
+FamilyMind zeigt, dass ein Preis von 7,99–9,99 € im deutschen
+Familiensegment grundsätzlich darstellbar ist. Das Jahresabo von 69,99 €
+setzt allerdings einen aggressiven Vergleichsanker gegen Ordilos geplante
+79 €.
+
+Die Produkte sind trotzdem nicht identisch:
+
+- FamilyMind verkauft vor allem weniger Mental Load im laufenden Alltag.
+- Ordilo verkauft ein dauerhaftes, strukturiertes und belegbares
+  Familiendokumenten-Archiv.
+- Ordilos stärkste Differenzierung sind Originaldokument, Extraktion,
+  Fristen, belegte Antworten und langfristige Wiederauffindbarkeit.
+
+Die bisherige Aussage „kein Wettbewerber verbindet Familienorganisation und
+KI-Dokumentenaufnahme“ ist damit zu stark. Belastbarer ist:
+
+> Kein geprüfter direkter Wettbewerber positioniert sich so klar als
+> langfristiges, belegbares Familiendokumenten-Archiv mit KI-Antworten aus
+> den Originalunterlagen.
+
+### Trustworthy als Preis- und Packaging-Vergleich
+
+Trustworthy begrenzt vor allem Familienmitglieder und KI-Antworten:
+
+| Stufe | Preis bei Jahreszahlung | Mitglieder | KI-Antworten |
+| --- | ---: | ---: | ---: |
+| Free | 0 $ | 1 | 10/Monat |
+| Silver | 10 $/Monat | 5 | 25/Monat |
+| Gold | 20 $/Monat | 10 | unbegrenzt |
+| Platinum | 40 $/Monat | unbegrenzt | unbegrenzt |
+
+Das bestätigt KI-Antworten als verständliche Metering-Achse. Die
+Mitgliederzahl sollte Ordilo dagegen nicht knapp halten: Zusammenarbeit ist
+Teil des Familienversprechens und unterstützt Aktivierung und Retention.
+
+### Was der Markt tatsächlich zeigt
+
+1. **Free ist Kategorie-Norm**, aber nicht automatisch wirtschaftlich.
+2. **Ein Preis pro Familie** ist verständlicher als ein Sitzpreis.
+3. **7,99 € ist plausibel**, aber noch nicht validiert.
+4. **69–79 € pro Jahr** ist für eine Familien-KI marktüblich; klassische
+   Organizer liegen eher bei 40–50 €.
+5. **Dokumentenspeicher allein trägt keinen Premiumpreis.** Der Wert liegt
+   in Fristen, Aufgaben, Antworten und Sicherheit.
+6. **Ordilo muss sich als Dokumenten-Assistent positionieren**, nicht als
+   weiterer Familienkalender.
+
+## 5. Empfohlenes Packaging
+
+### 30 Tage Ordilo Plus testen
+
+- beginnt erst nach dem ersten echten Wertmoment, zum Beispiel dem ersten
+  erfolgreich bestätigten Dokument
+- keine Zahlungsdaten erforderlich
+- vollständiger Plus-Funktionsumfang
+- danach automatische Rückstufung auf Free
+- vorhandene Dokumente bleiben lesbar und durchsuchbar
+
+Die Testphase und ein separates Start-Kontingent von 50 Dokumenten erfüllen
+denselben Zweck. Beides gleichzeitig macht das Modell unnötig kompliziert.
+Die Empfehlung lautet deshalb: **Testphase statt zusätzlichem
+Start-Kontingent**.
+
+### Ordilo Free
+
+- 10 neue Dokumente pro Monat
+- 10 KI-Antworten pro Monat
+- Suche ohne sichtbaren Zähler
+- Aufgaben, Erinnerungen und Familienfreigabe als Kernfunktionen
+- vorhandene Inhalte bleiben zugänglich
+- kein Realtime-Sprachmodus
+- E-Mail-Import zunächst Plus
+
+Diese Limits sind Startwerte. Erhöhungen sind leichter und
+vertrauensfreundlicher als spätere Kürzungen.
+
+### Ordilo Plus
+
+- ein Plan für die ganze Familie
+- deutlich höhere, fair kommunizierte Nutzung
+- E-Mail-Import
+- Sprache und zukünftige kostenintensive Assistentenfunktionen
+- keine Credits im normalen Gebrauch
+- interner Missbrauchsschutz bleibt bestehen
+
+Konkrete Paid-Limits werden nicht aus den theoretischen Profilen abgeleitet.
+Sie werden nach einer Beta-Auswertung von Durchschnitt, p90, p95 und p99
+festgelegt. Die heutigen 50-pro-Tag-Limits sind für ein Familienabo zu hoch
+und zu leicht automatisiert ausreizbar.
+
+## 6. Preis und Einheitsökonomie
+
+### Empfohlener Testpreis
+
+- **7,99 €/Monat**
+- **79 €/Jahr**
+
+79 € entsprechen rund 6,58 € brutto pro Monat und etwa 17,6 % Rabatt
+gegenüber zwölf Monatszahlungen. FamilyMinds 69,99 € machen den Jahrespreis
+zum wichtigsten offenen Preistest.
+
+Eine sinnvolle Alternative für den Test ist:
+
+- 7,99 €/Monat
+- 69,99 €/Jahr
+
+Der niedrigere Jahrespreis verbessert wahrscheinlich die Jahresquote, senkt
+aber den Deckungsbeitrag deutlich. Die Entscheidung sollte über echte
+Checkout-Starts und Käufe fallen, nicht über reine Preisumfragen.
+
+### Nettoerlös
+
+Annahmen: 19 % Umsatzsteuer, Webzahlung ungefähr 1,4 % + 0,25 €,
+App-Store-Small-Business-Provision 15 %.
+
+| Preis und Kanal | Nettoerlös |
+| --- | ---: |
+| 7,99 € monatlich, Web | **ca. 6,35 €** |
+| 7,99 € monatlich, iOS | **ca. 5,71 €** |
+| 79 € jährlich, Web, pro Monat | **ca. 5,42 €** |
+| 79 € jährlich, iOS, pro Monat | **ca. 4,70 €** |
+
+Bei 50 % Web, 50 % iOS und 60 % Jahresabos ergibt sich ein gemischter
+Nettoerlös von ungefähr **5,45 € pro zahlender Familie und Monat**.
+
+Bei 2 € variablen Kosten bleiben vor Free-Subvention, Fixkosten, Support und
+Gehältern ungefähr **3,45 € Deckungsbeitrag**. Das entspricht rund 63 %
+Marge auf den Nettoerlös, nicht auf den Bruttopreis.
+
+### Warum 4,99 € zu knapp ist
+
+| Preis | Netto Web | Netto iOS, 15 % | Beitrag nach 1,85 € Nutzungskosten |
+| --- | ---: | ---: | ---: |
+| 2,99 € | ca. 2,22 € | ca. 2,14 € | **0,29–0,37 €** |
+| 4,99 € | ca. 3,87 € | ca. 3,56 € | **1,71–2,02 €** |
+| 7,99 € | ca. 6,35 € | ca. 5,71 € | **3,86–4,50 €** |
+
+2,99 € ist bei typischer Nutzung nur knapp kostendeckend und wird durch
+engagierte Familien sofort defizitär. 4,99 € funktioniert nur bei sehr
+niedrigen Akquisitions- und Free-Kosten. 7,99 € schafft den nötigen
+Sicherheitsraum.
+
+## 7. Free-Subvention richtig rechnen
+
+Free-Kosten müssen immer zusammen mit der Conversion betrachtet werden.
+
+Bei einer Free→Paid-Conversion `c` gibt es je zahlender Familie
+`(1−c)/c` Free-Familien.
+
+| Conversion | Free-Familien je zahlender Familie |
+| ---: | ---: |
+| 3 % | 32,3 |
+| 5 % | 19,0 |
+| 7 % | 13,3 |
+| 10 % | 9,0 |
+
+Bei 5 % Conversion und durchschnittlich 0,15 € Kosten je registrierter
+Free-Familie entstehen **2,85 € Free-Subvention pro zahlender Familie**.
+Vom oben berechneten Paid-Deckungsbeitrag von 3,45 € bleiben dann nur
+ungefähr **0,60 €** vor Fixkosten und Gehältern.
+
+### Break-even des Free-Plans
+
+Mit 3,45 € Deckungsbeitrag je zahlender Familie vor Free-Subvention:
+
+| Durchschnittliche Free-Kosten | Nötige Free→Paid-Conversion |
+| ---: | ---: |
+| 0,10 €/Monat | **2,8 %** |
+| 0,15 €/Monat | **4,2 %** |
+| 0,20 €/Monat | **5,5 %** |
+| 0,70 €/Monat | **16,9 %** |
+
+Das ist die zentrale Freemium-Wette: Nicht die Kosten einer aktiven
+Free-Familie allein entscheiden, sondern der aktivitätsgewichtete
+Durchschnitt über alle Free-Konten.
+
+### Korrigiertes Wachstumsszenario
+
+Annahmen:
+
+- 7,99 €/79 € Pricing
+- 5,45 € gemischter Nettoerlös
+- 2 € Paid-Nutzungskosten
+- 5 % Free→Paid-Conversion
+- 0,15 € durchschnittliche Kosten je registrierter Free-Familie
+
+| Zahlende Familien | Nettoerlös | Paid-Kosten | Free-Familien | Free-Kosten | Beitrag vor Fixkosten |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.000 | 5.450 € | 2.000 € | 19.000 | 2.850 € | **600 €** |
+| 5.000 | 27.250 € | 10.000 € | 95.000 | 14.250 € | **3.000 €** |
+| 20.000 | 109.000 € | 40.000 € | 380.000 | 57.000 € | **12.000 €** |
+
+Das frühere Szenario setzte bei zehn Free-Familien pro Zahler 0,70 € Kosten
+an, multiplizierte aber faktisch nur mit 0,07 €. Dadurch waren die
+Free-Kosten um den Faktor zehn zu niedrig.
+
+Die Tabelle ist bewusst konservativ und zeigt: Bei 5 % Conversion reicht
+ein großer Free-Funnel allein nicht für ein attraktives Geschäft. Mindestens
+einer dieser Werte muss besser werden:
+
+- höhere Conversion,
+- niedrigere durchschnittliche Free-Kosten,
+- höherer Nettoerlös,
+- niedrigere Paid-Kosten,
+- bessere organische Retention.
+
+## 8. Founding-Angebot
+
+### Empfehlung
+
+**59 €/Jahr für die ersten zwei Jahre**, begrenzt auf beispielsweise 100
+Founding-Familien.
+
+Danach gilt der bereits beim Kauf klar genannte reguläre Jahrespreis.
+
+Das Angebot:
+
+- bringt echten Umsatz statt nur Klickdaten,
+- prüft wiederkehrende Zahlungsbereitschaft,
+- belohnt frühes Vertrauen,
+- begrenzt die langfristige Kostenverpflichtung,
+- vermeidet ein wirtschaftlich offenes Lifetime-Versprechen.
+
+Alternativ kann ein dauerhaft rabattiertes Founding-Abo angeboten werden,
+aber erst, wenn reale Kosten zeigen, dass der Rabatt auch bei engagierten
+Familien tragbar ist.
+
+## 9. Perspektiven
+
+### Aus Sicht einer Familie
+
+- Ein Preis für alle ist verständlich.
+- Bestehende Dokumente dürfen nach einem Downgrade nicht „eingesperrt“
+  werden.
+- Credits erzeugen bei jeder Nutzung Zweifel.
+- 7,99 € müssen über weniger Sorgen und vermiedene Fehler erklärt werden,
+  nicht über Speicher oder KI-Technik.
+
+### Aus Produktsicht
+
+- Dokumente sind das Fundament für späteren Wert.
+- KI-Antworten sind eine verständliche laufende Mengenachse.
+- Familienfreigabe sollte nicht künstlich knapp sein.
+- E-Mail-Import und Sprache eignen sich als Plus-Komfortfunktionen.
+- Das Ziel ist dauerhafter Kundennutzen, nicht künstlicher Lock-in.
+
+### Aus Finanzsicht
+
+- 7,99 € ist robuster als 4,99 €.
+- Free kann den gesamten Paid-Deckungsbeitrag verbrauchen.
+- Lifetime verschiebt langfristige Risiken vollständig zu Ordilo.
+- Durchschnittskosten reichen nicht; Ausreißer müssen sichtbar sein.
+
+### Aus Wachstumssicht
+
+- Partner-Einladungen verbessern vor allem Aktivierung und Retention.
+- Ein eingeladener Partner ist nicht automatisch eine neue zahlende Familie;
+  der Invite-Loop hat deshalb nicht automatisch CAC 0.
+- Paid Ads sollten erst starten, wenn Conversion, Retention und
+  Deckungsbeitrag nach Free-Subvention bekannt sind.
+
+### Aus Markensicht
+
+- Free + ein ruhiges Familienabo passt zu Ordilo.
+- Werbung, Credits und aggressive Paywalls passen nicht.
+- Formulierungen wie „Unersetzbarkeit“ oder „die Familie hängt drin“ sind
+  für ein vertrauensbasiertes Archiv unpassend.
+- Datenexport und dauerhafte Lesbarkeit stärken Vertrauen.
+
+## 10. Messplan
+
+### Phase 1: Kosten-Baseline
+
+Mindestens vier Wochen Beta-Nutzung auswerten:
+
+- Kosten pro Dokument und KI-Frage
+- Kosten je aktive und registrierte Familie
+- p50, p90, p95 und p99
+- Anteil der Familien an heutigen Tageslimits
+- Realtime-Sprachkosten separat schließen
+
+### Phase 2: Zahlungsbereitschaft
+
+- eine echte Preis- oder Vorbestellseite bauen
+- 7,99 €/79 € als Ausgangspunkt zeigen
+- Checkout-Start, abgeschlossenen Kauf und Abbruch messen
+- 69,99 € gegen 79 € nur bei genügend Traffic testen
+- zusätzlich 10–20 qualitative Gespräche nach einem echten Wertmoment
+
+Ein Fake-Door-Klick misst Interesse, aber noch keine Zahlungsbereitschaft.
+Mindestens Checkout-Start oder Vorbestellung ist das stärkere Signal.
+
+### Phase 3: Cohort-Test
+
+- 30-Tage-Plus-Test ohne Zahlungsdaten
+- danach Free mit 10 Dokumenten und 10 KI-Antworten
+- Founding-Angebot für eine klar begrenzte Kohorte
+- Kosten, Aktivierung, Conversion und Retention je Kohorte vergleichen
+
+### Primäre Kennzahlen
+
+| Bereich | Kennzahl |
 | --- | --- |
-| 0,10 € (viele Inaktive) | **2,4 %** |
-| 0,20 € | **4,8 %** |
-| 0,70 € (alle realistisch aktiv) | 14,9 % |
-| 1,55 € (alle am Anschlag) | 28,0 % — unerreichbar |
+| Aktivierung | erstes bestätigtes Dokument und erster daraus erzeugter Nutzen |
+| Familie | angenommene Einladung und Nutzung durch mindestens zwei Personen |
+| Conversion | Trial→Paid und Free→Paid nach 30, 60 und 90 Tagen |
+| Retention | aktive Familien und zahlende Familien nach 30, 90 und 365 Tagen |
+| Kosten | variable Kosten je registrierter, aktiver und zahlender Familie |
+| Marge | Paid-Marge vor und nach Free-Subvention |
+| Preis | Checkout→Kauf nach Monats- und Jahresoption |
 
-**Einordnung an den Benchmarks:** Freemium Download→Paid liegt bei
-2,1 % nach 35 Tagen und wächst über Monate Richtung ~5 %. Heißt:
+### Stoppsignale
 
-1. **Wenn Free-Nutzer überwiegend leicht bleiben (f ≈ 0,10–0,20 €),
-   finanziert sich Free ab ~3–5 % Conversion selbst** — genau im
-   Benchmark-Band. Erreichbar.
-2. **Wenn Free-Nutzer das Kontingent regelmäßig ausreizen, ist Free nie
-   selbsttragend** (15–28 % Conversion braucht niemand in dieser
-   Kategorie). Die Quoten (Start-Kontingent + 10 Dokumente/Monat, 10
-   KI-Fragen) sind damit nicht Großzügigkeit, sondern **die Bedingung,
-   unter der die Rechnung überhaupt funktioniert.**
-3. **Der gefährlichste Fall ist der teure Inaktive nicht — es gibt ihn
-   kaum.** Dokumente kosten nur bei Verarbeitung; ein toter Account
-   kostet Speicher-Bruchteile. Der teure Fall ist die aktive Dauer-Free-
-   Familie am Limit: ~1,55 €/Monat auf ewig. Deshalb bleibt die
-   Upgrade-Kommunikation am Limit wichtig (warm, nicht nervig — aber
-   sichtbar).
+Das Modell muss neu bewertet werden, wenn:
 
-**Absolute Meilensteine (bei c = 5 %, f = 0,15 €):** Pro zahlender
-Familie bleiben nach Free-Quersubvention ~4 € − 19 × 0,15 € ≈ **1,15 €
-netto übrig**. Daraus folgt:
+- durchschnittliche Paid-Kosten dauerhaft über 2,50 € liegen,
+- p95 dauerhaft über 4 € liegt,
+- Free-Kosten bei realistischer Conversion den Paid-Deckungsbeitrag
+  aufzehren,
+- Familien den Nutzen überwiegend als Kalender statt als Dokumenten-
+  Assistent verstehen,
+- der Jahrespreis von 79 € gegenüber 69,99 € klar Conversion kostet.
 
-| Ziel | Benötigte zahlende Familien | Gesamt-Familien (bei 5 %) |
-| --- | --- | --- |
-| Infrastruktur (~60 €/Monat) | ~50 | ~1.000 |
-| 1 Gründergehalt (~4.000 € netto) | ~3.500 | ~70.000 |
-| 2 Gehälter + Puffer (~10.000 €) | ~8.700 | ~175.000 |
+## 11. Vorläufige Entscheidung
 
-**Harte Konsequenz:** Bei 5 % Conversion und realistischen Free-Kosten
-ist das ein Volumen-Spiel mit dünnem Beitrag pro Familie. Die drei
-Stellhebel in Reihenfolge ihrer Wirkung: (1) **Conversion über 5 %
-drücken** (Trial-Qualität, Paywall-Timing am Limit-Moment, Invite-
-Aktivierung) — jeder Prozentpunkt halbiert fast die nötige Familienzahl;
-(2) **Jahresabo-Anteil erhöhen** (Cashflow + Churn-Messung);
-(3) **Free-Kosten klein halten** (Quoten, keine teuren Features im
-Free-Plan — Realtime-Sprache bleibt Plus).
+### Empfohlen
 
-## 4g. Synthese: Vier Nachjustierungen nach der Gesamtrechnung
+1. **Free + ein Plus-Abo**
+2. **30 Tage Plus testen, danach Free**
+3. **7,99 €/Monat und zunächst 79 €/Jahr**
+4. **Founding: 59 €/Jahr für zwei Jahre**
+5. **10 Dokumente + 10 KI-Antworten im Free-Plan**
+6. **Familienfreigabe nicht pro Person bepreisen**
+7. **E-Mail-Import und Realtime-Sprache in Plus**
+8. **Limits nach echten Kostenverteilungen festlegen**
 
-**1. fileees bester Trick: Start-Kontingent statt Dauer-Generosität.**
-fileee gibt Free-Nutzern 50 Start-Dokumente (nur im ersten Monat) +
-danach 10/Monat. Das löst unseren Widerspruch zwischen „Dokumente
-bauen Lock-in, also großzügig" und „am Anfang knauserig testen, weil
-Lockerungen leichter sind als Kürzungen": **Die Großzügigkeit gehört in
-den Einstieg, die Knauserigkeit in den Dauerbetrieb.** Neuer Free-
-Vorschlag: **50 Start-Dokumente in den ersten 30 Tagen, danach
-10/Monat, 10 KI-Fragen/Monat.** Kosten: einmalig ~2,50 $ (das ist
-Akquise-Investition in Lock-in), danach max. ~0,80 $/Monat — billiger
-als der alte Entwurf UND psychologisch besser: Nach 30 Tagen ist das
-Archiv gefüllt, die Familie hängt drin, und genau dann greift die
-Kappe.
+### Verworfen
 
-**2. Limits nach Konversions-Psychologie setzen, nicht nach
-Kostenangst.** Modellpreise fallen historisch ~10× alle ~18 Monate;
-unsere ~2 €/Monat werden von allein zu ~0,50 €. Dazu kommt **Model-
-Routing** als Engineering-Hebel: einfache Fragen auf luna (10×
-billiger), nur komplexe auf terra — senkt Chatkosten voraussichtlich
-40–60 %. Wer Limits auf die Kosten von heute zugeschnitten festzurrt,
-verschenkt Spielraum, den er morgen gratis bekommt. Deshalb: Limits
-als Konfiguration (nicht Konstanten), Startwerte bewusst leicht UNTER
-dem Zielwert — eine spätere Erhöhung ist ein Geschenk („Wir haben die
-Limits erhöht"), eine Kürzung ist ein Vertrauensbruch.
+- Pay-per-Use als Kernmodell
+- Werbung im Free-Plan
+- Lifetime-Angebot
+- Preis pro Familienmitglied
+- dauerhaft harte Paywall direkt nach der Testphase
 
-**3. Preis-Disziplin gilt nur für Neukunden.** 7,99 €/79 € gilt ab
-Launch für Neukunden; die Founding-Kohorte (2,99 €/Lifetime oder
-149 € einmalig, ~100 Familien) bleibt grandfathered. Preiserhöhungen
-später immer nur für Neukunden (Evernote-Lektion). So ist „erst
-knauserig, dann großzügig" auf der Preisachse genauso umkehrsicher wie
-auf der Limit-Achse.
+## 12. Offene Entscheidungen
 
-**4. Ads: klein testbar, aber nur unter drei Bedingungen.** CAC-Decke
-bei 7,99 € ist ~20 € (4f). Paid-Tests (Apple Search Ads auf Kategorie-
-Keywords wie „Dokumente scannen App", „Familienkalender") sind drin,
-wenn: Conversion ≥5 % belegt ist, der Jahresabo-Anteil ≥50 % liegt und
-die Kanäle einzeln gegen die 20-€-Decke gemessen werden. Vorher ist
-jeder Ad-Euro geraten. Der Invite-Loop bleibt Kanal Nr. 1 — er hat CAC
-0 und die höchste Intention.
+- 69,99 € oder 79 € pro Jahr?
+- Startet die 30-Tage-Testphase bei Registrierung oder beim ersten
+  bestätigten Dokument?
+- Welche konkrete Nutzung fällt nach der Beta unter Fair Use?
+- Soll E-Mail-Import während der Testphase standardmäßig aktiviert sein?
+- Welche Export- und Leserechte gelten nach Kündigung?
 
-**Unverändert bestätigt:** Free als Mengen- statt Feature-Kastration;
-KI-Fragen als primäre Metering-Achse; Suchen frei; E-Mail-Import und
-Realtime-Sprache als Plus-Features; kein Pay-per-Use, keine Werbung.
-
-## 5. Empfehlung
-
-**C als Zielbild, A-Mechanik als Sicherheitsnetz darunter.** Konkret:
-
-1. **Prelaunch (jetzt):** Founding-Angebot, zwei Varianten zur Wahl
-   stellen: 2,99 €/Monat auf Lebenszeit **oder** 149 € einmalig
-   (Lifetime, auf ~100 Familien begrenzt). Lifetime deckt bei ~2 €
-   Monatskosten ~6 Jahre typischer Nutzung und bringt sofort Cash;
-   die Begrenzung hält das Risiko klein (s. 4c). 30 Tage kostenlos
-   testen. Wer zahlt, validiert den Preis besser als jede Umfrage. Alle
-   Founding-Versprechen sind bindend — der Evernote-Backlash 2026
-   zeigt, was passiert, wenn Bestandspreise nachträglich kippen.
-2. **Launch:** **7,99 €/Monat, 79 €/Jahr** („2 Monate geschenkt",
-   ~17 % Rabatt; die 20-%-Variante wäre 76,70 € — 79 € ist die
-   sauberere Zahl). Begründung in 4d: 4,99 € hängt an Disziplin,
-   7,99 € ist robust — und Trustworthy ($10–20) sowie Ohai ($9,99)
-   belegen die Zahlungsbereitschaft über dem Organizer-Korridor. Ein
-   Plan, zwei Laufzeiten, Fair-Use-Kappen (z. B. 100 Dokumente, 100
-   KI-Fragen/Monat) statt der heutigen 50/Tag-Limits. Vor dem Launch
-   per Fake-Door gegen 4,99 € testen — kostet nichts, entscheidet mit
-   echten Klicks.
-3. **Free-Kontingent ab Launch, nicht optional:** Der Benchmark zeigt,
-   dass Freemium in dieser Kategorie Erwartung ist, nicht Zugeständnis.
-   Kontingent (50 Start-Dokumente/30 Tage, danach 10 Dokumente +
-   10 KI-Fragen/Monat, Suchen frei — Begründung in A und 4g) als
-   Top-of-Funnel — technisch dasselbe Entitlement-System, nur ein
-   weiterer Plan. Variable Kosten einer Free-Familie (≈$0,55
-   realistisch, ≈$0,80 am Anschlag, einmalig $2,50 Start) sind das
-   Marketing-Budget.
-4. **Pay-per-Use (B) verworfen** aus Produkt- und Markengründen.
-
-Bei ~2 € variablen Kosten je typischer Familie bleiben bei 4,99 € über
-50 % Marge vor Fixkosten; bei 2,99 € Founding-Preis ist jede Familie
-immer noch kostendeckend.
-
-## 6. Wie wir es herausfinden (Messplan)
-
-1. **Schon heute möglich, ohne neuen Code:** Aus `api_usage` und den
-   429ern im Admin-Tab ablesen, wie viele Familien an die Tageslimits
-   stoßen — das ist die natürliche Grenze zwischen Free und Plus.
-2. **DB-Fundament (nächster Schritt, sobald Modell entschieden):**
-   `families.plan`-Tier (`founding`, `plus`, `free`) + Entitlements-
-   Tabelle; die bestehenden Rate-Limit-Checks lesen dann plan-abhängige
-   Limits. Migration idempotent, Default `free`/bisheriges Verhalten.
-3. **Fake-Door (Prelaunch-Messung):** `/preise`-Seite mit den zwei
-   Founding-Preisen, Klicks als `product_events` (System existiert:
-   `recordProductEvent`). Misst echte Kaufabsicht, bevor Stripe angebunden
-   wird.
-4. **Zahlung (nach Fake-Door-Signal):** Stripe Checkout + Customer
-   Portal, Webhook setzt `families.plan`. Erst dann entfallen Limits
-   plan-abhängig.
-5. **Offenes Kostenrisiko schließen:** Browser-Realtime-Sprachsitzungen
-   sind unbepreist (`docs/quality/beta-usage.md`). Vor dem Paid-Launch
-   Provider-Abrechnung anbinden oder Feature im Free/Trial begrenzen.
-
-## 7. Offene Entscheidungen
-
-- Founding-Kontingent: feste Anzahl (z. B. 100 Familien) oder Zeitfenster
-  (z. B. bis Launch)? Und: Lifetime-Variante (149 € einmalig) neben dem
-  2,99-€-Dauerpreis anbieten oder nur eine Variante?
-- Trial-Länge: 30 Tage (Familien-Rhythmus, Briefe kommen nicht täglich)
-  oder kürzer (7–14 Tage, Indie-Erfahrung sagt: kürzer konvertiert
-  besser)? Messbar per A/B, sobald der Fake-Door steht.
-- Trial mit oder ohne Zahlungsdaten bei Start?
-- Jahresabo-Rabatt: 2 Monate geschenkt (17 %) oder aggressiver?
-- Preisanker auf der Landing Page testen: 4,99 € vs. 5,99 €.
-- Free-Kontingent: 25 Dokumente/Monat (großzügig) oder fileee-nah
-  10/Monat (schnellerer Upgrade-Druck)? Erst Fake-Door-Messung, dann
-  festlegen.
-- Positionierung testen: „Organizer-Preis" (4,99 €, Korridor-Konform)
-  vs. „Assistenten-Preis" (7,99–9,99 €, Ohai-/Trustworthy-nah) — der
-  Fake-Door kann beide Preise gegenüberstellen.
-- Metering-Achse: KI-Fragen pro Monat staffeln (Trustworthy-Vorbild:
-  10/25/unbegrenzt) statt oder zusätzlich zu Dokumenten? Chat-Nutzung
-  wird schon pro Familie gezählt — Umsetzung wäre klein.
-- Werbung im Free-Plan: **erwogen und verworfen.** Ad-Erlöse liegen bei
-  Cents pro Nutzer und Monat und brauchen Millionen DAU (Cozi-Skala);
-  Werbung in einer App mit Schulbriefen, Rechnungen und Arztberichten
-  widerspricht dem Vertrauensversprechen (Trustworthy wirbt mit „never
-  shared, sold, or monetized") und der Markenlinie (DESIGN.md: keine
-  Upsell-/Scanner-Muster). DSGVO-Consent und Ad-SDKs kämen obendrauf.
-  Der Free-Plan ist das Marketing — über den Partner-Invite, nicht über
-  Banner.
+Diese Fragen werden nicht durch weitere Modellrechnung entschieden, sondern
+durch reale Nutzung, Checkout-Verhalten und Gespräche mit aktivierten
+Familien.

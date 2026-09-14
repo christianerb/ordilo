@@ -124,6 +124,24 @@ describe("DELETE /api/me", () => {
     );
   });
 
+  it("does not return success when auth-user deletion fails", async () => {
+    authenticated();
+    vi.mocked(deleteFamilyAccountData).mockResolvedValue({
+      success: false,
+      error:
+        "Dein Konto konnte noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+    });
+
+    const response = await DELETE(request({ confirmName: "Familie Müller" }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      error:
+        "Dein Konto konnte noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+    });
+  });
+
   it("returns 500 with the friendly German error on unexpected failures", async () => {
     authenticated();
     vi.mocked(deleteFamilyAccountData).mockRejectedValue(new Error("boom"));

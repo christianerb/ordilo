@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
   membershipMaybeSingle: vi.fn(),
   reserveVoiceTranscription: vi.fn(),
+  familyHasPlus: vi.fn(),
   adminClient: { rpc: vi.fn() },
 }));
 
@@ -30,6 +31,10 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("@/lib/ai/voice-rate-limit", () => ({
   reserveVoiceTranscription: (...args: unknown[]) =>
     mocks.reserveVoiceTranscription(...args),
+}));
+
+vi.mock("@/lib/billing/revenuecat", () => ({
+  familyHasPlus: (...args: unknown[]) => mocks.familyHasPlus(...args),
 }));
 
 import { POST } from "@/app/api/realtime/transcribe/route";
@@ -193,6 +198,7 @@ beforeEach(() => {
     used: 1,
     remaining: 49,
   });
+  mocks.familyHasPlus.mockResolvedValue(true);
   fetchMock.mockResolvedValue(
     new Response(JSON.stringify({ text: "Wann ist der Elternabend?" }), {
       status: 200,
@@ -240,6 +246,18 @@ describe("POST /api/realtime/transcribe", () => {
 
     expect(response.status).toBe(429);
     expect(body.code).toBe("VOICE_RATE_LIMIT_EXCEEDED");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requires Plus before reserving voice usage", async () => {
+    mocks.familyHasPlus.mockResolvedValue(false);
+
+    const response = await POST(recordingRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(402);
+    expect(body.code).toBe("PLUS_REQUIRED");
+    expect(mocks.reserveVoiceTranscription).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

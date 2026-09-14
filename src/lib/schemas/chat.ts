@@ -104,6 +104,7 @@ export const chatRequestSchema = z.object({
     .trim()
     .min(1, "family_id ist erforderlich.")
     .regex(UUID_REGEX, "family_id muss eine gültige UUID sein."),
+  operation_id: z.string().uuid().optional(),
   history: z
     .array(
       z.object({

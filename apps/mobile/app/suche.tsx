@@ -1,6 +1,7 @@
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { randomUUID } from "expo-crypto";
 import {
   AudioModule,
   RecordingPresets,
@@ -85,6 +86,7 @@ import {
   type ConversationSummary,
 } from "@/src/lib/conversations";
 import { buildPersonalChatStarters } from "@ordilo/chat-contract";
+import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
 import { getSupabase } from "@/src/lib/supabase";
@@ -122,6 +124,7 @@ type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
 export default function SucheScreen() {
   const router = useRouter();
   const { family } = useFamily();
+  const { isPlus } = useBilling();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -142,10 +145,12 @@ export default function SucheScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const followAnswer = useRef(true);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const chatOperationIds = useRef(new Map<string, string>());
   useEffect(() => () => chatAbortRef.current?.abort(), []);
   const counter = useRef(0);
   const lastQuestion = useRef<string | null>(null);
   const voiceIntent = useRef(false);
+  const pendingPremiumVoice = useRef(false);
   const voiceStatusRef = useRef<VoiceStatus>("idle");
   const transcriptionAbortController = useRef<AbortController | null>(null);
   const autoStoppingVoice = useRef(false);
@@ -338,8 +343,11 @@ export default function SucheScreen() {
         comment?: string;
         originalMessage: ChatMessage;
       },
+      retryOperationId?: string,
     ) => {
       if (!family) return;
+      const operationId = retryOperationId ?? randomUUID();
+      chatOperationIds.current.set(assistantMessage.id, operationId);
       lastQuestion.current = question;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setBusy(true);
@@ -369,6 +377,7 @@ export default function SucheScreen() {
           {
             familyId: family.id,
             message: question,
+            operationId,
             conversationId,
             history,
             repair: repair
@@ -396,6 +405,7 @@ export default function SucheScreen() {
             if (event.type === "answer_ready") receivedReady = true;
             if (event.type === "done") {
               receivedDone = true;
+              chatOperationIds.current.delete(assistantMessage.id);
               void Haptics.notificationAsync(
                 Haptics.NotificationFeedbackType.Success,
               );
@@ -447,7 +457,9 @@ export default function SucheScreen() {
                 ...message,
                 text:
                   status === 429
-                    ? CHAT_RATE_LIMIT_MESSAGE
+                    ? error instanceof Error
+                      ? error.message
+                      : CHAT_RATE_LIMIT_MESSAGE
                     : CHAT_ERROR_MESSAGE,
                 status: status === 429 ? "rate_limited" : "error",
               },
@@ -515,11 +527,19 @@ export default function SucheScreen() {
         ),
       );
       const assistantMessage = createAssistantMessage();
+      const operationId = chatOperationIds.current.get(failedMessageId);
+      chatOperationIds.current.delete(failedMessageId);
       setMessages((current) => [
         ...current.filter((message) => message.id !== failedMessageId),
         assistantMessage,
       ]);
-      void runStream(userMessage.text, assistantMessage, history);
+      void runStream(
+        userMessage.text,
+        assistantMessage,
+        history,
+        undefined,
+        operationId,
+      );
     },
     [busy, createAssistantMessage, family, messages, runStream],
   );
@@ -821,7 +841,7 @@ export default function SucheScreen() {
     ],
   );
 
-  const startVoice = useCallback(async () => {
+  const beginVoice = useCallback(async () => {
     if (busy || voiceStatusRef.current !== "idle") return;
     setVoiceError(null);
     voiceIntent.current = true;
@@ -856,6 +876,25 @@ export default function SucheScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [busy, discardVoiceRecording, recorder, resetVoiceUi]);
+
+  const startVoice = useCallback(() => {
+    if (busy || voiceStatusRef.current !== "idle") return;
+    if (!isPlus) {
+      pendingPremiumVoice.current = true;
+      router.push("/paywall");
+      return;
+    }
+    void beginVoice();
+  }, [beginVoice, busy, isPlus, router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!pendingPremiumVoice.current || !isPlus) return;
+      pendingPremiumVoice.current = false;
+      const timeout = setTimeout(() => void beginVoice(), 250);
+      return () => clearTimeout(timeout);
+    }, [beginVoice, isPlus]),
+  );
 
   useEffect(() => {
     if (
@@ -964,7 +1003,7 @@ export default function SucheScreen() {
                 onChange={setInput}
                 onSend={() => void send(input)}
                 onStop={() => chatAbortRef.current?.abort()}
-                onVoiceStart={() => void startVoice()}
+                onVoiceStart={startVoice}
                 onVoiceCancel={() => void discardVoiceRecording()}
                 onVoiceFinish={() => void finishVoice()}
                 value={input}

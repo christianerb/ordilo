@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
+import { familyHasPlus } from "@/lib/billing/revenuecat";
 
 const REALTIME_MODEL = "gpt-realtime-2.1";
 
@@ -121,6 +122,13 @@ async function handleRealtimeSession(): Promise<Response> {
     return Response.json(
       { error: "Keine Familie gefunden.", code: "NO_FAMILY" },
       { status: 403 },
+    );
+  }
+  if (!(await familyHasPlus(membership.family_id))) {
+    reportRefusal("PLUS_REQUIRED");
+    return Response.json(
+      { error: "Spracheingabe gehört zu Ordilo Plus.", code: "PLUS_REQUIRED" },
+      { status: 402 },
     );
   }
 

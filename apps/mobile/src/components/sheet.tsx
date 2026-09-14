@@ -116,9 +116,13 @@ export function OrdiloSheetHeader({
           onClose && styles.sheetHeaderCopyWithClose,
         ]}
       >
-        <Text style={styles.sheetHeaderTitle}>{title}</Text>
+        <Text maxFontSizeMultiplier={1.4} style={styles.sheetHeaderTitle}>
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={styles.sheetHeaderSubtitle}>{subtitle}</Text>
+          <Text maxFontSizeMultiplier={1.4} style={styles.sheetHeaderSubtitle}>
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       <View

@@ -1,0 +1,16 @@
+appId: com.ordilo.app
+---
+# The built-in example is synthetic and local-only. Never record family records.
+- assertVisible: "Ohne eigenen Brief ausprobieren"
+- tapOn: "Ohne eigenen Brief ausprobieren"
+- assertVisible: "Vorbereitetes Beispiel. Es wird nichts gespeichert."
+- scrollUntilVisible:
+    element: 'Was muss ich mitgeben\?'
+    speed: 30
+- takeScreenshot: out/native-letter
+- tapOn: 'Was muss ich mitgeben\?'
+- assertVisible: "Eine Trinkflasche und eine Regenjacke."
+- scrollUntilVisible:
+    element: "Die Fundstelle im Beispielbrief"
+    speed: 30
+- takeScreenshot: out/native-answer

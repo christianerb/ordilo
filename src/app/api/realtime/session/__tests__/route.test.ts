@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   membershipMaybeSingle: vi.fn(),
   sentryMessage: vi.fn(),
   sentryException: vi.fn(),
+  familyHasPlus: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-user", () => ({
@@ -45,6 +46,10 @@ vi.mock("@/lib/ai/rate-limit", () => ({
   recordUsage: (...args: unknown[]) => mocks.recordUsage(...args),
 }));
 
+vi.mock("@/lib/billing/revenuecat", () => ({
+  familyHasPlus: (...args: unknown[]) => mocks.familyHasPlus(...args),
+}));
+
 vi.mock("@sentry/nextjs", () => ({
   captureMessage: (...args: unknown[]) => mocks.sentryMessage(...args),
   captureException: (...args: unknown[]) => mocks.sentryException(...args),
@@ -73,6 +78,7 @@ beforeEach(() => {
     remaining: 49,
   });
   mocks.recordUsage.mockResolvedValue(undefined);
+  mocks.familyHasPlus.mockResolvedValue(true);
   mockFetch.mockResolvedValue(
     new Response(
       JSON.stringify({
@@ -126,6 +132,18 @@ describe("POST /api/realtime/session", () => {
     expect(body.code).toBe("RATE_LIMIT_EXCEEDED");
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mocks.recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("requires Plus before checking the daily budget", async () => {
+    mocks.familyHasPlus.mockResolvedValue(false);
+
+    const response = await POST();
+    const body = await response.json();
+
+    expect(response.status).toBe(402);
+    expect(body.code).toBe("PLUS_REQUIRED");
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("mints a client secret and counts it against the daily budget", async () => {
@@ -201,6 +219,7 @@ describe("POST /api/realtime/session", () => {
           remaining: 0,
         }),
     ],
+    ["PLUS_REQUIRED", () => mocks.familyHasPlus.mockResolvedValue(false)],
     ["REALTIME_UNAVAILABLE", () => vi.stubEnv("OPENAI_API_KEY", "")],
   ])("tags a %s refusal so it is identifiable server-side", async (code, arrange) => {
     arrange();

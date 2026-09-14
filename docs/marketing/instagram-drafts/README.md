@@ -1,0 +1,22 @@
+# Instagram-Drafts
+
+Erstellt am 8. September 2026 mit dem integrierten Imagegen-Tool. Erste Entwürfe; Schrift und Wortmarke für die finale Produktion durch Originale ersetzen.
+
+- [Ablagesystem](01-da-irgendwo.png)
+- [Kühlschrank](02-kuehlschrank.png)
+- [Suchmaschine](03-suchmaschine.png)
+
+## Verwendete Prompts
+
+### Draft 1
+
+Use case: ads-marketing. Create ONE finished German Instagram draft, portrait 4:5. Ordilo is a family document app. Cohesive art direction: warm editorial minimalism, cheeky copy with compassionate attitude. Warm paper background #FDFCFA or #F7F5F1, graphite #262421 and maritime teal #305460. Typography closely resembling Figtree semibold, large confident tightly set sans serif, sentence case, extremely legible German. Generous 8% margins, clear hierarchy, no gradients, no neon, no UI, no invented logo icon. Small plain wordmark 'ordilo' bottom left, tiny series label 'Aus dem Familienalltag' top left. Keep same layout family: headline in top half, supporting scene lower half, footer. Render exact supplied text beautifully. No extra text or watermarks. Main headline exact: 'Dein Ablagesystem heißt also „da irgendwo“.' Set over 4 balanced lines with „da irgendwo“ in teal. Footer supporting copy exact: 'Kennen wir. Ordilo hilft beim Wiederfinden.' Lower half: art-directed tactile paper still life, three slightly overlapping warm ivory envelopes on sand surface, one half concealed under another, one reads 'Wichtig'. Soft natural shadows, subtle realistic paper texture, restrained composition with lots of air. The envelopes feel like real family mail photographed top down, not generic vector icons. Elegant, witty independent brand campaign.
+
+### Draft 2
+
+Use case: ads-marketing. Create ONE finished German Instagram draft, portrait 4:5. Ordilo is a family document app. Cohesive art direction: warm editorial minimalism, cheeky copy with compassionate attitude. Warm paper background #FDFCFA or #F7F5F1, graphite #262421 and maritime teal #305460. Typography closely resembling Figtree semibold, large confident tightly set sans serif, sentence case, extremely legible German. Generous 8% margins, clear hierarchy, no gradients, no neon, no UI, no invented logo icon. Small plain wordmark 'ordilo' bottom left, tiny series label 'Aus dem Familienalltag' top left. Keep same layout family: headline in top half, supporting scene lower half, footer. Render exact supplied text beautifully. No extra text or watermarks. Main headline exact: 'Dein Kühlschrank hat genug Verantwortung.' Set over 4 balanced lines. Footer supporting copy exact: 'Für Essen. Und die Kunst. Papierkram zu Ordilo.' Lower half is a beautifully cropped natural photo of a warm off-white refrigerator door with one childish crayon drawing attached by a small teal magnet and one anonymous paper envelope. Slight everyday wear, authentic family home, warm daylight. Photo blends tonally with upper paper-colored flat text area. No people, no personal information, no other lettering on the fridge. Understated art direction, dry humor, premium but approachable.
+
+### Draft 3
+
+Use case: ads-marketing. Create ONE finished German Instagram draft, portrait 4:5. Ordilo is a family document app. Cohesive art direction: warm editorial minimalism, cheeky copy with compassionate attitude. Warm paper background #FDFCFA or #F7F5F1, graphite #262421 and maritime teal #305460. Typography closely resembling Figtree semibold, large confident tightly set sans serif, sentence case, extremely legible German. Generous 8% margins, clear hierarchy, no gradients, no neon, no UI, no invented logo icon. Small plain wordmark 'ordilo' bottom left, tiny series label 'Aus dem Familienalltag' top left. Keep same layout family: headline in top half, supporting scene lower half, footer. Render exact supplied text beautifully. No extra text or watermarks. Main headline exact: 'Du bist ein Elternteil. Keine Suchmaschine.' Set large over 4 balanced lines, 'Keine Suchmaschine.' in teal. Supporting text exact: 'Fragen zum Papierkram? Frag Ordilo.' Lower middle: three generously spaced small warm sand paper slips, slightly offset but calm and orderly, typeset respectively 'Wo ist der Brief?', 'Welche Nummer?', 'Was stand da drin?'. Small tactile folded paper detail at lower right, no mascot. This is a typography-led editorial poster, maximum negative space, confident scale, not a busy infographic.
+

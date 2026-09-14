@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ordilo",
     "slug": "ordilo",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ordilo",
@@ -17,7 +17,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
         "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst.",
-        "NSLocationWhenInUseUsageDescription": "Ordilo verwendet deinen Standort nicht. Diese Beschreibung ist f\u00fcr die Scanner-Bibliothek erforderlich.",
+        "NSLocationWhenInUseUsageDescription": "Ordilo verwendet deinen Standort nicht. Diese Beschreibung ist für die Scanner-Bibliothek erforderlich.",
         "NSMicrophoneUsageDescription": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
       },
       "config": {
@@ -66,6 +66,7 @@
       ]
     },
     "plugins": [
+      "@sentry/react-native/expo",
       "expo-router",
       [
         "expo-local-authentication",
@@ -86,7 +87,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente ausw\u00e4hlen kannst."
+          "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
         }
       ],
       "expo-web-browser",

@@ -93,6 +93,19 @@ npm run build        # Placeholder-Envs genügen, siehe ci.yml
 npm run test:e2e     # PW_CHROMIUM_PATH überschreibt den Browser-Pfad
 ```
 
+## 3b. Ordilo Plus und RevenueCat
+
+Der native Paywall-, Kauf-, Restore-, Webhook- und Entitlement-Flow ist
+implementiert, bleibt aber über zwei getrennte Schalter aus. Die vollständige
+Produktstruktur, Secret-Liste, Sandbox-Prüfung und sichere
+Aktivierungsreihenfolge stehen in
+[`docs/plans/revenuecat-rollout.md`](plans/revenuecat-rollout.md).
+
+`BILLING_ENTITLEMENTS_ENABLED=1` aktiviert die Server-Gates.
+`EXPO_PUBLIC_BILLING_ENTITLEMENTS_ENABLED=1` aktiviert den nativen Paywall.
+Nie nur den Client-Schalter aktivieren: Ein Client-Gate allein schützt keine
+kostenpflichtige API.
+
 ## 4. Bewusst offen (Entscheidung nötig)
 
 - **Sentry / Error-Tracking:** bewusst noch nicht eingebaut — das SDK

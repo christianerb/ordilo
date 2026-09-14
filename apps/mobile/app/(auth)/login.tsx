@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store";
+import * as WebBrowser from "expo-web-browser";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -31,6 +32,7 @@ import { MailSentIllustration } from "@/src/components/mail-sent-illustration";
 import { OtpCodeInput } from "@/src/components/otp-code-input";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { recordOnboardingStartedIfFirstTime } from "@/src/lib/analytics";
+import { getApiUrl } from "@/src/lib/api";
 import { getSupabase } from "@/src/lib/supabase";
 import {
   validateLoginEmail,
@@ -314,6 +316,17 @@ export default function LoginScreen() {
       router.back();
     } else {
       router.replace("/(auth)/einstieg");
+    }
+  }
+
+  async function openLegal(path: "/datenschutz" | "/nutzungsbedingungen") {
+    try {
+      await WebBrowser.openBrowserAsync(`${getApiUrl()}${path}`);
+    } catch {
+      setErrorMessage(
+        "Die Seite konnte nicht geöffnet werden. Bitte versuch es erneut.",
+      );
+      setFormState("error");
     }
   }
 
@@ -639,6 +652,34 @@ export default function LoginScreen() {
                     </Text>
                   </Pressable>
 
+                  <View
+                    accessibilityLabel="Rechtliches"
+                    style={styles.legalLinks}
+                  >
+                    <Text style={[typography.label, styles.legalHint]}>
+                      Mit der Anmeldung stimmst du den Bedingungen zu.
+                    </Text>
+                    <View style={styles.legalLinkRow}>
+                      <Pressable
+                        accessibilityRole="link"
+                        onPress={() => void openLegal("/nutzungsbedingungen")}
+                      >
+                        <Text style={[typography.label, styles.legalLink]}>
+                          Nutzungsbedingungen
+                        </Text>
+                      </Pressable>
+                      <Text style={[typography.label, styles.legalHint]}>·</Text>
+                      <Pressable
+                        accessibilityRole="link"
+                        onPress={() => void openLegal("/datenschutz")}
+                      >
+                        <Text style={[typography.label, styles.legalLink]}>
+                          Datenschutz
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+
                   <Pressable
                     accessibilityRole="button"
                     onPress={handleBackToIntro}
@@ -847,5 +888,22 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
+  },
+  legalLinks: {
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  legalHint: {
+    color: colors.mistDark,
+    textAlign: "center",
+  },
+  legalLinkRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  legalLink: {
+    color: colors.harborBlue,
+    textDecorationLine: "underline",
   },
 });

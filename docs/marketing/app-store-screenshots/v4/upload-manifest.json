@@ -1,0 +1,40 @@
+{
+  "app_id": "6805133943",
+  "locale": "de-DE",
+  "updated_at": "2026-09-09",
+  "status": "uploaded_to_app_store_connect_draft",
+  "screenshot_order": [
+    {
+      "file": "01-papierkram.png",
+      "sha256": "3ec412fcbc3380d19a63d5d1e948b9a2285042278cfaf1a7ace19c00bcdf6ef9"
+    },
+    {
+      "file": "02-fragen.png",
+      "sha256": "b13bbc52369e89aefb600053756b1e4c63831e314cf448e0829de3bdcc18e93e"
+    },
+    {
+      "file": "03-fundstelle.png",
+      "sha256": "98626f948faee9417a532c58cbff40dc5b9f9af4684b0f35986387dd11fbc785"
+    },
+    {
+      "file": "04-angaben.png",
+      "sha256": "d51e70556dc1034362554d9652ddba6c47be8ba9aad3ed5c9d917924e4223e76"
+    },
+    {
+      "file": "05-ablage.png",
+      "sha256": "4ba082e371aa29885689be0e36dbe4a12107fe83084c0ff1c1a71d94d20e11c3"
+    },
+    {
+      "file": "06-gemeinsam.png",
+      "sha256": "2605f1e212546cd3023b4ec9a7e52e9d562d57c3ccb28e4eb83edf56fe2fdb5c"
+    }
+  ],
+  "validation": {
+    "width": 1260,
+    "height": 2736,
+    "format": "PNG",
+    "colour_space": "sRGB",
+    "alpha": false
+  },
+  "release_submitted": false
+}

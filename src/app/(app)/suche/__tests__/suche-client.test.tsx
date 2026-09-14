@@ -207,6 +207,16 @@ describe("SucheClient — Empty State", () => {
 });
 
 describe("SucheClient — Chat Interaction (Streaming)", () => {
+  it("sends a UUID operation ID with every chat request", async () => {
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Welche Frist gilt?");
+    const init = vi.mocked(global.fetch).mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as { operation_id?: string };
+    expect(body.operation_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+
   it("shows the AI answer after stream completes", async () => {
     global.fetch = vi.fn().mockResolvedValue(
       streamResponse([
@@ -468,6 +478,36 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
         screen.getByText(/Da ist was schiefgegangen/i),
       ).toBeDefined();
     });
+  });
+
+  it("preserves the operation ID when retrying a failed request", async () => {
+    global.fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockResolvedValueOnce(
+        streamResponse([
+          { type: "text", content: "Jetzt klappt es." },
+          { type: "done" },
+        ]),
+      );
+
+    render(<SucheClient {...defaultProps} />);
+    act(() => {
+      activeHandler?.("Nochmal dieselbe Frage");
+    });
+    await screen.findByText(/Da ist was schiefgegangen/i);
+    fireEvent.click(screen.getByRole("button", { name: "Frage erneut stellen" }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+
+    const operationIds = vi
+      .mocked(global.fetch)
+      .mock.calls.map(([, init]) => {
+        const body = JSON.parse(String(init?.body)) as {
+          operation_id: string;
+        };
+        return body.operation_id;
+      });
+    expect(operationIds[1]).toBe(operationIds[0]);
   });
 });
 

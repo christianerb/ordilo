@@ -1,0 +1,31 @@
+{
+  "name": "@ordilo/video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render:launch": "remotion render src/index.ts OrdiloLaunch out/ordilo-launch.mp4",
+    "render:app-store": "remotion render src/index.ts AppStore-MagicFlow out/ordilo-app-store.mp4",
+    "render:instagram": "remotion render src/index.ts Instagram-FamilyReel out/ordilo-instagram-reel.mp4",
+    "render:homepage": "remotion render src/index.ts Homepage-QuietLoop out/ordilo-homepage-loop.mp4",
+    "render:variants": "npm run render:app-store && npm run render:instagram && npm run render:homepage",
+    "still:launch": "remotion still src/index.ts OrdiloLaunch out/ordilo-launch.png --frame=60",
+    "still:variants": "remotion still src/index.ts AppStore-MagicFlow out/ordilo-app-store.png --frame=360 && remotion still src/index.ts Instagram-FamilyReel out/ordilo-instagram-reel.png --frame=40 && remotion still src/index.ts Homepage-QuietLoop out/ordilo-homepage-loop.png --frame=460",
+    "test": "node --experimental-strip-types --test timing.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/google-fonts": "^4.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "^4.0.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.522",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.9.3"
+  }
+}

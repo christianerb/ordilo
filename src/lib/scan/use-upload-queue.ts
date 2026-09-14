@@ -55,6 +55,7 @@ export function useUploadQueue({
       file: File,
       onUploaded?: (documentId: string) => void,
       onUploadError?: (message: string, retryable?: boolean) => void,
+      stableUploadKey?: string,
     ) => {
       const fid = familyIdRef.current ?? await ensureFamilyId();
       if (!fid) {
@@ -86,20 +87,27 @@ export function useUploadQueue({
         return;
       }
 
-      const uploadId = crypto.randomUUID();
+      const uploadId = stableUploadKey ?? crypto.randomUUID();
       setUploads((prev) => [
         ...prev,
         { id: uploadId, file, progress: 0, phase: "uploading" },
       ]);
 
       try {
-        const result = await uploadFile(file, fid, (percent) => {
-          setUploads((prev) =>
-            prev.map((upload) =>
-              upload.id === uploadId ? { ...upload, progress: percent } : upload,
-            ),
-          );
-        });
+        const result = await uploadFile(
+          file,
+          fid,
+          (percent) => {
+            setUploads((prev) =>
+              prev.map((upload) =>
+                upload.id === uploadId
+                  ? { ...upload, progress: percent }
+                  : upload,
+              ),
+            );
+          },
+          uploadId,
+        );
 
         onUploaded?.(result.document_id);
 
@@ -205,7 +213,7 @@ export function useUploadQueue({
       );
       setUploads((prev) => prev.filter((current) => current.id !== uploadId));
       if (upload) {
-        void handleFileUpload(upload.file);
+        void handleFileUpload(upload.file, undefined, undefined, uploadId);
       }
     },
     [handleFileUpload],

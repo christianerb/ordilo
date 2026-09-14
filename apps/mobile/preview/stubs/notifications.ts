@@ -8,4 +8,13 @@ export async function requestPermissionsAsync() {
 }
 export async function getExpoPushTokenAsync() { return { data: "preview" }; }
 export async function setNotificationChannelAsync() { return null; }
+export async function dismissAllNotificationsAsync() {}
+export async function getLastNotificationResponseAsync() { return null; }
+export async function clearLastNotificationResponseAsync() {}
+export function addNotificationResponseReceivedListener() {
+  return { remove() {} };
+}
+export function addPushTokenListener() {
+  return { remove() {} };
+}
 export const AndroidImportance = { DEFAULT: 3 };

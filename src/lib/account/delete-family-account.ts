@@ -7,6 +7,72 @@ import {
   getUserFamily,
 } from "@/lib/actions/result";
 
+const STORAGE_DELETE_BATCH_SIZE = 100;
+const STORAGE_PATH_PAGE_SIZE = 1_000;
+
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+async function loadFamilyStoragePaths(
+  admin: AdminClient,
+  familyId: string,
+): Promise<{ documentPaths: string[]; avatarPaths: string[] } | null> {
+  const documentPaths: string[] = [];
+  for (let from = 0; ; from += STORAGE_PATH_PAGE_SIZE) {
+    const { data, error } = await admin
+      .from("documents")
+      .select("file_url")
+      .eq("family_id", familyId)
+      .order("id")
+      .range(from, from + STORAGE_PATH_PAGE_SIZE - 1);
+    if (error) return null;
+
+    const rows = data ?? [];
+    documentPaths.push(
+      ...rows
+        .map((row) => row.file_url)
+        .filter((path): path is string => Boolean(path)),
+    );
+    if (rows.length < STORAGE_PATH_PAGE_SIZE) break;
+  }
+
+  const avatarPaths: string[] = [];
+  for (let from = 0; ; from += STORAGE_PATH_PAGE_SIZE) {
+    const { data, error } = await admin
+      .from("family_members")
+      .select("photo_url")
+      .eq("family_id", familyId)
+      .order("id")
+      .range(from, from + STORAGE_PATH_PAGE_SIZE - 1);
+    if (error) return null;
+
+    const rows = data ?? [];
+    avatarPaths.push(
+      ...rows
+        .map((row) => row.photo_url)
+        .filter((path): path is string => Boolean(path)),
+    );
+    if (rows.length < STORAGE_PATH_PAGE_SIZE) break;
+  }
+
+  return { documentPaths, avatarPaths };
+}
+
+async function removeStoragePaths(
+  admin: AdminClient,
+  bucket: "documents" | "avatars",
+  paths: string[],
+): Promise<boolean> {
+  for (let offset = 0; offset < paths.length; offset += STORAGE_DELETE_BATCH_SIZE) {
+    const batch = paths.slice(offset, offset + STORAGE_DELETE_BATCH_SIZE);
+    const { error } = await admin.storage.from(bucket).remove(batch);
+    if (error) {
+      console.error(`deleteFamilyAccount: failed to clear ${bucket} storage`, error);
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Delete the user's family and their account (DSGVO Art. 17 — right to
  * erasure). Shared by the `/familie` server action and the
@@ -50,32 +116,31 @@ export async function deleteFamilyAccountData(
     const { data: sharedFamily, error: sharedFamilyError } = await getUserFamily(
       supabase,
     );
-    if (sharedFamilyError || !sharedFamily) {
+    if (sharedFamilyError) {
       return { success: false, error: FRIENDLY_ERROR };
     }
-    if (confirmName.trim() !== sharedFamily.name) {
+    if (sharedFamily && confirmName.trim() !== sharedFamily.name) {
       return {
         success: false,
         error: "Der Name stimmt nicht mit dem Familiennamen überein.",
       };
     }
 
+    // Auth deletion cascades the invited user's memberships. Deleting the
+    // membership first would lock the user out of the family while leaving
+    // a working auth account behind when the auth call fails.
     const admin = createAdminClient();
-    const { error: membershipError } = await admin
-      .from("family_memberships")
-      .delete()
-      .eq("family_id", sharedFamily.id)
-      .eq("user_id", user.id);
-    if (membershipError) {
-      return { success: false, error: FRIENDLY_ERROR };
-    }
-
     const { error: deleteUserError } = await admin.auth.admin.deleteUser(user.id);
     if (deleteUserError) {
       console.error(
         "deleteFamilyAccount: failed to delete invited auth user",
         deleteUserError,
       );
+      return {
+        success: false,
+        error:
+          "Dein Konto konnte noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+      };
     }
     return { success: true, data: null };
   }
@@ -91,24 +156,35 @@ export async function deleteFamilyAccountData(
   // Privileged work (storage + auth) needs the service-role client.
   const admin = createAdminClient();
 
-  // Collect storage paths BEFORE deleting rows — the rows hold the locations.
-  const { data: docs } = await admin
-    .from("documents")
-    .select("file_url")
-    .eq("family_id", family.id);
-  const documentPaths = (docs ?? [])
-    .map((d) => d.file_url)
-    .filter((url): url is string => Boolean(url));
+  // Storage is outside the database transaction. Read every path with
+  // pagination, remove the private objects first, and only then delete the
+  // rows that prove where those objects lived. Missing that order can make a
+  // failed Storage request leave private scans behind with no owner row and
+  // no reliable cleanup path.
+  const storagePaths = await loadFamilyStoragePaths(admin, family.id);
+  if (!storagePaths) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+  const documentsRemoved = await removeStoragePaths(
+    admin,
+    "documents",
+    storagePaths.documentPaths,
+  );
+  const avatarsRemoved = await removeStoragePaths(
+    admin,
+    "avatars",
+    storagePaths.avatarPaths,
+  );
+  if (!documentsRemoved || !avatarsRemoved) {
+    return {
+      success: false,
+      error:
+        "Deine Daten konnten noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+    };
+  }
 
-  const { data: memberRows } = await admin
-    .from("family_members")
-    .select("photo_url")
-    .eq("family_id", family.id);
-  const avatarPaths = (memberRows ?? [])
-    .map((m) => m.photo_url)
-    .filter((url): url is string => Boolean(url));
-
-  // Delete the family row — cascades to all family-scoped data.
+  // Delete the family row after private Storage is confirmed gone. This
+  // cascades to all family-scoped database data.
   const { error: deleteError } = await admin
     .from("families")
     .delete()
@@ -118,30 +194,20 @@ export async function deleteFamilyAccountData(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  // Best-effort storage cleanup — orphaned files are non-fatal (the data is
-  // already gone), so failures are swallowed.
-  if (documentPaths.length > 0) {
-    await admin.storage
-      .from("documents")
-      .remove(documentPaths)
-      .catch(() => {});
-  }
-  if (avatarPaths.length > 0) {
-    await admin.storage
-      .from("avatars")
-      .remove(avatarPaths)
-      .catch(() => {});
-  }
-
-  // Delete the auth user (full account deletion). The family's data is
-  // already erased — the DSGVO-relevant part — so a failure here only leaves
-  // an orphaned login (no family, no data) and is logged, not fatal.
+  // Delete the auth user (full account deletion). A failure must be surfaced:
+  // otherwise the UI would claim the account is gone while its login still
+  // works. The no-family branch above lets the user retry this final step.
   const { error: deleteUserError } = await admin.auth.admin.deleteUser(user.id);
   if (deleteUserError) {
     console.error(
       "deleteFamilyAccount: failed to delete auth user",
       deleteUserError,
     );
+    return {
+      success: false,
+      error:
+        "Dein Konto konnte noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+    };
   }
 
   return { success: true, data: null };

@@ -4,10 +4,12 @@ import { useFocusEffect, useRouter } from "expo-router";
 import {
   Bell,
   ChevronRight,
+  Download,
   EyeOff,
   FileText,
   LogOut,
   Mail,
+  Gem,
   Scale,
   ScanFace,
   Trash2,
@@ -32,9 +34,13 @@ import {
   SpringPressable,
 } from "@/src/components/ui";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
-import { deleteFamilyAccount } from "@/src/lib/account";
+import {
+  deleteFamilyAccount,
+  shareAccountDataExport,
+} from "@/src/lib/account";
 import { getApiUrl } from "@/src/lib/api";
 import { useAppLock } from "@/src/lib/app-lock";
+import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
 import { haptics } from "@/src/lib/haptics";
 import {
@@ -57,6 +63,7 @@ export default function EinstellungenScreen() {
   const router = useRouter();
   const { session, signOut } = useSession();
   const { family } = useFamily();
+  const { enabled: billingEnabled, isPlus, managementUrl } = useBilling();
   const {
     settings,
     biometry,
@@ -68,6 +75,7 @@ export default function EinstellungenScreen() {
   const [pushState, setPushState] = useState<PushPermissionState | null>(null);
   const [pushRegistered, setPushRegistered] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
 
   // Re-read on focus: the user may have just come back from the iOS
@@ -122,11 +130,51 @@ export default function EinstellungenScreen() {
     // The switch snaps back on focus via the fresh permission read.
   }
 
-  async function openLegal(path: "/datenschutz" | "/impressum") {
+  async function openLegal(
+    path: "/datenschutz" | "/impressum" | "/nutzungsbedingungen",
+  ) {
     try {
       await WebBrowser.openBrowserAsync(`${getApiUrl()}${path}`);
     } catch {
       haptics.warning();
+    }
+  }
+
+  async function openSubscription() {
+    if (!isPlus) {
+      router.push("/paywall");
+      return;
+    }
+    if (!managementUrl) {
+      Alert.alert(
+        "Abo verwalten",
+        "Öffne die Abo-Einstellungen in deinem App Store.",
+      );
+      return;
+    }
+    try {
+      await Linking.openURL(managementUrl);
+    } catch {
+      haptics.warning();
+    }
+  }
+
+  async function handleDataExport() {
+    if (exportBusy) return;
+    setExportBusy(true);
+    try {
+      await shareAccountDataExport();
+      haptics.success();
+    } catch (error) {
+      haptics.error();
+      Alert.alert(
+        "Export nicht möglich",
+        error instanceof Error
+          ? error.message
+          : "Deine Daten konnten nicht exportiert werden. Bitte versuch es erneut.",
+      );
+    } finally {
+      setExportBusy(false);
     }
   }
 
@@ -156,6 +204,18 @@ export default function EinstellungenScreen() {
       >
         <OrdiloButton title="Meine Offline-Kopien" variant="outline" onPress={() => router.push("/offline")} />
         <OrdiloButton title="Ordilo mit Beispiel ausprobieren" variant="ghost" onPress={() => router.push("/beispiel")} />
+        {billingEnabled ? <SettingsSection title="Ordilo Plus">
+          <SettingsLinkRow
+            description={
+              isPlus
+                ? "Für eure ganze Familie aktiv"
+                : "Spracheingabe und alle Plus-Funktionen"
+            }
+            icon={<Gem color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onPress={() => void openSubscription()}
+            title={isPlus ? "Abo verwalten" : "Ordilo Plus ansehen"}
+          />
+        </SettingsSection> : null}
         <SettingsSection title="Sicherheit">
           <SettingsToggleRow
             description={
@@ -206,6 +266,12 @@ export default function EinstellungenScreen() {
           <SettingsDivider />
           <SettingsLinkRow
             icon={<Scale color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onPress={() => void openLegal("/nutzungsbedingungen")}
+            title="Nutzungsbedingungen"
+          />
+          <SettingsDivider />
+          <SettingsLinkRow
+            icon={<Scale color={colors.harborBlue} size={20} strokeWidth={1.75} />}
             onPress={() => void openLegal("/impressum")}
             title="Impressum"
           />
@@ -225,6 +291,24 @@ export default function EinstellungenScreen() {
               </Text>
             </View>
           </View>
+          <SettingsDivider />
+          <SettingsLinkRow
+            description="Als JSON-Datei, ohne Originaldateien"
+            disabled={exportBusy}
+            icon={
+              exportBusy ? (
+                <ActivityIndicator color={colors.harborBlue} size="small" />
+              ) : (
+                <Download
+                  color={colors.harborBlue}
+                  size={20}
+                  strokeWidth={1.75}
+                />
+              )
+            }
+            onPress={() => void handleDataExport()}
+            title={exportBusy ? "Daten werden vorbereitet …" : "Meine Daten exportieren"}
+          />
           <SettingsDivider />
           <SettingsLinkRow
             icon={<LogOut color={colors.mistDark} size={20} strokeWidth={1.75} />}
@@ -448,10 +532,14 @@ function SettingsToggleRow({
 }
 
 function SettingsLinkRow({
+  description,
+  disabled = false,
   icon,
   onPress,
   title,
 }: {
+  description?: string;
+  disabled?: boolean;
   icon: ReactNode;
   onPress: () => void;
   title: string;
@@ -459,12 +547,18 @@ function SettingsLinkRow({
   return (
     <SpringPressable
       accessibilityLabel={title}
+      disabled={disabled}
       onPress={onPress}
-      style={styles.row}
+      style={[styles.row, disabled && styles.rowDisabled]}
     >
       <View style={styles.rowIcon}>{icon}</View>
       <View style={styles.rowText}>
         <Text style={[typography.title, styles.rowTitle]}>{title}</Text>
+        {description ? (
+          <Text style={[typography.timestamp, styles.rowDescription]}>
+            {description}
+          </Text>
+        ) : null}
       </View>
       <ChevronRight color={colors.mist} size={18} strokeWidth={2} />
     </SpringPressable>

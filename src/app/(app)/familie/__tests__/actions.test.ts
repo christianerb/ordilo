@@ -236,26 +236,40 @@ function mockSupabase(options: {
 function mockAdmin(options: {
   documentPaths?: (string | null)[];
   avatarPaths?: (string | null)[];
+  documentLookupError?: unknown;
+  avatarLookupError?: unknown;
+  removeDocumentsError?: unknown;
+  removeAvatarsError?: unknown;
   deleteError?: unknown;
   deleteUserError?: unknown;
   membershipDeleteError?: unknown;
 }) {
-  const removeDocuments = vi.fn().mockResolvedValue({ data: null, error: null });
-  const removeAvatars = vi.fn().mockResolvedValue({ data: null, error: null });
+  const removeDocuments = vi.fn().mockResolvedValue({
+    data: null,
+    error: options.removeDocumentsError ?? null,
+  });
+  const removeAvatars = vi.fn().mockResolvedValue({
+    data: null,
+    error: options.removeAvatarsError ?? null,
+  });
   const deleteUser = vi
     .fn()
     .mockResolvedValue({ data: null, error: options.deleteUserError ?? null });
 
   const documentsSelectChain = {
-    eq: vi.fn().mockResolvedValue({
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockResolvedValue({
       data: (options.documentPaths ?? []).map((file_url) => ({ file_url })),
-      error: null,
+      error: options.documentLookupError ?? null,
     }),
   };
   const membersSelectChain = {
-    eq: vi.fn().mockResolvedValue({
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockResolvedValue({
       data: (options.avatarPaths ?? []).map((photo_url) => ({ photo_url })),
-      error: null,
+      error: options.avatarLookupError ?? null,
     }),
   };
   const familiesDeleteChain = {
@@ -1054,16 +1068,19 @@ describe("deleteFamilyAccount", () => {
     }
   });
 
-  it("returns a friendly error when the user has no family membership", async () => {
+  it("finishes deleting an account whose family was already removed", async () => {
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockSupabase({ family: null }),
     );
+    const adminMock = mockAdmin({});
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
 
     const result = await deleteFamilyAccount("Familie Müller");
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error).toBe(FRIENDLY_ERROR);
-    }
+    expect(result.success).toBe(true);
+    expect(adminMock.deleteUser).toHaveBeenCalledWith("user-1");
+    expect(adminMock.familiesDeleteEq).not.toHaveBeenCalled();
   });
 
   it("deletes an invited member's account without deleting the shared family", async () => {
@@ -1086,8 +1103,38 @@ describe("deleteFamilyAccount", () => {
 
     expect(result.success).toBe(true);
     expect(adminMock.familiesDeleteEq).not.toHaveBeenCalled();
-    expect(adminMock.membershipsDeleteEq).toHaveBeenCalledWith("family_id", "shared-fam");
-    expect(adminMock.membershipsDeleteEq).toHaveBeenCalledWith("user_id", "user-1");
+    // Auth deletion cascades memberships. Removing membership first could
+    // strand the user if the auth deletion then failed.
+    expect(adminMock.membershipsDeleteEq).not.toHaveBeenCalled();
+    expect(adminMock.deleteUser).toHaveBeenCalledWith("user-1");
+  });
+
+  it("keeps an invited member's membership and reports failure when auth deletion fails", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: null,
+        membershipFamily: {
+          id: "shared-fam",
+          name: "Familie Müller",
+          onboarding_completed_at: "2026-08-01T00:00:00Z",
+        },
+      }),
+    );
+    const adminMock = mockAdmin({
+      deleteUserError: new Error("auth error"),
+    });
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+
+    expect(result).toEqual({
+      success: false,
+      error:
+        "Dein Konto konnte noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+    });
+    expect(adminMock.membershipsDeleteEq).not.toHaveBeenCalled();
     expect(adminMock.deleteUser).toHaveBeenCalledWith("user-1");
   });
 
@@ -1158,7 +1205,53 @@ describe("deleteFamilyAccount", () => {
     expect(adminMock.deleteUser).not.toHaveBeenCalled();
   });
 
-  it("still succeeds when the auth user delete fails (data already erased)", async () => {
+  it("keeps the family and auth user when private Storage cleanup fails", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: { id: "fam-1", name: "Familie Müller", created_by: "user-1" },
+      }),
+    );
+    const adminMock = mockAdmin({
+      documentPaths: ["fam-1/doc1.pdf"],
+      removeDocumentsError: new Error("storage error"),
+    });
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+
+    expect(result).toEqual({
+      success: false,
+      error:
+        "Deine Daten konnten noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+    });
+    expect(adminMock.familiesDeleteEq).not.toHaveBeenCalled();
+    expect(adminMock.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("does not delete rows when Storage paths cannot be read completely", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: { id: "fam-1", name: "Familie Müller", created_by: "user-1" },
+      }),
+    );
+    const adminMock = mockAdmin({
+      documentLookupError: new Error("lookup error"),
+    });
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+
+    expect(result).toEqual({ success: false, error: FRIENDLY_ERROR });
+    expect(adminMock.removeDocuments).not.toHaveBeenCalled();
+    expect(adminMock.familiesDeleteEq).not.toHaveBeenCalled();
+    expect(adminMock.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("reports failure when the owner auth user delete fails", async () => {
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockSupabase({
         family: { id: "fam-1", name: "Familie Müller", created_by: "user-1" },
@@ -1170,6 +1263,12 @@ describe("deleteFamilyAccount", () => {
     );
 
     const result = await deleteFamilyAccount("Familie Müller");
-    expect(result.success).toBe(true);
+    expect(result).toEqual({
+      success: false,
+      error:
+        "Dein Konto konnte noch nicht vollständig gelöscht werden. Bitte versuche es erneut.",
+    });
+    expect(adminMock.familiesDeleteEq).toHaveBeenCalledWith("id", "fam-1");
+    expect(adminMock.deleteUser).toHaveBeenCalledWith("user-1");
   });
 });

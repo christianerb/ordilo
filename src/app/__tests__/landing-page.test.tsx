@@ -52,6 +52,24 @@ describe("LandingPage", () => {
     expect(screen.getByText(/Wer kann meine Dokumente lesen/)).toBeDefined();
   });
 
+  it("shows transparent beta pricing without offering an unavailable purchase", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText("Ordilo Gratis")).toBeDefined();
+    expect(screen.getByText("Familie Plus")).toBeDefined();
+    expect(screen.getAllByText("7,99 €").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/79 € im Jahr/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Nach der Beta")).toBeDefined();
+    expect(screen.getByText(/Noch nicht buchbar/)).toBeDefined();
+    expect(
+      screen.queryByRole("link", { name: /Plus buchen/i }),
+    ).toBeNull();
+
+    const cta = screen.getByTestId("landing-cta-pricing");
+    expect(cta.textContent).toContain("Kostenlos starten");
+    expect(cta.getAttribute("href")).toBe("/login");
+  });
+
   it("names the persona who carries the paperwork", () => {
     render(<LandingPage />);
     expect(

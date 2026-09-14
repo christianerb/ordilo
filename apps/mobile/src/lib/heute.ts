@@ -33,6 +33,7 @@ export interface HeuteMember {
   name: string;
   role: string | null;
   avatarColor: string | null;
+  linkedUserId?: string | null;
 }
 
 export interface HeuteDocument {
@@ -191,7 +192,7 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
   ] = await Promise.all([
     supabase
       .from("family_members")
-      .select("id, name, role, avatar_color")
+      .select("id, name, role, avatar_color, linked_user_id")
       .eq("family_id", familyId)
       .order("created_at", { ascending: true }),
     supabase
@@ -332,6 +333,7 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
     name: member.name,
     role: member.role,
     avatarColor: member.avatar_color,
+    linkedUserId: member.linked_user_id,
   }));
 
   const documentIds = [

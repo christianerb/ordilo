@@ -1,0 +1,6 @@
+appId: com.ordilo.app
+---
+- assertVisible: "Beispiel schließen"
+- tapOn: "Beispiel schließen"
+- tapOn: "Ohne eigenen Brief ausprobieren"
+- assertVisible: "Vorbereitetes Beispiel. Es wird nichts gespeichert."

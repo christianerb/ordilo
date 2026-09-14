@@ -47,6 +47,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
@@ -119,6 +120,8 @@ type Icon = typeof Tag;
 export default function DocumentReviewScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale > 1.3;
   const { family } = useFamily();
   const { session } = useSession();
   const { id, source } = useLocalSearchParams<{
@@ -935,10 +938,21 @@ export default function DocumentReviewScreen() {
       </ScrollView>
 
       {!editing ? (
-        <View style={[styles.bottomBar, { paddingBottom: Math.max(spacing.sm, insets.bottom) }]}>
+        <View
+          style={[
+            styles.bottomBar,
+            largeText && styles.bottomBarLargeText,
+            { paddingBottom: Math.max(spacing.sm, insets.bottom) },
+          ]}
+        >
           {editable ? (
             <>
-              <View style={styles.bottomSecondary}>
+              <View
+                style={[
+                  styles.bottomSecondary,
+                  largeText && styles.bottomActionLargeText,
+                ]}
+              >
                 <OrdiloButton
                   icon={<Pencil color={colors.graphite} size={17} strokeWidth={2} />}
                   onPress={() => setEditing(true)}
@@ -947,7 +961,12 @@ export default function DocumentReviewScreen() {
                   variant="outline"
                 />
               </View>
-              <View style={styles.bottomPrimary}>
+              <View
+                style={[
+                  styles.bottomPrimary,
+                  largeText && styles.bottomActionLargeText,
+                ]}
+              >
                 <OrdiloButton
                   disabled={saving}
                   icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={19} strokeWidth={2.4} />}
@@ -959,7 +978,12 @@ export default function DocumentReviewScreen() {
             </>
           ) : (
             <>
-              <View style={styles.bottomSecondary}>
+              <View
+                style={[
+                  styles.bottomSecondary,
+                  largeText && styles.bottomActionLargeText,
+                ]}
+              >
                 <OrdiloButton
                   disabled={loadingEditor}
                   icon={<Pencil color={colors.graphite} size={17} strokeWidth={2} />}
@@ -969,7 +993,12 @@ export default function DocumentReviewScreen() {
                   variant="outline"
                 />
               </View>
-              <View style={styles.bottomPrimary}>
+              <View
+                style={[
+                  styles.bottomPrimary,
+                  largeText && styles.bottomActionLargeText,
+                ]}
+              >
                 <OrdiloButton
                   icon={<OrdiloMark size={20} />}
                   onPress={() => {
@@ -1757,8 +1786,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
+  bottomBarLargeText: {
+    alignItems: "stretch",
+    flexDirection: "column",
+  },
   bottomSecondary: { flex: 1 },
   bottomPrimary: { flex: 1.4 },
+  bottomActionLargeText: { flex: 0 },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.65 },
   card: { gap: spacing.sm },
