@@ -89,6 +89,7 @@ import {
   type ConversationSummary,
 } from "@/src/lib/conversations";
 import { buildPersonalChatStarters } from "@ordilo/chat-contract";
+import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
 import { getSupabase } from "@/src/lib/supabase";
@@ -129,6 +130,9 @@ type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
 export default function SucheScreen() {
   const router = useRouter();
   const { family } = useFamily();
+  // `isPlus` stays true while the billing rollout flag is off, so the
+  // button only opens the paywall once RevenueCat actually enforces Plus.
+  const { enabled: billingEnabled, isPlus } = useBilling();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -749,6 +753,16 @@ export default function SucheScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       void AccessibilityInfo.announceForAccessibility(message);
     },
+    onPremiumRequired: (message) => {
+      // While the rollout flag is off the paywall has no offering to sell;
+      // show the server's message instead of an unusable screen.
+      if (!billingEnabled) {
+        setVoiceError(message);
+        void AccessibilityInfo.announceForAccessibility(message);
+        return;
+      }
+      router.push("/paywall");
+    },
   });
   const liveActive = live.status !== "idle";
 
@@ -1047,6 +1061,10 @@ export default function SucheScreen() {
                     onChange={setInput}
                     onLiveStart={() => {
                       setVoiceError(null);
+                      if (!isPlus) {
+                        router.push("/paywall");
+                        return;
+                      }
                       void live.start();
                     }}
                     onSend={() => void send(input)}

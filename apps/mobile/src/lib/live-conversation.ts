@@ -25,6 +25,7 @@ interface LiveSessionResponse {
   max_duration_ms?: number;
   model?: string;
   error?: string;
+  code?: string;
 }
 
 interface LiveServerEvent {
@@ -69,10 +70,16 @@ export function useNativeLiveConversation({
   familyId,
   onTurn,
   onError,
+  onPremiumRequired,
 }: {
   familyId: string;
   onTurn: (transcript: string) => Promise<string | null>;
   onError: (message: string) => void;
+  // The server refused the session with 402 PREMIUM_REQUIRED: the family
+  // has no active Plus entitlement. The screen receives the server's
+  // German message and decides: paywall when billing is rolled out, plain
+  // error while it is not. Without a handler this falls back to onError.
+  onPremiumRequired?: (message: string) => void;
 }) {
   const [status, setStatus] = useState<LiveConversationStatus>("idle");
   const [lastTranscript, setLastTranscript] = useState("");
@@ -105,10 +112,12 @@ export function useNativeLiveConversation({
   >(null);
   const onTurnRef = useRef(onTurn);
   const onErrorRef = useRef(onError);
+  const onPremiumRequiredRef = useRef(onPremiumRequired);
   useEffect(() => {
     onTurnRef.current = onTurn;
     onErrorRef.current = onError;
-  }, [onError, onTurn]);
+    onPremiumRequiredRef.current = onPremiumRequired;
+  }, [onError, onPremiumRequired, onTurn]);
 
   const cleanup = useCallback(() => {
     const operationId = operationIdRef.current;
@@ -418,6 +427,19 @@ export function useNativeLiveConversation({
         !session.session_id ||
         session.model !== "gpt-live-1"
       ) {
+        if (response.status === 402 && session?.code === "PREMIUM_REQUIRED") {
+          cleanup();
+          const message =
+            session?.error ??
+            "Mit Ordilo sprechen ist in Premium enthalten.";
+          const handler = onPremiumRequiredRef.current;
+          if (handler) {
+            handler(message);
+          } else {
+            fail(message);
+          }
+          return;
+        }
         fail(
           session?.error ?? "Live mit Ordilo konnte nicht gestartet werden.",
         );
