@@ -10,6 +10,7 @@ import {
   EyeOff,
   FileCheck,
   FileText,
+  Gem,
   LogOut,
   Mail,
   Scale,
@@ -43,6 +44,7 @@ import {
 } from "@/src/lib/account";
 import { getApiUrl } from "@/src/lib/api";
 import { useAppLock } from "@/src/lib/app-lock";
+import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
 import { haptics } from "@/src/lib/haptics";
 import {
@@ -69,6 +71,7 @@ export default function EinstellungenScreen() {
   const router = useRouter();
   const { session, signOut } = useSession();
   const { family } = useFamily();
+  const { enabled: billingEnabled, isPlus, managementUrl } = useBilling();
   const {
     settings,
     biometry,
@@ -182,6 +185,25 @@ export default function EinstellungenScreen() {
     }
   }
 
+  async function openSubscription() {
+    if (!isPlus) {
+      router.push("/paywall");
+      return;
+    }
+    if (!managementUrl) {
+      Alert.alert(
+        "Abo verwalten",
+        "Öffne die Abo-Einstellungen in deinem App Store.",
+      );
+      return;
+    }
+    try {
+      await Linking.openURL(managementUrl);
+    } catch {
+      haptics.warning();
+    }
+  }
+
   async function handleDataExport() {
     if (exportBusy) return;
     setExportBusy(true);
@@ -227,6 +249,20 @@ export default function EinstellungenScreen() {
       >
         <OrdiloButton title="Meine Offline-Kopien" variant="outline" onPress={() => router.push("/offline")} />
         <OrdiloButton title="Ordilo mit Beispiel ausprobieren" variant="ghost" onPress={() => router.push("/beispiel")} />
+        {billingEnabled ? (
+          <SettingsSection title="Ordilo Plus">
+            <SettingsLinkRow
+              description={
+                isPlus
+                  ? "Für eure ganze Familie aktiv"
+                  : "Live-Sprache und alle Plus-Funktionen"
+              }
+              icon={<Gem color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+              onPress={() => void openSubscription()}
+              title={isPlus ? "Abo verwalten" : "Ordilo Plus ansehen"}
+            />
+          </SettingsSection>
+        ) : null}
         <SettingsSection title="Sicherheit">
           <SettingsToggleRow
             description={

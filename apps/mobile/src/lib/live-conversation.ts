@@ -25,6 +25,7 @@ interface LiveSessionResponse {
   max_duration_ms?: number;
   model?: string;
   error?: string;
+  code?: string;
 }
 
 interface LiveServerEvent {
@@ -69,10 +70,15 @@ export function useNativeLiveConversation({
   familyId,
   onTurn,
   onError,
+  onPremiumRequired,
 }: {
   familyId: string;
   onTurn: (transcript: string) => Promise<string | null>;
   onError: (message: string) => void;
+  // The server refused the session with 402 PREMIUM_REQUIRED: the family
+  // has no active Plus entitlement. The screen should open the paywall
+  // instead of showing a generic failure.
+  onPremiumRequired?: () => void;
 }) {
   const [status, setStatus] = useState<LiveConversationStatus>("idle");
   const [lastTranscript, setLastTranscript] = useState("");
@@ -105,10 +111,12 @@ export function useNativeLiveConversation({
   >(null);
   const onTurnRef = useRef(onTurn);
   const onErrorRef = useRef(onError);
+  const onPremiumRequiredRef = useRef(onPremiumRequired);
   useEffect(() => {
     onTurnRef.current = onTurn;
     onErrorRef.current = onError;
-  }, [onError, onTurn]);
+    onPremiumRequiredRef.current = onPremiumRequired;
+  }, [onError, onPremiumRequired, onTurn]);
 
   const cleanup = useCallback(() => {
     const operationId = operationIdRef.current;
@@ -418,6 +426,11 @@ export function useNativeLiveConversation({
         !session.session_id ||
         session.model !== "gpt-live-1"
       ) {
+        if (response.status === 402 && session?.code === "PREMIUM_REQUIRED") {
+          cleanup();
+          onPremiumRequiredRef.current?.();
+          return;
+        }
         fail(
           session?.error ?? "Live mit Ordilo konnte nicht gestartet werden.",
         );
