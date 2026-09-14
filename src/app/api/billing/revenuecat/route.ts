@@ -24,7 +24,16 @@ async function existingFamilyIds(candidates: string[]): Promise<string[]> {
   );
   if (ids.length === 0) return [];
   const client = createAdminClient();
-  const { data } = await client.from("families").select("id").in("id", ids);
+  const { data, error } = await client
+    .from("families")
+    .select("id")
+    .in("id", ids);
+  // A transient lookup error must not be mistaken for "no matching
+  // families": recording the event and returning 200 would acknowledge it
+  // without ever syncing the entitlement.
+  if (error) {
+    throw new Error(`Could not resolve webhook families: ${error.code}`);
+  }
   return data?.map(({ id }) => id) ?? [];
 }
 
@@ -50,13 +59,23 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Ungültiges Ereignis." }, { status: 400 });
   }
   const event = parsed.data.event;
-  const familyIds = await existingFamilyIds([
-    event.app_user_id ?? "",
-    event.original_app_user_id ?? "",
-    ...(event.aliases ?? []),
-    ...(event.transferred_from ?? []),
-    ...(event.transferred_to ?? []),
-  ]);
+  let familyIds: string[];
+  try {
+    familyIds = await existingFamilyIds([
+      event.app_user_id ?? "",
+      event.original_app_user_id ?? "",
+      ...(event.aliases ?? []),
+      ...(event.transferred_from ?? []),
+      ...(event.transferred_to ?? []),
+    ]);
+  } catch {
+    // 503 before recording: RevenueCat retries, and the retry finds no
+    // ledger entry yet, so the event is processed once the lookup works.
+    return Response.json(
+      { error: "Familien konnten nicht aufgelöst werden." },
+      { status: 503 },
+    );
+  }
   const familyId = familyIds[0] ?? null;
 
   await recordBillingEvent({

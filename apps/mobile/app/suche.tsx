@@ -130,9 +130,9 @@ type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
 export default function SucheScreen() {
   const router = useRouter();
   const { family } = useFamily();
-  // True while the billing rollout flag is off, so the button only opens
-  // the paywall once RevenueCat actually enforces Plus.
-  const { isPlus } = useBilling();
+  // `isPlus` stays true while the billing rollout flag is off, so the
+  // button only opens the paywall once RevenueCat actually enforces Plus.
+  const { enabled: billingEnabled, isPlus } = useBilling();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -753,7 +753,14 @@ export default function SucheScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       void AccessibilityInfo.announceForAccessibility(message);
     },
-    onPremiumRequired: () => {
+    onPremiumRequired: (message) => {
+      // While the rollout flag is off the paywall has no offering to sell;
+      // show the server's message instead of an unusable screen.
+      if (!billingEnabled) {
+        setVoiceError(message);
+        void AccessibilityInfo.announceForAccessibility(message);
+        return;
+      }
       router.push("/paywall");
     },
   });

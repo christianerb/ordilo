@@ -67,6 +67,19 @@ export function hasPlusEntitlement(customerInfo: CustomerInfo | null): boolean {
   );
 }
 
+/**
+ * Tell the server to re-sync exactly the family that is the RevenueCat
+ * app user ID — an unordered membership pick could otherwise update a
+ * different family than the one that just purchased.
+ */
+async function syncServerForFamily(familyId: string): Promise<void> {
+  await apiFetch("/api/billing/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ family_id: familyId }),
+  });
+}
+
 function isCancelledPurchase(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -136,7 +149,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
           entitlement.data?.plan === "founding";
         if (!dbIsPlus && hasPlusEntitlement(customerInfo)) {
           try {
-            await apiFetch("/api/billing/sync", { method: "POST" });
+            await syncServerForFamily(targetFamilyId);
             dbIsPlus = true;
           } catch {
             // RevenueCat remains visible in the paywall, but server-backed
@@ -203,7 +216,9 @@ export function BillingProvider({ children }: { children: ReactNode }) {
   }, [apiKey, enabled, familyId, load]);
 
   const syncServer = useCallback(async () => {
-    await apiFetch("/api/billing/sync", { method: "POST" });
+    const familyId = activeFamilyRef.current;
+    if (!familyId) throw new Error("Keine aktive Familie.");
+    await syncServerForFamily(familyId);
   }, []);
 
   const purchase = useCallback(
