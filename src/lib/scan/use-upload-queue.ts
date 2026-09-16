@@ -8,6 +8,7 @@ import {
   type DragEvent,
   type RefObject,
 } from "react";
+import { useAiConsent } from "@/lib/ai/consent-context";
 import { triggerOcr } from "@/lib/ocr";
 import { validateFile } from "@/lib/schemas/document";
 import { uploadFile } from "@/lib/upload";
@@ -42,6 +43,7 @@ export function useUploadQueue({
 }) {
   const [uploads, setUploads] = useState<UploadState[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const { ensureAiConsent } = useAiConsent();
   // Mirrored so handleRetry can find the failed upload WITHOUT reading
   // state inside the setUploads updater (see handleRetry below).
   const uploadsRef = useRef(uploads);
@@ -57,6 +59,17 @@ export function useUploadQueue({
       onUploadError?: (message: string, retryable?: boolean) => void,
       stableUploadKey?: string,
     ) => {
+      // Apple 5.1.2(i): the file goes to Datalab (OCR) and OpenAI
+      // (analysis) — collect the explicit consent before the upload.
+      // A dismissed drawer leaves the upload retryable; granting later
+      // re-runs this exact path.
+      if (!(await ensureAiConsent())) {
+        onUploadError?.(
+          "Ordilo braucht deine Zustimmung zur KI-Verarbeitung. Tippe auf Wiederholen, sobald du zugestimmt hast.",
+          true,
+        );
+        return;
+      }
       const fid = familyIdRef.current ?? await ensureFamilyId();
       if (!fid) {
         // Returning silently left the caller (and the wizard) waiting
@@ -191,6 +204,7 @@ export function useUploadQueue({
       }
     },
     [
+      ensureAiConsent,
       ensureFamilyId,
       familyIdRef,
       fetchDocumentsRef,

@@ -5,6 +5,7 @@ import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { inboundAliasCandidates } from "@/lib/family-inbound-email";
 import { importInboundEmailAttachments } from "@/lib/inbound-email-import";
 import { recordInboundEmailInsights } from "@/lib/inbound-email-insights";
+import { hasAiDataSharingConsent } from "@/lib/ai/consent";
 import { runPendingJobs } from "@/lib/jobs";
 import {
   deliverInboundEmailNotifications,
@@ -106,13 +107,22 @@ export async function POST(request: Request): Promise<Response> {
       // ask the family twice. This stays inside the webhook response: an
       // OpenAI, Resend, or database failure must return 500 so Resend can
       // retry the message, rather than being lost in a detached callback.
-      await recordInboundEmailInsights({
-        ownerId: family.created_by,
-        emailId: event.data.email_id,
-        familyId: alias.family_id,
-        resend,
-        admin,
-      });
+      //
+      // Only with the owner's explicit consent for third-party AI
+      // processing (Apple 5.1.2(i)) — the email text goes to OpenAI.
+      if (await hasAiDataSharingConsent(family.created_by, admin)) {
+        await recordInboundEmailInsights({
+          ownerId: family.created_by,
+          emailId: event.data.email_id,
+          familyId: alias.family_id,
+          resend,
+          admin,
+        });
+      } else {
+        console.warn(
+          "[email/inbound] Keine KI-Einwilligung — E-Mail wird ohne KI-Auswertung verwahrt.",
+        );
+      }
     }
 
     return Response.json({ ok: true, imported: imported.importedDocumentIds.length });

@@ -22,6 +22,9 @@ vi.mock("@/lib/jobs", () => ({
 vi.mock("next/server", () => ({
   after: vi.fn(),
 }));
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
 
 import { POST } from "@/app/api/documents/notes/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";

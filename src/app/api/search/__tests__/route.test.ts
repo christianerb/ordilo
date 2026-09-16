@@ -24,6 +24,10 @@ vi.mock("@/lib/ai/embeddings", () => ({
   },
 }));
 
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
+
 import { POST } from "@/app/api/search/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { generateQueryEmbedding } from "@/lib/ai/embeddings";

@@ -8,6 +8,7 @@ import {
   recordLiveConversationStarted,
 } from "@/lib/analytics/api-usage";
 import { requireUser } from "@/lib/auth/require-user";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import {
   releaseMonthlyUsage,
   reserveMonthlyUsage,
@@ -49,6 +50,11 @@ async function handleLiveSession(request: Request): Promise<Response> {
   const auth = await requireUser();
   if (auth.status) return Response.json(auth.json, { status: auth.status });
   attributeUsageUser(auth.user.id);
+
+  // Explicit consent for third-party AI processing (Apple 5.1.2(i)): the
+  // live session streams the microphone to OpenAI in real time.
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) return consentRefusal;
 
   const parsed = requestSchema.safeParse(
     await request.json().catch(() => null),

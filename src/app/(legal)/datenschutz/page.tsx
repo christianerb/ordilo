@@ -20,13 +20,8 @@ function Section({
 }
 
 /**
- * Datenschutzerklärung — complete: real controller (Erb Invest UG,
- * Hamburg) and processing that matches the actual product architecture:
- * Supabase (EU) for auth, database and storage, OpenAI for document
- * analysis, Datalab for OCR, Resend for transactional email, Vercel for
- * hosting, Sentry for error diagnostics (incl. session replay on
- * errors), no ads, no tracking. Keep this page in sync when processors
- * change.
+ * Product processing notice. Provider contracts, retention settings and
+ * transfer grounds still require legal verification before release.
  */
 export default function DatenschutzPage() {
   return (
@@ -69,8 +64,8 @@ export default function DatenschutzPage() {
             Klartext.
           </li>
           <li>
-            <strong>Spracheingaben:</strong> Wenn du „Live mit Ordilo“
-            startest, wird dein Mikrofonsignal während des Gesprächs an
+            <strong>Spracheingaben:</strong> Wenn du eine Frage diktust
+            oder „Live mit Ordilo“ startest, wird dein Mikrofonsignal an
             OpenAI übertragen. Ordilo speichert die Audiodaten nicht. Die
             erkannten Fragen und Antworten werden wie andere
             Chat-Nachrichten im Familienverlauf gespeichert.
@@ -80,6 +75,14 @@ export default function DatenschutzPage() {
             sowie inhaltsfreie Ereignisse wie Upload, Suche, Chat-Frage,
             Aufgabe oder Kalendertermin. Wir speichern dabei keine
             Dokumentinhalte, Dateinamen, Suchbegriffe oder Chat-Nachrichten.
+          </li>
+          <li>
+            <strong>Käufe und Abos:</strong> Wenn die Abo-Funktion aktiviert
+            ist, nutzen wir die technische Kennung deines Familienbereichs,
+            Produkt- und Transaktionskennungen sowie Kauf-, Verlängerungs-,
+            Ablauf- und Erstattungsinformationen, um Ordilo Plus zuzuordnen.
+            Zahlungsdaten wie deine Kreditkartennummer erhält Ordilo bei
+            einem App-Store-Kauf nicht.
           </li>
           <li>
             <strong>Fehlerdiagnose:</strong> bei technischen Fehlern
@@ -99,6 +102,10 @@ export default function DatenschutzPage() {
           <li>
             Beantwortung gesprochener Fragen und Audioausgabe während eines
             von dir gestarteten Live-Gesprächs.
+          </li>
+          <li>
+            Zuordnung und Prüfung von Abos, Wiederherstellung von Käufen und
+            Freischaltung von Plus für den gemeinsamen Familienbereich.
           </li>
           <li>
             Erinnerungs-E-Mails zu Fristen aus deinen bestätigten Aufgaben
@@ -136,7 +143,7 @@ export default function DatenschutzPage() {
         </ul>
       </Section>
 
-      <Section title="5. Auftragsverarbeiter">
+      <Section title="5. Dienstleister und Empfänger">
         <p>Wir setzen folgende Dienstleister ein:</p>
         <ul className="list-disc space-y-1 pl-5">
           <li>
@@ -163,11 +170,26 @@ export default function DatenschutzPage() {
             <strong>Vercel</strong> (Hosting der Anwendung).
           </li>
           <li>
+            <strong>RevenueCat</strong> (Abo-Verwaltung) — erhält bei
+            aktivierter Abo-Funktion die technische Familienkennung als
+            Kundenkennung sowie Kauf- und Abostatusdaten. Das SDK
+            verarbeitet außerdem technische App- und Gerätedaten für die
+            Kaufabwicklung. Ordilo übermittelt an RevenueCat keine
+            Dokumenttexte, Chat-Inhalte oder Familiennamen.
+          </li>
+          <li>
+            <strong>Apple</strong> (App Store und In-App-Käufe) — wickelt
+            Zahlung, Verlängerung und Erstattung über deinen Apple-Account
+            ab. Für diese Verarbeitung gelten auch Apples
+            Datenschutzinformationen.
+          </li>
+          <li>
             <strong>Sentry</strong> (Fehlerdiagnose) — bei technischen
             Fehlern werden Gerät, Browser und der Fehlerkontext
             übermittelt. Bei einem Fehler kann zudem eine Aufzeichnung der
-            Sitzung angelegt werden, in der Texte und Bilder maskiert
-            werden.
+            Web-Sitzung angelegt werden, in der Texte und Bilder maskiert
+            werden. Die native iPhone-App nutzt Fehlerdiagnose und
+            Performance-Messung, aber keine Sitzungsaufzeichnung.
           </li>
         </ul>
         <p className="text-muted-foreground">
@@ -179,10 +201,34 @@ export default function DatenschutzPage() {
         </p>
       </Section>
 
-      <Section title="6. Übermittlung in Drittländer">
+      <Section title="6. Deine Einwilligung zur KI-Verarbeitung">
+        <p>
+          Bevor Ordilo Inhalte zum ersten Mal an OpenAI oder Datalab
+          überträgt, fragen wir dich ausdrücklich. Erst wenn du zustimmst,
+          werden Dokumente zur Analyse und Texterkennung sowie deine Fragen
+          und Spracheingaben an diese Dienste gesendet.
+        </p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            Du kannst deine Entscheidung jederzeit in den Einstellungen
+            ändern oder widerrufen — mit Wirkung für die Zukunft.
+          </li>
+          <li>
+            Ohne Zustimmung bleiben Scannen, Fragen und Spracheingabe aus.
+            Alles andere — Ablage, Aufgaben, Termine, Familie —
+            funktioniert weiter.
+          </li>
+          <li>
+            Deine Entscheidung speichern wir mit Zeitpunkt, damit die
+            Einwilligung nachweisbar bleibt.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="7. Übermittlung in Drittländer">
         <p>
           Einige unserer Dienstleister sitzen in den USA (OpenAI, Datalab,
-          Resend, Vercel, Sentry). Dabei können personenbezogene Daten in die
+          Resend, Vercel, Sentry, RevenueCat). Dabei können personenbezogene Daten in die
           USA übermittelt werden. Welche Übermittlungsgrundlage im Einzelfall
           gilt — etwa ein Angemessenheitsbeschluss einschließlich EU-US Data
           Privacy Framework oder Standardvertragsklauseln — hängt vom
@@ -192,16 +238,16 @@ export default function DatenschutzPage() {
         </p>
       </Section>
 
-      <Section title="7. Rechtsgrundlagen">
+      <Section title="8. Rechtsgrundlagen">
         <p>
           Vertragserfüllung (Art. 6 Abs. 1 lit. b DSGVO) für den Betrieb
           des Dienstes; berechtigtes Interesse (lit. f) für Sicherheit und
-          Missbrauchsvermeidung; Einwilligung (lit. a), wo wir sie gesondert
-          einholen.
+          Missbrauchsvermeidung; Einwilligung (lit. a) für die Übertragung
+          von Inhalten an die KI-Dienste (siehe Abschnitt 6).
         </p>
       </Section>
 
-      <Section title="8. Cookies">
+      <Section title="9. Cookies">
         <p>
           Ordilo verwendet ausschließlich technisch notwendige Cookies für
           die Anmeldung (Session). Keine Analyse-, Marketing- oder
@@ -209,7 +255,7 @@ export default function DatenschutzPage() {
         </p>
       </Section>
 
-      <Section title="9. Speicherdauer und Löschung">
+      <Section title="10. Speicherdauer und Löschung">
         <p>
           Deine Inhalte bleiben gespeichert, solange dein Konto besteht.
           Gelöschte Dokumente werden endgültig entfernt. Bei Löschung des
@@ -222,9 +268,16 @@ export default function DatenschutzPage() {
           Fehlversuche beim zusätzlichen Admin-Zugang werden nur kurz
           für den Schutz vor Missbrauch gespeichert.
         </p>
+        <p>
+          Kauf- und Abodaten verarbeiten wir, soweit dies für die Abwicklung,
+          Wiederherstellung und gesetzliche Aufbewahrung nötig ist. Eine
+          Kontolöschung bei Ordilo beendet kein Apple-Abo und löscht nicht
+          automatisch die von Apple in eigener Verantwortung geführten
+          Kaufbelege.
+        </p>
       </Section>
 
-      <Section title="10. Deine Rechte">
+      <Section title="11. Deine Rechte">
         <p>
           Du hast das Recht auf Auskunft, Berichtigung, Löschung,
           Einschränkung der Verarbeitung, Datenübertragbarkeit und

@@ -52,6 +52,12 @@ const BillingContext = createContext<BillingContextValue>({
 });
 
 function platformApiKey(): string | null {
+  if (
+    Platform.OS === "web" &&
+    process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY === "preview"
+  ) {
+    return process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY || null;
+  }
   if (Platform.OS === "ios") {
     return process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY || null;
   }

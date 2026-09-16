@@ -1,7 +1,7 @@
 # RevenueCat-Rollout für Ordilo Plus
 
-Stand: 2026-09-14  
-Status: Produktion vorbereiten, noch nicht aktivieren
+Stand: 2026-09-16
+Status: Integration auf `main`, Sandbox-Abnahme und Aktivierung offen
 
 ## Produktentscheidung
 
@@ -119,7 +119,9 @@ BILLING_ENTITLEMENTS_ENABLED=
 
 Der Secret API Key und das Webhook Signing Secret sind Server-Secrets. Sie
 dürfen nie in `apps/mobile`, in eine `EXPO_PUBLIC_`-Variable oder in Git.
-Einen in Chat, Ticket oder Log geteilten Key vor Verwendung rotieren.
+Der Secret API Key, das am 15.09.2026 neu rotierte Webhook Signing Secret und
+`REVENUECAT_ENTITLEMENT_ID=plus` sind in Preview und Production hinterlegt.
+Ein in Chat, Ticket oder Log geteiltes Secret vor Verwendung erneut rotieren.
 
 ## Webhook
 
@@ -174,10 +176,15 @@ decken den Entitlement-Status bereits ab.
   keinen zweiten Download.
 - Apple-Server-Notification-URL eintragen (siehe Webhook-Abschnitt; Apple
   meldete zuletzt einen temporären Fehler).
-- Nutzungsbedingungen rechtlich auf kostenpflichtige, automatisch
-  verlängerbare Abos aktualisieren. Die aktuelle Prelaunch-Fassung sagt noch,
-  dass es kein kostenpflichtiges Abo gibt.
-- Store-Metadaten, Datenschutzangaben und Review Notes ergänzen.
+- Nutzungsbedingungen und Datenschutzerklärung enthalten jetzt Ordilo Plus,
+  Preise, Laufzeit, automatische Verlängerung, Kündigung, Wiederherstellen,
+  getrennte Kontolöschung sowie RevenueCat/Apple. Rechtliche Prüfung bleibt
+  vor Veröffentlichung erforderlich.
+- Store-Metadaten, Datenschutzangaben und Review Notes ergänzen. Die
+  Review Notes nennen dabei auch den einmaligen KI-Einwilligungsdialog
+  (Richtlinie 5.1.2(i)), der vor dem ersten Scan, der ersten Frage und
+  der ersten Spracheingabe erscheint und in den Einstellungen widerrufbar
+  ist.
 - Einen echten Kauf, Restore, Kündigung, Ablauf und Familienwechsel auf iOS
   testen.
 - Android erst aktivieren, wenn das Play-Produkt ebenfalls vollständig

@@ -10,7 +10,14 @@ vi.mock("@/lib/pipeline/analyze-step", async (importOriginal) => {
   return { ...actual, performAnalyzeStep: vi.fn() };
 });
 
+// The worker skips a job when the uploader has no recorded AI consent;
+// tests in this file run with consent granted.
+vi.mock("@/lib/ai/consent", () => ({
+  hasAiDataSharingConsent: vi.fn(async () => true),
+}));
+
 import { runPendingJobs } from "@/lib/jobs";
+import { hasAiDataSharingConsent } from "@/lib/ai/consent";
 import {
   performAnalyzeStep,
   PipelineStepError,
@@ -68,6 +75,7 @@ function mockWorkerClient(docStatus: string) {
                   status: docStatus,
                   ocr_text: "74 031 832 353",
                   category: null,
+                  uploaded_by: "user-1",
                 },
                 error: null,
               }),
@@ -166,5 +174,21 @@ describe("analyze job failure handling", () => {
 
     expect(summary.failed).toBe(1);
     expect(documentUpdates.at(-1)).toMatchObject({ status: "failed" });
+  });
+
+  it("skips the job untouched when the uploader has no AI consent", async () => {
+    // Apple 5.1.2(i): without the uploader's explicit consent no content
+    // leaves for OpenAI — not even from the background worker. The job is
+    // skipped without a status transition so the user can grant consent
+    // and retry from the app.
+    vi.mocked(hasAiDataSharingConsent).mockResolvedValueOnce(false);
+    const { client, documentUpdates } = mockWorkerClient("ocr_done");
+
+    const summary = await runPendingJobs(client, 1);
+
+    expect(summary.failed).toBe(0);
+    expect(summary.results[0]?.outcome).toBe("skipped");
+    expect(performAnalyzeStep).not.toHaveBeenCalled();
+    expect(documentUpdates.some((u) => u.status === "analyzing")).toBe(false);
   });
 });

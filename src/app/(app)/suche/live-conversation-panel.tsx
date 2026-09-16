@@ -3,6 +3,7 @@
 import { AudioLines, Crown, PhoneOff } from "lucide-react";
 
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
+import { useAiConsent } from "@/lib/ai/consent-context";
 import { useChangeEffect } from "@/lib/hooks/use-change-effect";
 import { useLiveConversation } from "@/lib/realtime/use-live-conversation";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ export function LiveConversationPanel({
   disabled?: boolean;
 }) {
   const live = useLiveConversation({ familyId, onTurn, onError });
+  const { ensureAiConsent } = useAiConsent();
   const active = live.status !== "idle";
   useChangeEffect(() => {
     onActiveChange?.(active);
@@ -68,8 +70,13 @@ export function LiveConversationPanel({
         <button
           type="button"
           onClick={() => {
-            onActiveChange?.(true);
-            void live.start();
+            // Live streams speech to OpenAI in real time (Apple 5.1.2(i))
+            // — the consent drawer comes before the session starts.
+            void (async () => {
+              if (!(await ensureAiConsent())) return;
+              onActiveChange?.(true);
+              void live.start();
+            })();
           }}
           disabled={disabled}
           className={cn(

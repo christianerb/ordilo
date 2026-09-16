@@ -18,6 +18,7 @@ if (process.env.ORDILO_PREVIEW === "1") {
     "@dariyd/react-native-document-scanner": path.join(__dirname, "preview/stubs/document-scanner.ts"),
     "@react-native-community/datetimepicker": path.join(__dirname, "preview/stubs/datetimepicker.tsx"),
     "expo-audio": path.join(__dirname, "preview/stubs/expo-audio.ts"),
+    "react-native-purchases": path.join(__dirname, "preview/stubs/purchases.ts"),
   };
   const fakeSupabase = path.join(__dirname, "preview/fake-supabase.ts");
   const realSupabase = path.join(__dirname, "src/lib/supabase.ts");

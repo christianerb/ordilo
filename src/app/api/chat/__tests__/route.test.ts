@@ -20,6 +20,11 @@ vi.mock("@/lib/billing/quota", () => ({
   releaseMonthlyUsage: vi.fn(),
 }));
 
+// Third-party AI consent: granted by default; refusal tests override it.
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
+
 import { POST, GET } from "@/app/api/chat/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { streamAgenticAnswer, ChatError } from "@/lib/ai/chat";

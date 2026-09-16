@@ -11,6 +11,7 @@ import { DOCUMENT_TYPES } from "@/lib/schemas/extraction";
 import type { Database } from "@/types/database";
 import { jsonError, methodNotAllowed } from "@/lib/api/respond";
 import { encryptSecret } from "@/lib/secrets";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import {
   buildStoragePath,
   readFileHeaderBytes,
@@ -117,6 +118,11 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: auth.status });
   }
   const user = auth.user;
+
+  // 1b. Explicit consent for third-party AI processing (Apple 5.1.2(i)).
+  //     A saved note is enriched by OpenAI (analysis + embeddings).
+  const consentRefusal = await refuseWithoutAiConsent(user.id);
+  if (consentRefusal) return consentRefusal;
 
   // 2. Parse multipart form data ------------------------------------------
   let formData: FormData;

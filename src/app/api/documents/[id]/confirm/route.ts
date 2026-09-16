@@ -7,6 +7,7 @@ import {
   markDocumentFailed,
 } from "@/lib/supabase/document-helpers";
 import { EmbeddingError } from "@/lib/ai/embeddings";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import {
   buildDocumentEmbeddings,
   buildLabelEmbeddings,
@@ -125,6 +126,11 @@ export async function POST(
     const body: ConfirmErrorResponse = auth.json;
     return Response.json(body, { status: auth.status });
   }
+
+  // 1b. Explicit consent for third-party AI processing (Apple 5.1.2(i)):
+  //     confirming embeds the document content via OpenAI.
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) return consentRefusal;
 
   // 2. Parse document ID from the route params -----------------------------
   const { id: documentId } = await params;

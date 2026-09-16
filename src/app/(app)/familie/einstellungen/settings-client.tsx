@@ -9,11 +9,13 @@ import {
   CalendarDays,
   Loader2,
   Check,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAiConsent } from "@/lib/ai/consent-context";
 import { CalendarFeedCard } from "@/components/ordilo/calendar-feed-card";
 import { ErrorState } from "@/components/ordilo/error-state";
 import { formatGermanDate } from "@/lib/format";
@@ -56,6 +58,7 @@ export function FamilySettingsClient({
   fetchError = false,
 }: FamilySettingsClientProps) {
   const router = useRouter();
+  const { status: aiConsent, reviewAiConsent } = useAiConsent();
 
   const [name, setName] = useState(familyName);
   const [savedName, setSavedName] = useState(familyName);
@@ -248,6 +251,45 @@ export function FamilySettingsClient({
 
       {/* Calendar subscription (ICS feed) */}
       {familyId && <CalendarFeedCard familyId={familyId} />}
+
+      {/* AI consent (Apple 5.1.2(i)) — review or withdraw the decision. */}
+      <div className="space-y-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm"
+            style={{ backgroundColor: "var(--secondary)" }}
+            aria-hidden="true"
+          >
+            <ShieldCheck
+              className="size-4"
+              style={{ color: "var(--petrol)" }}
+              strokeWidth={1.5}
+            />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-foreground">
+              KI-Verarbeitung
+            </h2>
+            <p className="text-sm text-muted-foreground" data-testid="ai-consent-status">
+              {aiConsent === "granted"
+                ? "Zugestimmt — OpenAI und Datalab dürfen Inhalte für Ordilo verarbeiten."
+                : aiConsent === "declined"
+                  ? "Abgelehnt — Scannen, Fragen und Sprache pausieren."
+                  : "Noch nicht entschieden."}
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          onClick={reviewAiConsent}
+          className="h-12 rounded-ordilo-md"
+          data-testid="ai-consent-review"
+        >
+          Entscheidung ansehen und ändern
+        </Button>
+      </div>
 
       {/* Danger zone — delete family & account (DSGVO right to erasure) */}
       <div className="space-y-3 rounded-ordilo-md border border-destructive/40 bg-card p-4 shadow-card">

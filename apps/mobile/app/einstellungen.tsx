@@ -15,6 +15,7 @@ import {
   Mail,
   Scale,
   ScanFace,
+  ShieldCheck,
   Trash2,
   Users,
 } from "lucide-react-native";
@@ -43,8 +44,10 @@ import {
   shareAccountDataExport,
 } from "@/src/lib/account";
 import { getApiUrl } from "@/src/lib/api";
+import { useAiConsent } from "@/src/lib/ai-consent-context";
 import { useAppLock } from "@/src/lib/app-lock";
 import { useBilling } from "@/src/lib/billing";
+import { ACCOUNT_DELETION_SUBSCRIPTION_NOTICE } from "@/src/lib/subscription-disclosure";
 import { useFamily } from "@/src/lib/family-context";
 import { haptics } from "@/src/lib/haptics";
 import {
@@ -72,6 +75,7 @@ export default function EinstellungenScreen() {
   const { session, signOut } = useSession();
   const { family } = useFamily();
   const { enabled: billingEnabled, isPlus, managementUrl } = useBilling();
+  const { status: aiConsent, reviewAiConsent } = useAiConsent();
   const {
     settings,
     biometry,
@@ -326,6 +330,19 @@ export default function EinstellungenScreen() {
 
         <SettingsSection title="Rechtliches">
           <SettingsLinkRow
+            description={
+              aiConsent === "granted"
+                ? "Zugestimmt — tippe, um die Entscheidung zu ändern"
+                : aiConsent === "declined"
+                  ? "Abgelehnt — Scannen, Fragen und Sprache pausieren"
+                  : "Noch nicht entschieden"
+            }
+            icon={<ShieldCheck color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onPress={reviewAiConsent}
+            title="KI-Verarbeitung"
+          />
+          <SettingsDivider />
+          <SettingsLinkRow
             icon={<FileText color={colors.harborBlue} size={20} strokeWidth={1.75} />}
             onPress={() => void openLegal("/datenschutz")}
             title="Datenschutzerklärung"
@@ -474,6 +491,9 @@ function DeleteZone({
         {isOwner
           ? "Dabei werden alle Dokumente, Aufgaben, Familienmitglieder und dein Konto endgültig gelöscht. Das kann nicht rückgängig gemacht werden."
           : "Dein Konto und dein Zugang werden endgültig gelöscht. Die Dokumente der Familie bleiben bei den anderen."}
+      </Text>
+      <Text style={[typography.timestamp, styles.dangerText]}>
+        {ACCOUNT_DELETION_SUBSCRIPTION_NOTICE}
       </Text>
 
       {confirming ? (

@@ -86,6 +86,35 @@ describe("apiFetch", () => {
     });
   });
 
+  it("carries the machine code from an API error body", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      clone: () => ({
+        json: async () => ({ code: "AI_CONSENT_REQUIRED" }),
+      }),
+    });
+
+    const error = await apiFetch("/api/chat").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(403);
+    expect((error as ApiError).code).toBe("AI_CONSENT_REQUIRED");
+  });
+
+  it("leaves the code undefined when the error body is not JSON", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      clone: () => ({
+        json: async () => Promise.reject(new Error("not json")),
+      }),
+    });
+
+    const error = await apiFetch("/api/me").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBeUndefined();
+  });
+
   it("maps network failures to a friendly ApiError", async () => {
     mockFetch.mockRejectedValue(new TypeError("Network request failed"));
 

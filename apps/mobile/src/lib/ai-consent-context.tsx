@@ -1,0 +1,283 @@
+import * as WebBrowser from "expo-web-browser";
+import { ShieldCheck } from "lucide-react-native";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+
+import {
+  OrdiloFormFooter,
+  OrdiloNestedSheet,
+  OrdiloSheetHeader,
+} from "@/src/components/sheet";
+import { OrdiloButton } from "@/src/components/ui";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { getApiUrl } from "./api";
+import {
+  fetchAiDataSharingStatus,
+  recordAiDataSharingDecision,
+  type AiDataSharingStatus,
+} from "./ai-consent";
+import { useSession } from "./session";
+
+/**
+ * Holds the user's explicit decision about third-party AI processing
+ * (Apple App Review Guideline 5.1.2(i)) and presents the one consent
+ * sheet that collects it.
+ *
+ * Every AI-bound action — scan upload, chat question, dictation, live
+ * conversation — goes through `ensureAiConsent()` first:
+ *
+ *   if (!(await ensureAiConsent())) return;
+ *
+ * With consent on record it resolves immediately. Otherwise the sheet
+ * opens and the promise settles with the user's choice. The server
+ * enforces the same rule, so a refusal here is never the only gate.
+ *
+ * Declining (or dismissing the sheet) changes nothing else: family, plan,
+ * documents and settings keep working — only the AI features wait.
+ */
+
+interface AiConsentContextValue {
+  /** The recorded decision; null while loading or when never asked. */
+  status: AiDataSharingStatus;
+  /** True until the first status lookup for the signed-in user finished. */
+  isLoading: boolean;
+  /**
+   * Resolve true when AI processing may start. Shows the consent sheet
+   * when there is no granted decision yet and settles with the choice.
+   */
+  ensureAiConsent: () => Promise<boolean>;
+  /** Open the sheet from the settings to review or change the decision. */
+  reviewAiConsent: () => void;
+  /** Re-read the decision from the server. */
+  refreshAiConsent: () => Promise<void>;
+}
+
+const AiConsentContext = createContext<AiConsentContextValue>({
+  status: null,
+  isLoading: true,
+  ensureAiConsent: async () => false,
+  reviewAiConsent: () => {},
+  refreshAiConsent: async () => {},
+});
+
+export function AiConsentProvider({ children }: { children: ReactNode }) {
+  const { session } = useSession();
+  const userId = session?.user?.id ?? null;
+  const [status, setStatus] = useState<AiDataSharingStatus>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const resolversRef = useRef<((granted: boolean) => void)[]>([]);
+  const fetchSeqRef = useRef(0);
+
+  const refreshAiConsent = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
+    if (!userId) {
+      setStatus(null);
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const next = await fetchAiDataSharingStatus();
+      if (seq !== fetchSeqRef.current) return;
+      setStatus(next);
+    } catch {
+      // Offline or API down: keep the last known status. The AI routes
+      // enforce consent server-side, so a stale local status never lets
+      // unconsented data out.
+    } finally {
+      if (seq === fetchSeqRef.current) setIsLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    // Deferred to a microtask (the family-context pattern) so the loading
+    // state never updates synchronously inside the effect.
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) void refreshAiConsent();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshAiConsent]);
+
+  const resolveAll = useCallback((granted: boolean) => {
+    const pending = resolversRef.current;
+    resolversRef.current = [];
+    for (const resolve of pending) resolve(granted);
+  }, []);
+
+  const ensureAiConsent = useCallback((): Promise<boolean> => {
+    if (status === "granted") return Promise.resolve(true);
+    const result = new Promise<boolean>((resolve) => {
+      resolversRef.current.push(resolve);
+    });
+    setSaveError(null);
+    setSheetOpen(true);
+    return result;
+  }, [status]);
+
+  const reviewAiConsent = useCallback(() => {
+    setSaveError(null);
+    setSheetOpen(true);
+  }, []);
+
+  const choose = useCallback(
+    async (decision: "granted" | "declined") => {
+      if (saving) return;
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const recorded = await recordAiDataSharingDecision(decision);
+        setStatus(recorded);
+        setSheetOpen(false);
+        resolveAll(recorded === "granted");
+      } catch {
+        // Keep the sheet open: an unrecorded decision must not silently
+        // unlock AI processing.
+        setSaveError(
+          "Deine Einstellung konnte nicht gespeichert werden. Bitte versuch es nochmal.",
+        );
+      } finally {
+        setSaving(false);
+      }
+    },
+    [resolveAll, saving],
+  );
+
+  // Swiping the sheet away is not a decision: nothing is recorded and the
+  // waiting action is cancelled. The next AI action asks again.
+  const dismiss = useCallback(() => {
+    if (saving) return;
+    setSheetOpen(false);
+    resolveAll(false);
+  }, [resolveAll, saving]);
+
+  const openPrivacyPolicy = useCallback(async () => {
+    await WebBrowser.openBrowserAsync(`${getApiUrl()}/datenschutz`);
+  }, []);
+
+  const value = useMemo<AiConsentContextValue>(
+    () => ({
+      status,
+      isLoading,
+      ensureAiConsent,
+      reviewAiConsent,
+      refreshAiConsent,
+    }),
+    [status, isLoading, ensureAiConsent, reviewAiConsent, refreshAiConsent],
+  );
+
+  return (
+    <AiConsentContext.Provider value={value}>
+      {children}
+      <OrdiloNestedSheet
+        closeAccessibilityLabel="Einwilligung schließen"
+        dismissDisabled={saving}
+        onClose={dismiss}
+        visible={sheetOpen}
+      >
+        <View style={styles.content}>
+          <OrdiloSheetHeader title="Bevor Ordilo mitdenkt" />
+          <View style={styles.message}>
+            <View style={styles.iconCircle}>
+              <ShieldCheck color={colors.warmWhite} size={20} strokeWidth={2} />
+            </View>
+            <Text maxFontSizeMultiplier={1.4} style={styles.text}>
+              Ordilo liest deine Dokumente und beantwortet Fragen mit zwei
+              Diensten: OpenAI (Analyse, Antworten, Sprache) und Datalab
+              (Texterkennung). Dafür werden Inhalte an diese Dienste
+              übertragen. Sie dürfen sie nur für Ordilo verarbeiten, nicht
+              für ihr eigenes Training.
+            </Text>
+          </View>
+          <Text maxFontSizeMultiplier={1.4} style={styles.note}>
+            Du kannst deine Entscheidung jederzeit in den Einstellungen
+            ändern. Ohne Zustimmung bleiben Scannen, Fragen und
+            Spracheingabe aus — alles andere funktioniert.
+          </Text>
+          <Pressable
+            accessibilityLabel="Datenschutzerklärung lesen"
+            accessibilityRole="link"
+            hitSlop={8}
+            onPress={() => void openPrivacyPolicy()}
+            style={styles.link}
+          >
+            <Text maxFontSizeMultiplier={1.4} style={styles.linkText}>
+              Datenschutzerklärung lesen
+            </Text>
+          </Pressable>
+          <OrdiloFormFooter
+            error={saveError}
+            primary={
+              <OrdiloButton
+                accessibilityLabel="Der KI-Übertragung zustimmen"
+                disabled={saving}
+                icon={
+                  saving ? (
+                    <ActivityIndicator color={colors.warmWhite} size="small" />
+                  ) : undefined
+                }
+                onPress={() => void choose("granted")}
+                size="lg"
+                title={saving ? "Einen Moment …" : "Zustimmen"}
+              />
+            }
+            secondary={
+              <OrdiloButton
+                accessibilityLabel="Ablehnen"
+                disabled={saving}
+                onPress={() => void choose("declined")}
+                size="lg"
+                title="Ablehnen"
+                variant="outline"
+              />
+            }
+          />
+        </View>
+      </OrdiloNestedSheet>
+    </AiConsentContext.Provider>
+  );
+}
+
+export function useAiConsent(): AiConsentContextValue {
+  return useContext(AiConsentContext);
+}
+
+const styles = StyleSheet.create({
+  content: {
+    gap: spacing.md,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+  },
+  message: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
+  iconCircle: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  text: { color: colors.mistDark, flex: 1, ...typography.body },
+  note: { color: colors.mistDark, ...typography.timestamp },
+  link: { alignSelf: "flex-start" },
+  linkText: {
+    color: colors.harborBlue,
+    fontFamily: typography.title.fontFamily,
+    fontSize: typography.body.fontSize,
+    textDecorationLine: "underline",
+  },
+});

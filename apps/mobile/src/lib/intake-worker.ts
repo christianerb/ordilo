@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import { AI_CONSENT_REQUIRED_CODE } from "./ai-consent";
 import {
   loadPersistedScanQueue, mutateScanQueue, removeStagedScannedDocument,
   resumeScannedDocument, uploadScannedDocument,
@@ -10,6 +11,9 @@ const running = new Map<string, Promise<void>>();
 
 function failureMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    // Consent refusal (Apple 5.1.2(i)) shares the 403 with the family-
+    // access refusal, so the machine code decides which one it is.
+    if (error.code === AI_CONSENT_REQUIRED_CODE) return "Ordilo braucht deine Zustimmung zur KI-Verarbeitung. Du findest sie in den Einstellungen.";
     if (error.status === 413) return `Die Datei ist zu groß. Bitte wähle eine Datei bis ${MAX_SCAN_FILE_SIZE_LABEL}.`;
     if (error.status === 429) return "Das Tageslimit ist erreicht. Bitte versuch es morgen erneut.";
     if (error.status === 401) return "Bitte melde dich erneut an, um den Import fortzusetzen.";

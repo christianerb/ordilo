@@ -344,6 +344,12 @@ export type Database = {
         Update: { accepted_at?: string };
         Relationships: [];
       };
+      user_consents: {
+        Row: { user_id: string; ai_data_sharing: "granted" | "declined"; ai_data_sharing_at: string };
+        Insert: { user_id: string; ai_data_sharing: "granted" | "declined"; ai_data_sharing_at?: string };
+        Update: { ai_data_sharing?: "granted" | "declined"; ai_data_sharing_at?: string };
+        Relationships: [];
+      };
 
       // families -----------------------------------------------------------
       families: {

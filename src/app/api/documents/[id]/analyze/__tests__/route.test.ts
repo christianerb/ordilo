@@ -23,6 +23,9 @@ vi.mock("@/lib/ai/extraction", () => ({
 vi.mock("@/lib/pipeline/embed-step", () => ({
   buildDocumentEmbeddings: vi.fn().mockResolvedValue([]),
 }));
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
 
 import { POST } from "@/app/api/documents/[id]/analyze/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";

@@ -1,4 +1,4 @@
-# Ordilo: App Store und Freemium – Arbeitsstand 08.09.2026
+# Ordilo: App Store und Freemium – Arbeitsstand 16.09.2026
 
 ## Gespeicherte ASO-Optimierung
 
@@ -14,14 +14,21 @@ Titel, Untertitel und Keywords ergänzen sich. Keyword-Auswahl ist eine qualitat
 
 ## Bilder: Qualität vor Anzahl
 
-Aktuell 3 von maximal 10 Screenshots und 0 von maximal 3 App-Vorschauen. Diese Zähler zeigen Medienplätze, keinen Fertigstellungsgrad. Drei Screenshots müssen nicht auf zehn aufgefüllt werden. iPhone 6,9 Zoll ist befüllt; die angebotene Skalierung deckt 6,5 Zoll ab. Die derzeitige native Konfiguration unterstützt keine iPads.
+Aktuell 6 von maximal 10 Screenshots und 0 von maximal 3 App-Vorschauen.
+iPhone 6,9 Zoll ist befüllt; App Store Connect skaliert die Bilder auf die
+weiteren angebotenen iPhone-Größen. Die native Konfiguration unterstützt keine
+iPads.
 
-V2 ist hochgeladen: Scannen → konkrete Alltagsfrage → Antwort mit Fundstelle. Maße 1260 × 2736, RGB ohne Alpha. Vorschau: `app-store-screenshots/v2/preview-v2.png`.
+Hochgeladen ist die vollständige Erzählung:
+Scannen → konkrete Alltagsfrage → Antwort mit Fundstelle → Angaben prüfen →
+Ablage → Familienplan. Maße 1260 × 2736, RGB ohne Alpha. Die exakten
+Store-Dateien liegen unter `app-store-assets/`.
 
 Gestalterisch sind Kontrast, Typografie und die wiedererkennbare Farbwelt schlüssig. Inhaltlich zeigen zwei Bilder den vorbereiteten Beispielbrief. Für einen stärkeren vollständigen Produktbeweis sind als nächste Motive sinnvoll:
 
-4. **Alles wiederfinden. Auch ohne dich.** Echte native Dokumentenablage eines rein synthetischen Familienkontos.
-5. **Nicht alles an dir hängen lassen.** Echte native gemeinsame Aufgaben-/Terminansicht mit synthetischen Daten.
+Die ergänzenden Motive **„Der richtige Brief. Wieder da.“** und
+**„Zusammen dran denken.“** sind bereits vorhanden. Für den Erst-Submit fehlt
+kein weiteres Promo-Bild.
 
 Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto prüfen. Keine privaten Dokumente aus dem vorhandenen Simulator verwenden. Mehr Motive nur mit zusätzlichem Nutzen. Die Testvideos sind nicht automatisch App-Preview-fertig; Format, Länge und tatsächliches App-Footage separat prüfen.
 
@@ -35,21 +42,22 @@ Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto pr�
 | Inhaltsrechte | Noch offen | Tatsächliche Drittinhalte und Nutzungsrechte bestätigen; keine Lizenzbehauptung erfinden |
 | Lizenzvertrag | Apple-Standardvertrag; öffentliche Nutzungsbedingungen ergänzt | Rechtliche Prüfung der Bedingungen; bei einem späteren Abo Preis-, Laufzeit- und Kündigungstexte ergänzen |
 | iOS-Version: Beschreibung, Keywords, Werbetext | Überarbeitet und gespeichert | Nach echtem Gerätetest auf Feature-Parität prüfen |
-| Screenshots | Drei V2-Motive gespeichert | Zwei ergänzende Produktansichten empfehlenswert, nicht Pflicht |
+| Screenshots | Sechs Motive gespeichert; Scan → Frage → Beleg steht zuerst | Kein weiteres Bild für den Erst-Submit nötig; App Preview optional |
 | Support-/Marketing-URL, Copyright | Gespeichert | Eigene Supportseite verbessert Hilfe; Impressum enthält derzeit Kontakt |
 | Datenschutz-URL | Gespeichert | URL ersetzt keine Datenerklärung |
-| App-Datenschutz | Fragebogen unvollständig | Native App, Backend und SDKs auf tatsächliche Datenerhebung, Zuordnung und Zwecke prüfen |
+| App-Datenschutz | Fragebogen unvollständig | Native App, Backend und SDKs auf tatsächliche Datenerhebung, Zuordnung und Zwecke prüfen; Antworten mit der umgesetzten KI-Einwilligung abgleichen |
+| KI-Einwilligung (Richtlinie 5.1.2(i)) | Ausdrückliche Einwilligung vor der ersten Übertragung an OpenAI/Datalab umgesetzt: einmaliger Dialog in App und Web, serverseitig erzwungen (`user_consents`, 403 `AI_CONSENT_REQUIRED`), in den Einstellungen änder- und widerrufbar, Ablehnung sperrt nur KI-Funktionen | Dialog und Widerruf auf dem finalen Build prüfen; in den Review Notes und den App-Privacy-Antworten erwähnen |
 | Öffentliche Datenschutzerklärung | Einmalcode und Passwort beschrieben; vorläufiges Launch-Versprechen entfernt | Verträge, Rollen der Dienstleister und Drittland-Grundlagen pro Anbieter rechtlich und anhand der Vertragsunterlagen prüfen |
 | Datenexport | Authentifizierter JSON-Export über mobile Einstellungen umgesetzt | Auf Release-Backend und echtem Gerät prüfen; Originaldateien werden bewusst einzeln geteilt und sind nicht im JSON |
 | Kontolöschung | Fehler bei Auth-Löschung wird nicht mehr als Erfolg gemeldet; eingeladene Konten verlieren ihre Mitgliedschaft erst mit erfolgreicher Auth-Löschung | Owner-, Einladungs- und Fehlerfall mit Wegwerfkonten auf dem Release-Backend prüfen |
 | Build | App- und Paketversion auf 1.0.0 gesetzt; CI baut den Produktions-iOS-Bundle | Frischen EAS-Produktionsbuild erstellen, in TestFlight installieren und für Version 1.0 auswählen |
 | Fehlerdiagnose | Native Sentry-Integration vorbereitet; ohne DSN vollständig deaktiviert, Standard-PII aus | EAS-Secrets (`EXPO_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`) setzen, frischen Native-Build erstellen und einen synthetischen Testfehler prüfen |
-| App-Prüfung | Login/Kontakt im Store-Versionsformular leer | Beständigen synthetischen Review-Zugang und Kontakt hinterlegen; genaue Testschritte ergänzen |
-| TestFlight-Testinformationen | Benutzername vorhanden, Passwortfeld leer; Kontakttelefon/-mail leer | Zugang im aktuellen Build prüfen und Angaben vervollständigen |
+| App-Prüfung | Kontakt vorhanden; bestehender TestFlight-Review-Zugang in iOS 1.0 übernommen | Sichern und Review Notes aktualisieren; erst nach finalem Build absenden |
+| TestFlight-Testinformationen | Beständiger Review-Zugang und Kontakt vorhanden; Anmeldung am 16.09.2026 geprüft | Zugang mit finalem TestFlight-Build erneut prüfen |
 | Preise und Verfügbarkeit | Entwurf | Kostenloser Download als Freemium-Hypothese; Startländer bewusst wählen |
 | Geschäftliches / Händlerstatus | Noch offen | Unternehmenseigenschaft und erforderliche Kontaktdaten verifizieren; Händlerstatus ist unabhängig vom Preismodell |
 | Pläne und Kontingente | Migration `0081_family_entitlements.sql` ist im verknüpften Projekt angewendet; serverseitige Entitlements und atomare Monatskontingente für Dokumente und KI-Antworten sind umgesetzt, die Durchsetzung bleibt standardmäßig aus | Vor einem Bezahlstart Bestandsfamilien bewusst zuordnen und den vollständigen Kauflebenszyklus umsetzen; erst dann `BILLING_ENTITLEMENTS_ENABLED=1` setzen |
-| In-App-Käufe / Abonnements | Provider-neutrales Backend-Fundament vorhanden; noch keine StoreKit-/RevenueCat-Integration oder Paywall | Produkte, Kauf, Wiederherstellen, Webhook-Synchronisierung, Ablauf, Grace Period und Refunds implementieren und in der Sandbox prüfen |
+| In-App-Käufe / Abonnements | RevenueCat, Paywall, Wiederherstellen, Webhook und Entitlement-Sync sind auf `main`; Store-Produkte sind vorbereitet | Sandbox-Kauf, Wiederherstellung, Kündigung, Ablauf, Refund, Retry und Familienwechsel auf finalem Build prüfen; Produkte der Version zuordnen |
 | Verschlüsselung | Release-Prüfpunkt | Tatsächliche Nutzung und Build-Deklaration abgleichen; keine pauschale Ausnahme behaupten |
 | Mac / Vision-Verfügbarkeit | Zusätzliche Plattformen wurden angeboten | Für ersten Launch bewusst festlegen und gegebenenfalls gesondert testen |
 | Veröffentlichung | Aktuell automatische Veröffentlichung ausgewählt | Vor Einreichung für kontrollierten Prelaunch auf manuelle Freigabe umstellen |
@@ -59,7 +67,15 @@ Keine Einreichung, Preisänderung oder Veröffentlichung wurde vorgenommen.
 
 ## Testzugang und nachweisbare Abnahme
 
-Ein bestehender lokaler synthetischer Account wurde gefunden. Seine Anmeldung am konfigurierten Backend wurde erfolgreich geprüft, einschließlich erwarteter Benutzer-/Familienzuordnung und Zugriff auf 15 Dokumente. Zugangsdaten bleiben außerhalb des Repositories. Lokaler Fundort: `/tmp/ordilo-chat-acceptance-state.json` (temporär, nicht dauerhaft gesichert); Erzeugungsskript: `scripts/chat-acceptance-fixture.ts`. Dieses Skript nicht blind erneut ausführen: Es erzeugt Testdaten.
+Der beständige TestFlight-Review-Account wurde am 16.09.2026 erneut per
+Passwort gegen das aktuelle Backend angemeldet; die Produktions-API akzeptierte
+die Session. Seine Zugangsdaten bleiben außerhalb des Repositories und sind in
+TestFlight gespeichert. Sie wurden in die App-Review-Felder für iOS 1.0
+übernommen. Die frühere lokale Datei
+`/tmp/ordilo-chat-acceptance-state.json` ist aktuell nicht vorhanden und war
+nicht die dauerhafte Ablage dieses Zugangs. Das Erzeugungsskript
+`scripts/chat-acceptance-fixture.ts` nicht blind erneut ausführen: Es erzeugt
+ein anderes Wegwerfkonto und echte Testdaten.
 
 Das ist keine TestFlight-Abnahme. Live-Befund in TestFlight:
 
@@ -94,6 +110,11 @@ Ein einzelner Marktanker: fileee bietet derzeit 10 Dokumente monatlich kostenlos
 
 Der Code enthält weiterhin tägliche Schutzlimits von jeweils 50 für Chat-Nachrichten, Uploads und Sprachtranskription. Die im verknüpften Projekt angewendete Migration `0081_family_entitlements.sql` stellt daneben die Pläne `free`, `founding` und `plus`, Trial-/Abo-Zustände, server-only Billing-Ereignisse und atomare UTC-Monatskontingente bereit. Chat und Upload verwenden stabile Operationsschlüssel; Wiederholungen werden nicht doppelt gezählt, fehlgeschlagene Verarbeitung gibt die Reservierung zurück. Die Durchsetzung bleibt bis zur bewussten Aktivierung mit `BILLING_ENTITLEMENTS_ENABLED=1` aus.
 
-Vor Bezahlstart fehlen noch In-App-Purchase-Produkte, verifizierte Provider-Webhooks, Wiederherstellen, Refund-/Ablauf-/Grace-Period-Behandlung, Sandbox-Tests und eine verständliche Paywall. Für digitale Funktionen in der App die geltenden Apple-IAP-Vorgaben berücksichtigen. [Apple Review Guidelines](https://developer.apple.com/app-store/review/guidelines/), [Abonnements](https://developer.apple.com/app-store/subscriptions/).
+Store-Produkte, RevenueCat-Offering und -Entitlement, HMAC-Webhook,
+Wiederherstellen und die Paywall sind implementiert. Vor Bezahlstart fehlen die
+Sandbox-Nachweise für Kauf, Wiederherstellung, Kündigung, Refund, Ablauf,
+Grace Period, Retry und Familienwechsel. Erst danach beide Billing-Schalter
+aktivieren und einen neuen Produktionsbuild erstellen. Für digitale Funktionen
+gelten die Apple-IAP-Vorgaben. [Apple Review Guidelines](https://developer.apple.com/app-store/review/guidelines/), [Abonnements](https://developer.apple.com/app-store/subscriptions/).
 
 Händlerstatus ist eine separate Compliance-Angabe, kein „Paid-only“-Modell. Ihn anhand des tatsächlichen Unternehmensstatus beantworten, unabhängig davon, ob der Download gratis ist. [Apple: EU-Händlerstatus](https://developer.apple.com/help/app-store-connect/manage-compliance-information/manage-eu-digital-services-act-compliance-information).

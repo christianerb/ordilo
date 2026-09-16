@@ -220,7 +220,7 @@ describe("SucheClient — Empty State", () => {
     ).toBeDefined();
   });
 
-  it("starts the paid Live mode from the conversation header", () => {
+  it("starts the paid Live mode from the conversation header", async () => {
     mockStartLive.mockImplementationOnce(() => {
       mockLiveStatus = "connecting";
     });
@@ -228,7 +228,8 @@ describe("SucheClient — Empty State", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Live mit Ordilo sprechen" }),
     );
-    expect(mockStartLive).toHaveBeenCalledOnce();
+    // The consent gate (Apple 5.1.2(i)) resolves before the session starts.
+    await waitFor(() => expect(mockStartLive).toHaveBeenCalledOnce());
     expect(composerBusy).toBe(true);
   });
 

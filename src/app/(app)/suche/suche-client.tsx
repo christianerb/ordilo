@@ -9,6 +9,7 @@ import {
 import { useRouter } from "next/navigation";
 import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown, RefreshCw, Reply, X } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { useAiConsent } from "@/lib/ai/consent-context";
 import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import {
@@ -136,6 +137,7 @@ export function SucheClient({
   // reports the streaming state through setBusy, so it must be in scope
   // before that callback is defined.
   const { setActiveHandler, setBusy } = useActiveSearch();
+  const { ensureAiConsent } = useAiConsent();
 
   const [isLoading, setIsLoading] = useState(false);
   const [liveActive, setLiveActive] = useState(false);
@@ -400,6 +402,9 @@ export function SucheClient({
       retryOperationId?: string,
     ) => {
       if (!query.trim() || isLoading) return null;
+      // Apple 5.1.2(i): the question and its document context go to
+      // OpenAI — collect the explicit consent before the turn exists.
+      if (!(await ensureAiConsent())) return null;
 
       setError(false);
       setRateLimitError(null);
@@ -741,7 +746,7 @@ export function SucheClient({
         setBusy(liveActive);
       }
     },
-    [familyId, isLoading, liveActive, activeConversationId, conversations, setBusy, quotedMessage],
+    [familyId, isLoading, liveActive, activeConversationId, conversations, setBusy, quotedMessage, ensureAiConsent],
   );
 
   // -------------------------------------------------------------------------

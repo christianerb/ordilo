@@ -32,8 +32,13 @@ vi.mock("@/lib/ai/voice-rate-limit", () => ({
     mocks.reserveVoiceTranscription(...args),
 }));
 
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
+
 import { POST } from "@/app/api/realtime/transcribe/route";
 import { getM4aDurationMillis } from "@/lib/audio-duration";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 
 const fetchMock = vi.fn();
 
@@ -217,6 +222,23 @@ describe("POST /api/realtime/transcribe", () => {
 
     expect(response.status).toBe(401);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses the transcription without explicit AI consent (Apple 5.1.2(i))", async () => {
+    vi.mocked(refuseWithoutAiConsent).mockResolvedValueOnce(
+      Response.json(
+        { error: "Einwilligung fehlt.", code: "AI_CONSENT_REQUIRED" },
+        { status: 403 },
+      ),
+    );
+
+    const response = await POST(recordingRequest());
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).code).toBe("AI_CONSENT_REQUIRED");
+    // Nothing reaches OpenAI, and no voice allowance is consumed.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.reserveVoiceTranscription).not.toHaveBeenCalled();
   });
 
   it("rejects recordings outside the allowed family", async () => {

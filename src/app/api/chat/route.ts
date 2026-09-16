@@ -33,6 +33,7 @@ import {
   type ChatMessageRow,
 } from "@/lib/ai/chat-history";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import { redactSecretsForStorage } from "@/lib/ai/pii-redact";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 import {
@@ -89,6 +90,11 @@ async function handleChat(request: Request): Promise<Response> {
   }
   const user = auth.user;
   attributeUsageUser(user.id);
+
+  // 1b. Explicit consent for third-party AI processing (Apple 5.1.2(i)).
+  //     Everything below streams user content to OpenAI.
+  const consentRefusal = await refuseWithoutAiConsent(user.id);
+  if (consentRefusal) return consentRefusal;
 
   // 2. Parse & validate (Zod: non-empty message capped at
   //    MAX_CHAT_MESSAGE_LENGTH, UUID family_id, optional history and

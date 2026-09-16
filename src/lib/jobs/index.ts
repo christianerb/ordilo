@@ -7,6 +7,7 @@ import {
 } from "@/lib/pipeline/analyze-step";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
+import { hasAiDataSharingConsent } from "@/lib/ai/consent";
 import {
   OCR_ALLOWED_SOURCE_STATUSES,
   ANALYZE_ALLOWED_SOURCE_STATUSES,
@@ -264,6 +265,29 @@ async function executeJob(
 ): Promise<"done" | "skipped"> {
   if (!job.document_id) {
     throw new Error("Job hat keine document_id.");
+  }
+
+  // Apple 5.1.2(i): every job type transmits document content to a
+  // third-party AI (Datalab OCR, OpenAI extraction/embeddings), so the
+  // uploader's explicit consent is required even in the background.
+  // Skipping — not failing — keeps the document in its pre-pipeline
+  // status: the user can grant consent in the app and retry from there.
+  const { data: uploaderRow, error: uploaderError } = await adminClient
+    .from("documents")
+    .select("uploaded_by")
+    .eq("id", job.document_id)
+    .maybeSingle();
+  if (uploaderError) {
+    throw new Error("Dokument konnte nicht geladen werden.");
+  }
+  if (
+    !uploaderRow?.uploaded_by ||
+    !(await hasAiDataSharingConsent(uploaderRow.uploaded_by, adminClient))
+  ) {
+    console.warn(
+      `[jobs] Skipping ${job.job_type} job ${job.id}: uploader has not consented to third-party AI processing.`,
+    );
+    return "skipped";
   }
 
   switch (job.job_type) {

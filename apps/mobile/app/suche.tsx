@@ -89,6 +89,7 @@ import {
   type ConversationSummary,
 } from "@/src/lib/conversations";
 import { buildPersonalChatStarters } from "@ordilo/chat-contract";
+import { useAiConsent } from "@/src/lib/ai-consent-context";
 import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
@@ -133,6 +134,7 @@ export default function SucheScreen() {
   // `isPlus` stays true while the billing rollout flag is off, so the
   // button only opens the paywall once RevenueCat actually enforces Plus.
   const { enabled: billingEnabled, isPlus } = useBilling();
+  const { ensureAiConsent } = useAiConsent();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -493,6 +495,9 @@ export default function SucheScreen() {
     async (question: string) => {
       const trimmed = question.trim();
       if (!trimmed || busy || !family) return null;
+      // Apple 5.1.2(i): the question and its document context go to
+      // OpenAI — collect the explicit consent before the turn exists.
+      if (!(await ensureAiConsent())) return null;
 
       const userMessage: ChatMessage = {
         id: nextId("user"),
@@ -516,7 +521,7 @@ export default function SucheScreen() {
       setInput("");
       return runStream(trimmed, assistantMessage, history);
     },
-    [busy, createAssistantMessage, family, messages, nextId, runStream],
+    [busy, createAssistantMessage, ensureAiConsent, family, messages, nextId, runStream],
   );
 
   /**
@@ -525,7 +530,7 @@ export default function SucheScreen() {
    * in the UI or send the same question twice in the history.
    */
   const retry = useCallback(
-    (failedMessageId: string) => {
+    async (failedMessageId: string) => {
       if (busy || !family) return;
       const index = messages.findIndex((message) => message.id === failedMessageId);
       if (index < 0) return;
@@ -533,6 +538,8 @@ export default function SucheScreen() {
         .reverse()
         .find((message) => message.role === "user");
       if (!userMessage) return;
+      // Retrying sends the question to OpenAI again — consent first.
+      if (!(await ensureAiConsent())) return;
 
       const history = buildChatHistory(
         messages.filter(
@@ -555,7 +562,7 @@ export default function SucheScreen() {
         operationId,
       );
     },
-    [busy, createAssistantMessage, family, messages, runStream],
+    [busy, createAssistantMessage, ensureAiConsent, family, messages, runStream],
   );
 
   const confirmAction = useCallback(
@@ -685,6 +692,8 @@ export default function SucheScreen() {
       comment: string,
     ) => {
       if (busy || !message.dbId) return;
+      // A repair re-sends the question to OpenAI — consent first.
+      if (!(await ensureAiConsent())) return;
       const targetIndex = messages.findIndex(
         (candidate) => candidate.id === message.id,
       );
@@ -718,7 +727,7 @@ export default function SucheScreen() {
         originalMessage,
       });
     },
-    [busy, createAssistantMessage, messages, runStream],
+    [busy, createAssistantMessage, ensureAiConsent, messages, runStream],
   );
 
   const startNewChat = useCallback(() => {
@@ -891,6 +900,9 @@ export default function SucheScreen() {
   const startVoice = useCallback(async () => {
     if (busy || voiceStatusRef.current !== "idle") return;
     setVoiceError(null);
+    // Apple 5.1.2(i): the recording is transcribed by OpenAI — collect
+    // consent before the microphone is even asked for.
+    if (!(await ensureAiConsent())) return;
     voiceIntent.current = true;
     voiceStatusRef.current = "starting";
     setVoiceStatus("starting");
@@ -922,7 +934,7 @@ export default function SucheScreen() {
       setVoiceError("Die Aufnahme konnte nicht gestartet werden.");
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [busy, discardVoiceRecording, recorder, resetVoiceUi]);
+  }, [busy, discardVoiceRecording, ensureAiConsent, recorder, resetVoiceUi]);
 
   useEffect(() => {
     if (
@@ -1061,11 +1073,16 @@ export default function SucheScreen() {
                     onChange={setInput}
                     onLiveStart={() => {
                       setVoiceError(null);
-                      if (!isPlus) {
-                        router.push("/paywall");
-                        return;
-                      }
-                      void live.start();
+                      // Live streams speech to OpenAI in real time — the
+                      // consent sheet comes before the paywall.
+                      void (async () => {
+                        if (!(await ensureAiConsent())) return;
+                        if (!isPlus) {
+                          router.push("/paywall");
+                          return;
+                        }
+                        void live.start();
+                      })();
                     }}
                     onSend={() => void send(input)}
                     onStop={() => chatAbortRef.current?.abort()}

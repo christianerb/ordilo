@@ -24,6 +24,7 @@ import { useReducedMotion } from "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
+import { AiConsentProvider } from "@/src/lib/ai-consent-context";
 import { AppLockProvider } from "@/src/lib/app-lock";
 import { BillingProvider } from "@/src/lib/billing";
 import { SessionProvider, useSession } from "@/src/lib/session";
@@ -101,12 +102,14 @@ function RootLayout() {
         <SafeAreaProvider>
           <SessionProvider>
             <FamilyProvider>
-              <BillingProvider>
-                <AppLockProvider>
-                  <StatusBar style="dark" />
-                  <RootLayoutNav />
-                </AppLockProvider>
-              </BillingProvider>
+              <AiConsentProvider>
+                <BillingProvider>
+                  <AppLockProvider>
+                    <StatusBar style="dark" />
+                    <RootLayoutNav />
+                  </AppLockProvider>
+                </BillingProvider>
+              </AiConsentProvider>
             </FamilyProvider>
           </SessionProvider>
         </SafeAreaProvider>
