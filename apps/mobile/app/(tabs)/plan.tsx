@@ -1165,25 +1165,21 @@ export default function PlanScreen() {
                   <View style={styles.taskSectionBody}>
                     {shown.map((entry) => (
                       <PlanRow
+                        acceptBusy={acceptBusy}
+                        accepted={accepted}
                         entry={entry}
-                        handoff={
-                          entry.kind === "task" ? (
-                            <TaskHandoff
-                              acceptBusy={acceptBusy}
-                              accepted={accepted}
-                              members={members}
-                              onAccept={() => void acceptHandoff(entry.task)}
-                              ownMemberIds={ownMemberIds}
-                              task={entry.task}
-                            />
-                          ) : null
-                        }
                         key={planEntryKey(entry)}
                         members={members}
+                        onAcceptHandoff={
+                          entry.kind === "task"
+                            ? () => void acceptHandoff(entry.task)
+                            : undefined
+                        }
                         onAssign={setAssignTask}
                         onOpen={openDetail}
                         onReschedule={setRescheduleTask}
                         onToggle={(item) => void toggleDone(item)}
+                        ownMemberIds={ownMemberIds}
                         todayStr={todayStr}
                       />
                     ))}
@@ -1662,35 +1658,44 @@ function CalendarView({
  * the two views feel like one product instead of two lists.
  */
 function PlanRow({
+  acceptBusy,
+  accepted,
   entry,
-  handoff,
   members,
+  onAcceptHandoff,
   onAssign,
   onOpen,
   onReschedule,
   onToggle,
+  ownMemberIds,
   showDay = true,
   todayStr,
 }: {
+  acceptBusy?: string | null;
+  accepted?: TaskAcceptance[];
   entry: PlanEntry;
-  handoff?: ReactNode;
   members: FamilyMemberOption[];
+  onAcceptHandoff?: () => void;
   onAssign: (task: PlannerTask) => void;
   onOpen: (entry: PlanEntry) => void;
   onReschedule?: (task: PlannerTask) => void;
   onToggle: (task: PlannerTask) => void;
+  ownMemberIds?: string[];
   showDay?: boolean;
   todayStr: string;
 }) {
   if (entry.kind === "task") {
     return (
       <SwipeableTaskRow
-        handoff={handoff}
+        acceptBusy={acceptBusy}
+        accepted={accepted}
         members={members}
+        onAcceptHandoff={onAcceptHandoff}
         onAssign={() => onAssign(entry.task)}
         onPress={() => onOpen(entry)}
         onReschedule={() => onReschedule?.(entry.task)}
         onToggle={() => onToggle(entry.task)}
+        ownMemberIds={ownMemberIds}
         rescheduleEnabled={Boolean(onReschedule)}
         showDay={showDay}
         task={entry.task}
@@ -1772,52 +1777,6 @@ function EventRow({
 }
 
 /**
- * "Christian hat übernommen" plus the one-tap handover — only shown for
- * an open task that is assigned to somebody in this household.
- */
-function TaskHandoff({
-  acceptBusy,
-  accepted,
-  members,
-  onAccept,
-  ownMemberIds,
-  task,
-}: {
-  acceptBusy: string | null;
-  accepted: TaskAcceptance[];
-  members: FamilyMemberOption[];
-  onAccept: () => void;
-  ownMemberIds: string[];
-  task: PlannerTask;
-}) {
-  if (task.status !== "open" || !task.assigned_to) return null;
-  const assignedTo = task.assigned_to;
-  const acceptedBy = accepted.find((entry) => entry.task_id === task.id)?.member_id;
-  const canAccept =
-    ownMemberIds.includes(assignedTo) && acceptedBy !== assignedTo;
-
-  return (
-    <View>
-      <Text style={styles.handoffLabel}>
-        {taskHandoffLabel(
-          assignedTo,
-          acceptedBy,
-          members.find((member) => member.id === assignedTo)?.name,
-        )}
-      </Text>
-      {canAccept ? (
-        <OrdiloButton
-          disabled={acceptBusy !== null}
-          onPress={onAccept}
-          title={acceptBusy === task.id ? "Wird übernommen …" : "Ich übernehme das"}
-          variant="outline"
-        />
-      ) : null}
-    </View>
-  );
-}
-
-/**
  * A task row with the two named gestures from the web's planner
  * contract: swipe right completes (Harbor Blue panel, "Erledigt" —
  * "Wieder offen" on a finished row), swipe left opens the "Wann?"
@@ -1827,23 +1786,29 @@ function TaskHandoff({
  * appear from the first dragged pixel so the gesture teaches itself.
  */
 function SwipeableTaskRow({
-  handoff,
+  acceptBusy,
+  accepted,
   members,
+  onAcceptHandoff,
   onAssign,
   onPress,
   onReschedule,
   onToggle,
+  ownMemberIds,
   rescheduleEnabled = true,
   showDay = true,
   task,
   todayStr,
 }: {
-  handoff?: ReactNode;
+  acceptBusy?: string | null;
+  accepted?: TaskAcceptance[];
   members: FamilyMemberOption[];
+  onAcceptHandoff?: () => void;
   onAssign: () => void;
   onPress: () => void;
   onReschedule: () => void;
   onToggle: () => void;
+  ownMemberIds?: string[];
   /** Honest Panel Rule: no "Wann?" promise where nothing handles it. */
   rescheduleEnabled?: boolean;
   /** The calendar day list already names the day, so the row omits it. */
@@ -1911,16 +1876,19 @@ function SwipeableTaskRow({
         rightThreshold={40}
       >
         <TaskRow
+          acceptBusy={acceptBusy}
+          accepted={accepted}
           members={members}
+          onAcceptHandoff={onAcceptHandoff}
           onAssign={onAssign}
           onPress={onPress}
           onToggle={onToggle}
+          ownMemberIds={ownMemberIds}
           showDay={showDay}
           task={task}
           todayStr={todayStr}
         />
       </ReanimatedSwipeable>
-      {handoff}
     </Animated.View>
   );
 }
@@ -1932,18 +1900,26 @@ function SwipeableTaskRow({
  * the row that is late, never as a red section.
  */
 function TaskRow({
+  acceptBusy,
+  accepted,
   members,
+  onAcceptHandoff,
   onAssign,
   onPress,
   onToggle,
+  ownMemberIds,
   showDay = true,
   task,
   todayStr,
 }: {
+  acceptBusy?: string | null;
+  accepted?: TaskAcceptance[];
   members: FamilyMemberOption[];
+  onAcceptHandoff?: () => void;
   onAssign: () => void;
   onPress: () => void;
   onToggle: () => void;
+  ownMemberIds?: string[];
   showDay?: boolean;
   task: PlannerTask;
   todayStr: string;
@@ -1958,6 +1934,23 @@ function TaskRow({
   const overdue = isPlanEntryOverdue(entry, todayStr);
   const dueLabel = showDay ? formatPlanEntryWhen(entry, todayStr) : null;
   const assignee = members.find((member) => member.id === task.assigned_to) ?? null;
+
+  // Assigned, but not yet accepted — the dashed ring below says so on
+  // its own; a separate "Für X vorgesehen" line would just repeat it in
+  // words. Undefined `accepted` (the calendar day list never loads it)
+  // keeps every avatar solid, exactly as before this existed.
+  const assignedTo = task.assigned_to;
+  const acceptedBy = accepted?.find((a) => a.task_id === task.id)?.member_id;
+  const pending =
+    accepted !== undefined && !done && assignedTo !== null && assignedTo !== acceptedBy;
+  const canAccept =
+    pending &&
+    assignedTo !== null &&
+    Boolean(ownMemberIds?.includes(assignedTo)) &&
+    Boolean(onAcceptHandoff);
+  const handoffStatus = assignee
+    ? taskHandoffLabel(assignedTo, acceptedBy, assignee.name)
+    : null;
 
   return (
     <View style={styles.planRow}>
@@ -1991,18 +1984,22 @@ function TaskRow({
         ) : null}
       </Pressable>
       <Pressable
-        accessibilityHint="Ändert, wer sich kümmert"
+        accessibilityHint={canAccept ? "Übernimmt die Aufgabe" : "Ändert, wer sich kümmert"}
         accessibilityLabel={
-          assignee ? `${assignee.name} zugewiesen, ändern` : "Niemand zugeteilt, jemanden auswählen"
+          assignee
+            ? `${handoffStatus ?? `${assignee.name} zugewiesen`}${
+                canAccept ? ", zum Übernehmen antippen" : ", ändern"
+              }`
+            : "Niemand zugeteilt, jemanden auswählen"
         }
         accessibilityRole="button"
-        disabled={done}
+        disabled={done || acceptBusy === task.id}
         hitSlop={6}
-        onPress={onAssign}
-        style={styles.assignee}
+        onPress={canAccept ? onAcceptHandoff : onAssign}
+        style={[styles.assignee, acceptBusy === task.id && styles.assigneeBusy]}
       >
         {assignee ? (
-          <PersonAvatar person={memberToPerson(assignee)} size={30} />
+          <PersonAvatar person={memberToPerson(assignee)} pending={pending} size={30} />
         ) : done ? null : (
           <EmptyPersonSeat size={30} />
         )}
@@ -2277,12 +2274,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   planRowPressed: { backgroundColor: colors.sandLight },
-  handoffLabel: {
-    color: colors.mistDark,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
-    ...typography.timestamp,
-  },
   eventIcon: {
     alignItems: "center",
     backgroundColor: colors.washBlue,
@@ -2298,6 +2289,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 44,
   },
+  assigneeBusy: { opacity: 0.5 },
   personChipRow: { marginBottom: spacing.md, marginHorizontal: -spacing.md },
   personChips: { gap: spacing.xs, paddingHorizontal: spacing.md },
   quickEntry: {

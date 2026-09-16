@@ -814,29 +814,45 @@ function VoiceWaveform({ level }: { level: number }) {
   );
 }
 
+/**
+ * The recording bar stays on screen through transcribing instead of
+ * handing back to a blank composer the instant the mic stops — that
+ * handoff used to read as "did it work?" for however long the network
+ * round-trip takes. The waveform keeps its idle cadence (level 0 still
+ * animates, see VoiceWaveform) so the bar visibly keeps working even
+ * though there is no live audio left to meter.
+ */
 function VoiceRecordingPanel({
   durationMillis,
   level,
   onCancel,
   onFinish,
+  transcribing = false,
 }: {
   durationMillis: number;
   level: number;
   onCancel: () => void;
   onFinish: () => void;
+  transcribing?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
 
   return (
     <Animated.View
-      accessibilityLabel={`Aufnahme läuft, ${formatVoiceDuration(durationMillis)}`}
+      accessibilityLabel={
+        transcribing
+          ? "Sprache wird in Text umgewandelt"
+          : `Aufnahme läuft, ${formatVoiceDuration(durationMillis)}`
+      }
       accessibilityLiveRegion="polite"
       entering={feedbackEntering(reduceMotion)}
       exiting={feedbackExiting()}
       style={styles.voiceRecorder}
     >
       <Pressable
-        accessibilityLabel="Aufnahme verwerfen"
+        accessibilityLabel={
+          transcribing ? "Abbrechen" : "Aufnahme verwerfen"
+        }
         accessibilityRole="button"
         hitSlop={4}
         onPress={onCancel}
@@ -847,25 +863,34 @@ function VoiceRecordingPanel({
       >
         <X color={colors.mistDark} size={18} strokeWidth={2} />
       </Pressable>
-      <VoiceWaveform level={level} />
-      <Text style={styles.voiceDuration}>
-        {formatVoiceDuration(durationMillis)}
-      </Text>
-      <Pressable
-        accessibilityLabel="Aufnahme beenden"
-        accessibilityRole="button"
-        onPress={onFinish}
-        style={({ pressed }) => [
-          styles.voiceRecorderFinish,
-          pressed && styles.pressed,
-        ]}
+      <VoiceWaveform level={transcribing ? 0 : level} />
+      <Text
+        numberOfLines={1}
+        style={[styles.voiceDuration, transcribing && styles.voiceStatus]}
       >
-        <Square
-          color={colors.warmWhite}
-          fill={colors.warmWhite}
-          size={14}
-        />
-      </Pressable>
+        {transcribing ? "Wird transkribiert …" : formatVoiceDuration(durationMillis)}
+      </Text>
+      {transcribing ? (
+        <View style={styles.voiceRecorderFinish}>
+          <ActivityIndicator color={colors.warmWhite} size="small" />
+        </View>
+      ) : (
+        <Pressable
+          accessibilityLabel="Aufnahme beenden"
+          accessibilityRole="button"
+          onPress={onFinish}
+          style={({ pressed }) => [
+            styles.voiceRecorderFinish,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Square
+            color={colors.warmWhite}
+            fill={colors.warmWhite}
+            size={14}
+          />
+        </Pressable>
+      )}
     </Animated.View>
   );
 }
@@ -903,7 +928,8 @@ export function ChatComposer({
   const { fontScale } = useWindowDimensions();
   const canSend = value.trim().length > 0 && !busy;
   const recording = voiceStatus === "recording";
-  const voiceWorking = voiceStatus === "starting" || voiceStatus === "transcribing";
+  const transcribing = voiceStatus === "transcribing";
+  const voiceWorking = voiceStatus === "starting" || transcribing;
   const voiceEnabled = !busy && !voiceWorking;
   const primaryDisabled = !busy && !canSend && (!onLiveStart || !voiceEnabled);
   const primaryLabel = busy
@@ -915,12 +941,13 @@ export function ChatComposer({
         : "Frage senden";
   return (
     <View style={styles.composerStack}>
-      {recording ? (
+      {recording || transcribing ? (
         <VoiceRecordingPanel
           durationMillis={voiceDurationMillis}
           level={voiceLevel}
           onCancel={() => onVoiceCancel?.()}
           onFinish={() => onVoiceFinish?.()}
+          transcribing={transcribing}
         />
       ) : (
         <View style={styles.composer}>
@@ -942,11 +969,7 @@ export function ChatComposer({
           <View style={styles.composerActions}>
             <Pressable
               accessibilityHint="Tippe, um eine Sprachfrage aufzunehmen"
-              accessibilityLabel={
-                voiceStatus === "transcribing"
-                  ? "Sprache wird in Text umgewandelt"
-                  : "Sprachfrage aufnehmen"
-              }
+              accessibilityLabel="Sprachfrage aufnehmen"
               accessibilityRole="button"
               accessibilityState={{ disabled: !voiceEnabled }}
               disabled={!voiceEnabled}
@@ -1328,6 +1351,10 @@ const styles = StyleSheet.create({
     minWidth: 34,
     textAlign: "right",
     ...typography.label,
+  },
+  voiceStatus: {
+    flexShrink: 1,
+    textAlign: "left",
   },
   voiceWave: {
     alignItems: "center",

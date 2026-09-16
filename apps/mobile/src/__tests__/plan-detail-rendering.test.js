@@ -212,7 +212,7 @@ describe("the shared plan detail sheet", () => {
     expect(content).toContain("Karina kümmert sich");
     // A task read out of a document can jump back to it.
     expect(content).toContain("Aus einem Dokument");
-    expect(buttons(tree)).toEqual(["Erledigt", "Brauchen wir nicht"]);
+    expect(buttons(tree)).toEqual(["Erledigt", "Ändern", "Brauchen wir nicht"]);
 
     await act(async () =>
       tree.root
@@ -242,7 +242,7 @@ describe("the shared plan detail sheet", () => {
       );
     });
 
-    expect(buttons(tree)).toEqual(["Wieder offen", "Brauchen wir nicht"]);
+    expect(buttons(tree)).toEqual(["Wieder offen", "Ändern", "Brauchen wir nicht"]);
     expect(texts(tree)).toContain("Erledigt");
     await act(async () => tree.unmount());
   });

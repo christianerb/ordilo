@@ -18,10 +18,17 @@ import { colors, radii, sizes, typography } from "@/src/theme/tokens";
  */
 export function PersonAvatar({
   person,
+  pending = false,
   size = sizes.avatar,
   style,
 }: {
   person: Pick<Person, "name" | "color">;
+  /**
+   * Assigned, but that person hasn't accepted it yet. Reuses the empty
+   * seat's dashed ring for "still open" instead of a second, separate
+   * signal — the face says who, the dashing says it isn't settled yet.
+   */
+  pending?: boolean;
   size?: number;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -32,6 +39,7 @@ export function PersonAvatar({
       importantForAccessibility="no"
       style={[
         styles.avatar,
+        pending && styles.avatarPending,
         {
           backgroundColor: getPersonColor(person),
           borderRadius: size / 2,
@@ -167,6 +175,11 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderWidth: 1.5,
     justifyContent: "center",
+  },
+  avatarPending: {
+    borderColor: colors.warmWhite,
+    borderStyle: "dashed",
+    borderWidth: 2,
   },
   stack: {
     alignItems: "center",
