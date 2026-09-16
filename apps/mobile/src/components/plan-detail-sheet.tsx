@@ -11,7 +11,6 @@ import {
   Repeat,
   Trash2,
   Undo2,
-  UserRound,
   Users,
 } from "lucide-react-native";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -92,9 +91,6 @@ export function PlanDetailSheet({
       closeAccessibilityLabel={isTask ? "Aufgabe schließen" : "Termin schließen"}
       onClose={onClose}
       onDismiss={onDismissed}
-      subtitle={
-        entry ? (formatPlanEntryWhen(entry, todayStr) ?? undefined) : undefined
-      }
       title={isTask ? "Aufgabe" : "Termin"}
       visible={visible}
     >
@@ -138,12 +134,13 @@ export function PlanDetailSheet({
             </View>
 
             <View style={styles.facts}>
-              {buildFacts(entry, members).map((fact, index) => (
+              {buildFacts(entry, members, onAction).map((fact, index) => (
                 <FactRow
                   first={index === 0}
                   icon={fact.icon}
                   key={fact.label}
                   label={fact.label}
+                  onPress={fact.onPress}
                   trailing={fact.trailing}
                   value={fact.value}
                 />
@@ -172,23 +169,12 @@ export function PlanDetailSheet({
                   title={done ? "Wieder offen" : "Erledigt"}
                   variant={done ? "outline" : "primary"}
                 />
-                <View style={styles.footerRow}>
-                  <QuietAction
-                    icon={CalendarDays}
-                    label="Wann?"
-                    onPress={() => onAction({ type: "reschedule" })}
-                  />
-                  <QuietAction
-                    icon={UserRound}
-                    label="Wer?"
-                    onPress={() => onAction({ type: "assign" })}
-                  />
-                  <QuietAction
-                    icon={Pencil}
-                    label="Ändern"
-                    onPress={() => onAction({ type: "edit" })}
-                  />
-                </View>
+                <OrdiloButton
+                  icon={<Pencil color={colors.graphite} size={18} strokeWidth={2} />}
+                  onPress={() => onAction({ type: "edit" })}
+                  title="Ändern"
+                  variant="outline"
+                />
                 <OrdiloButton
                   onPress={() => onAction({ type: "dismiss" })}
                   title="Brauchen wir nicht"
@@ -238,7 +224,12 @@ export function PlanDetailSheet({
   );
 }
 
-/** "Heute", "Seit 3 Tagen offen", "Erledigt" — the one status line. */
+/**
+ * The one badge worth a glance before scrolling to the facts: done, or
+ * overdue. Anything else — a future date, no date at all — is already the
+ * first line of the Wann fact row below, so saying it twice here would
+ * just repeat that row in different words.
+ */
 function PlanDetailStatus({
   entry,
   todayStr,
@@ -247,9 +238,6 @@ function PlanDetailStatus({
   todayStr: string;
 }) {
   const done = entry.kind === "task" && entry.task.status === "done";
-  const overdue = isPlanEntryOverdue(entry, todayStr);
-  const when = formatPlanEntryWhen(entry, todayStr);
-
   if (done) {
     return (
       <View style={[styles.statusPill, styles.statusPillDone]}>
@@ -258,19 +246,11 @@ function PlanDetailStatus({
       </View>
     );
   }
-  if (!when) {
-    return (
-      <View style={styles.statusPill}>
-        <Text style={styles.statusPillLabel}>Ohne Termin</Text>
-      </View>
-    );
-  }
+  if (!isPlanEntryOverdue(entry, todayStr)) return null;
   return (
-    <View style={[styles.statusPill, overdue && styles.statusPillLate]}>
-      <Text
-        style={[styles.statusPillLabel, overdue && styles.statusPillLateLabel]}
-      >
-        {when}
+    <View style={[styles.statusPill, styles.statusPillLate]}>
+      <Text style={[styles.statusPillLabel, styles.statusPillLateLabel]}>
+        {formatPlanEntryWhen(entry, todayStr)}
       </Text>
     </View>
   );
@@ -310,6 +290,8 @@ function shiftIsoDay(value: string, days: number): string {
 interface FactDescriptor {
   icon: typeof CalendarDays;
   label: string;
+  /** Present only where the row doubles as its own editor (task Wann/Wer). */
+  onPress?: () => void;
   trailing?: React.ReactNode;
   value: string;
 }
@@ -317,16 +299,24 @@ interface FactDescriptor {
 /**
  * The facts worth stating, in one order for both kinds: when, how long,
  * where, how often, who, and what was noted. Anything a row does not
- * carry is simply left out instead of printed as an empty line.
+ * carry is simply left out instead of printed as an empty line. For a
+ * task, Wann and Wer are themselves the "Wann?"/"Wer?" pickers — tapping
+ * the fact edits it, so the footer doesn't have to ask the same question
+ * again under a different label.
  */
 function buildFacts(
   entry: PlanEntry,
   members: FamilyMemberOption[],
+  onAction: (action: PlanDetailAction) => void,
 ): FactDescriptor[] {
   const facts: FactDescriptor[] = [
     {
       icon: CalendarDays,
       label: "Wann",
+      onPress:
+        entry.kind === "task"
+          ? () => onAction({ type: "reschedule" })
+          : undefined,
       value:
         entry.kind === "event"
           ? formatEventDateRange(entry)
@@ -361,6 +351,8 @@ function buildFacts(
   facts.push({
     icon: Users,
     label: "Wer",
+    onPress:
+      entry.kind === "task" ? () => onAction({ type: "assign" }) : undefined,
     trailing:
       faces.length > 0 ? <AvatarStack people={faces} size={26} /> : undefined,
     value: formatPlanEntryPeople(entry, members) ?? "Noch niemand zugeteilt",
@@ -405,21 +397,28 @@ function DocumentFact({
   );
 }
 
+/**
+ * A fact, and — when it carries an action — its own editor: tapping it
+ * opens the same picker a separate "Wann?"/"Wer?" button used to. The
+ * chevron is the only extra thing an editable row needs to say that.
+ */
 function FactRow({
   first = false,
   icon: Icon,
   label,
+  onPress,
   trailing,
   value,
 }: {
   first?: boolean;
   icon: typeof CalendarDays;
   label: string;
+  onPress?: () => void;
   trailing?: React.ReactNode;
   value: string;
 }) {
-  return (
-    <View style={[styles.factRow, first && styles.factRowFirst]}>
+  const content = (
+    <>
       <View style={styles.factIcon}>
         <Icon color={colors.harborBlue} size={17} strokeWidth={1.9} />
       </View>
@@ -428,32 +427,33 @@ function FactRow({
         <Text style={styles.factValue}>{value}</Text>
       </View>
       {trailing}
-    </View>
+      {onPress ? (
+        <ChevronRight color={colors.mistDark} size={18} strokeWidth={1.9} />
+      ) : null}
+    </>
   );
-}
 
-/** One of the three small task actions — icon over label, equal thirds. */
-function QuietAction({
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  icon: typeof CalendarDays;
-  label: string;
-  onPress: () => void;
-}) {
+  if (!onPress) {
+    return (
+      <View style={[styles.factRow, first && styles.factRowFirst]}>
+        {content}
+      </View>
+    );
+  }
+
   return (
     <Pressable
-      accessibilityLabel={label}
+      accessibilityHint={`Zum Ändern von ${label.toLowerCase()} antippen`}
+      accessibilityLabel={`${label}: ${value}`}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
-        styles.quietAction,
-        pressed && styles.quietActionPressed,
+        styles.factRow,
+        first && styles.factRowFirst,
+        pressed && styles.factRowPressed,
       ]}
     >
-      <Icon color={colors.harborBlue} size={19} strokeWidth={1.9} />
-      <Text style={styles.quietActionLabel}>{label}</Text>
+      {content}
     </Pressable>
   );
 }
@@ -545,18 +545,4 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingTop: spacing.md,
   },
-  footerRow: { flexDirection: "row", gap: spacing.sm },
-  quietAction: {
-    alignItems: "center",
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flex: 1,
-    gap: 4,
-    justifyContent: "center",
-    minHeight: 60,
-  },
-  quietActionPressed: { backgroundColor: colors.sandWarm },
-  quietActionLabel: { color: colors.harborBlue, ...typography.label },
 });
