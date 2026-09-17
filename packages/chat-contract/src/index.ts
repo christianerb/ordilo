@@ -512,16 +512,22 @@ export function buildPersonalChatPrompts(input: {
   return prompts.slice(0, 3);
 }
 
+/** What a starter is about — lets the UI give each one a fitting icon. */
+export type ChatStarterKind = "document" | "task" | "member" | "general";
+
 /** Short display labels retain the complete source context in the sent prompt. */
-export function buildPersonalChatStarters(input: Parameters<typeof buildPersonalChatPrompts>[0]): Array<{ label: string; prompt: string }> {
+export function buildPersonalChatStarters(input: Parameters<typeof buildPersonalChatPrompts>[0]): Array<{ label: string; prompt: string; kind: ChatStarterKind }> {
   return buildPersonalChatPrompts(input).map((prompt) => {
     if (input.recentDocumentTitle && prompt.includes(`„${input.recentDocumentTitle.trim()}“`)) {
-      return { label: "Was ist am letzten Dokument wichtig?", prompt };
+      return { label: "Was ist am letzten Dokument wichtig?", prompt, kind: "document" };
     }
     if (input.upcomingTaskTitle && prompt.includes(`„${input.upcomingTaskTitle.trim()}“`)) {
-      return { label: "Was brauche ich für die nächste Aufgabe?", prompt: `Hilf mir bei dieser Aufgabe: „${input.upcomingTaskTitle.trim()}“. Was muss ich konkret tun?` };
+      return { label: "Was brauche ich für die nächste Aufgabe?", prompt: `Hilf mir bei dieser Aufgabe: „${input.upcomingTaskTitle.trim()}“. Was muss ich konkret tun?`, kind: "task" };
     }
-    return { label: prompt, prompt };
+    if (prompt.startsWith("Was steht für ") && prompt.includes("als Nächstes an?")) {
+      return { label: prompt, prompt, kind: "member" };
+    }
+    return { label: prompt, prompt, kind: "general" };
   });
 }
 

@@ -14,6 +14,8 @@ export interface Person {
   name: string;
   /** Preset avatar colour; null falls back to a name-derived colour. */
   color: string | null;
+  /** Short-lived signed URL for an uploaded photo; null shows the initial. */
+  photoUrl?: string | null;
 }
 
 export interface MemberLike {

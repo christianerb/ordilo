@@ -10,12 +10,15 @@ import {
 } from "expo-audio";
 import { randomUUID } from "expo-crypto";
 import {
+  CalendarCheck,
   ChevronDown,
+  FileText,
   History,
   MessageCircle,
   Plus,
   Sparkles,
   Trash2,
+  UserRound,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -88,7 +91,7 @@ import {
   loadConversationMessages,
   type ConversationSummary,
 } from "@/src/lib/conversations";
-import { buildPersonalChatStarters } from "@ordilo/chat-contract";
+import { buildPersonalChatStarters, type ChatStarterKind } from "@ordilo/chat-contract";
 import { useAiConsent } from "@/src/lib/ai-consent-context";
 import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
@@ -107,6 +110,14 @@ import {
 } from "@/src/lib/live-conversation";
 
 const CHAT_ANSWER_ENTERING = contentEntering();
+
+/** Each starter hints at what it's about before it's even read. */
+const SUGGESTION_ICON: Record<ChatStarterKind, typeof Sparkles> = {
+  document: FileText,
+  task: CalendarCheck,
+  member: UserRound,
+  general: Sparkles,
+};
 
 /**
  * „Ordilo fragen" — the chat with Ordilo. Streams the answer token by
@@ -1126,34 +1137,41 @@ export default function SucheScreen() {
                       antwortet mit Quelle.
                     </Text>
                   </View>
-                  {/* Asking leads: the prompts wear the harbor tint of an
-                      action and a spark, so they cannot be mistaken for the
-                      chevroned history rows sitting quietly below them. */}
-                  <View style={styles.suggestions}>
-                    {suggestions.map(({ label, prompt }) => (
-                      <Pressable
-                        accessibilityHint="Stellt diese Frage an Ordilo"
-                        accessibilityLabel={label}
-                        accessibilityRole="button"
-                        disabled={busy}
-                        key={prompt}
-                        onPress={() => {
-                          tap();
-                          void send(prompt);
-                        }}
-                        style={({ pressed }) => [
-                          styles.suggestion,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Sparkles color={colors.harborBlue} size={17} strokeWidth={1.9} />
-                        <Text style={styles.suggestionText}>{label}</Text>
-                      </Pressable>
-                    ))}
+                  {/* Asking leads: a labeled section plus the harbor tint of
+                      an action, so they cannot be mistaken for the chevroned
+                      history rows sitting quietly below them. */}
+                  <View style={styles.suggestionsBlock}>
+                    <SectionHeader title="Beispielfragen" />
+                    <View style={styles.suggestions}>
+                      {suggestions.map(({ label, prompt, kind }) => {
+                        const Icon = SUGGESTION_ICON[kind];
+                        return (
+                          <Pressable
+                            accessibilityHint="Stellt diese Frage an Ordilo"
+                            accessibilityLabel={label}
+                            accessibilityRole="button"
+                            disabled={busy}
+                            key={prompt}
+                            onPress={() => {
+                              tap();
+                              void send(prompt);
+                            }}
+                            style={({ pressed }) => [
+                              styles.suggestion,
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <IconTile size={36} tint={colors.harborTint}>
+                              <Icon color={colors.harborBlue} size={18} strokeWidth={1.9} />
+                            </IconTile>
+                            <Text style={styles.suggestionText}>{label}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
                   </View>
                   {conversations.length > 0 ? (
                     <View style={styles.recentBlock}>
-                      <View style={styles.recentDivider} />
                       <SectionHeader
                         action={
                           conversations.length > 3
@@ -1444,9 +1462,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     ...typography.timestamp,
   },
+  suggestionsBlock: {
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+    width: "100%",
+  },
   suggestions: {
     gap: spacing.sm,
-    marginTop: spacing.lg,
     width: "100%",
   },
   suggestion: {
@@ -1458,21 +1480,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     minHeight: 54,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 9,
   },
   suggestionText: { color: colors.harborBlueDarker, flex: 1, ...typography.title },
   recentBlock: {
     gap: spacing.sm,
     marginTop: spacing.xl,
     width: "100%",
-  },
-  recentDivider: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    height: StyleSheet.hairlineWidth,
-    marginBottom: spacing.xs,
-    width: "45%",
   },
   historySheet: {
     paddingBottom: spacing.md,

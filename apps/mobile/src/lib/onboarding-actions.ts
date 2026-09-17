@@ -25,6 +25,8 @@ export interface MemberRow {
   role: string | null;
   birthdate: string | null;
   avatar_color: string | null;
+  /** Storage path, not a usable URL — resolve via fetchMemberPhotoUrls. */
+  photo_url: string | null;
   linked_user_id: string | null;
 }
 

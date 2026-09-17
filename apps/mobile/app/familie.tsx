@@ -1,17 +1,22 @@
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import {
   Cake,
+  Camera,
   Check,
   ChevronRight,
   Copy,
   FolderOpen,
+  ImagePlus,
   LogOut,
   Mail,
   Plus,
   Settings,
   Share2,
   Users,
+  X,
 } from "lucide-react-native";
 import {
   useCallback,
@@ -58,6 +63,11 @@ import { useFamily } from "@/src/lib/family-context";
 import { buildInviteUrl, createFamilyInvite } from "@/src/lib/invites";
 import { listMembers, updateMember, type MemberRow } from "@/src/lib/onboarding-actions";
 import { AVATAR_COLORS } from "@/src/lib/onboarding";
+import {
+  fetchMemberPhotoUrls,
+  removeMemberPhoto,
+  uploadMemberPhoto,
+} from "@/src/lib/member-photos";
 import { memberToPerson } from "@/src/lib/people";
 import { useSession } from "@/src/lib/session";
 import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
@@ -76,6 +86,7 @@ export default function FamilieScreen() {
   const { session, signOut } = useSession();
   const { family } = useFamily();
   const [members, setMembers] = useState<MemberRow[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [memberError, setMemberError] = useState<string | null>(null);
@@ -106,8 +117,12 @@ export default function FamilieScreen() {
     if (refresh) { setRefreshing(true); setAccessRevision((value) => value + 1); }
     else if (!silent) setLoading(true);
     setMemberError(null);
-    const result = await listMembers(family.id);
+    const [result, urls] = await Promise.all([
+      listMembers(family.id),
+      fetchMemberPhotoUrls(family.id),
+    ]);
     if (sequence !== loadSeqRef.current) return;
+    setPhotoUrls(urls);
     if (result.success) {
       setMembers(result.data);
       if (edit) {
@@ -189,6 +204,16 @@ export default function FamilieScreen() {
       : { success: false, error: result.error };
   }, [family]);
 
+  const handlePhotoChange = useCallback((memberId: string, url: string | null) => {
+    setPhotoUrls((current) => {
+      if (url) return { ...current, [memberId]: url };
+      if (!(memberId in current)) return current;
+      const next = { ...current };
+      delete next[memberId];
+      return next;
+    });
+  }, []);
+
   return (
     <Screen style={styles.screen}>
       <DetailTopBar
@@ -249,6 +274,7 @@ export default function FamilieScreen() {
                   key={member.id}
                   member={member}
                   onPress={() => router.push(`/familie/${member.id}`)}
+                  photoUrl={photoUrls[member.id] ?? null}
                   showDivider={index > 0}
                 />
               ))}
@@ -362,7 +388,9 @@ export default function FamilieScreen() {
       <MemberEditSheet
         member={editingMember}
         onClose={() => setEditingMember(null)}
+        onPhotoChange={handlePhotoChange}
         onSubmit={saveMember}
+        photoUrl={editingMember ? photoUrls[editingMember.id] ?? null : null}
         visible={Boolean(editingMember)}
       />
       <ConfirmDialog
@@ -384,10 +412,12 @@ export default function FamilieScreen() {
 function FamilyMemberRow({
   member,
   onPress,
+  photoUrl,
   showDivider,
 }: {
   member: MemberRow;
   onPress: () => void;
+  photoUrl: string | null;
   showDivider: boolean;
 }) {
   return (
@@ -402,7 +432,7 @@ function FamilyMemberRow({
         pressed && styles.memberRowPressed,
       ]}
     >
-      <PersonAvatar person={memberToPerson(member)} size={58} />
+      <PersonAvatar person={{ ...memberToPerson(member), photoUrl }} size={58} />
       <View style={styles.memberCopy}>
         <Text numberOfLines={1} style={styles.memberName}>
           {member.name}
@@ -469,15 +499,19 @@ export function describeMember(member: Pick<MemberRow, "role" | "birthdate">, no
 function MemberEditSheet({
   member,
   onClose,
+  onPhotoChange,
   onSubmit,
+  photoUrl,
   visible,
 }: {
   member: MemberRow | null;
   onClose: () => void;
+  onPhotoChange: (memberId: string, url: string | null) => void;
   onSubmit: (
     member: MemberRow,
     values: { name: string; avatarColor: string; birthdate: string },
   ) => Promise<{ success: boolean; error?: string }>;
+  photoUrl: string | null;
   visible: boolean;
 }) {
   const [name, setName] = useState("");
@@ -487,6 +521,8 @@ function MemberEditSheet({
   const [submitting, setSubmitting] = useState(false);
   const [wasVisible, setWasVisible] = useState(false);
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   if (visible !== wasVisible) {
     setWasVisible(visible);
@@ -497,8 +533,72 @@ function MemberEditSheet({
       setError(null);
       setSubmitting(false);
       setDiscardDraftOpen(false);
+      setPhotoError(null);
     }
   }
+
+  const pickPhoto = useCallback(async (camera: boolean) => {
+    if (!member) return;
+    setPhotoError(null);
+    const permission = camera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setPhotoError(
+        camera
+          ? "Bitte erlaube den Kamerazugriff, um ein Foto aufzunehmen."
+          : "Bitte erlaube den Fotozugriff, um ein Foto auszuwählen.",
+      );
+      return;
+    }
+    const result = camera
+      ? await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          mediaTypes: ["images"],
+          quality: 0.9,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          mediaTypes: ["images"],
+          quality: 0.9,
+        });
+    const asset = result.assets?.[0];
+    if (result.canceled || !asset?.uri) return;
+
+    setPhotoBusy(true);
+    try {
+      const resized = await manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 512 } }],
+        { compress: 0.85, format: SaveFormat.JPEG },
+      );
+      const url = await uploadMemberPhoto(member.id, {
+        uri: resized.uri,
+        name: `foto-${Date.now()}.jpg`,
+      });
+      onPhotoChange(member.id, url);
+    } catch {
+      setPhotoError("Foto konnte nicht hochgeladen werden. Bitte erneut versuchen.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }, [member, onPhotoChange]);
+
+  const removePhoto = useCallback(async () => {
+    if (!member) return;
+    setPhotoError(null);
+    setPhotoBusy(true);
+    try {
+      await removeMemberPhoto(member.id);
+      onPhotoChange(member.id, null);
+    } catch {
+      setPhotoError("Foto konnte nicht entfernt werden. Bitte erneut versuchen.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }, [member, onPhotoChange]);
 
   const submit = useCallback(async () => {
     if (!member) return;
@@ -539,6 +639,60 @@ function MemberEditSheet({
       visible={visible}
     >
       <OrdiloFormBody>
+          <View style={styles.photoSection}>
+            <View style={styles.photoAvatarWrap}>
+              <PersonAvatar
+                person={{ color: avatarColor, name, photoUrl }}
+                size={88}
+              />
+              <View style={styles.photoBadge}>
+                <Camera color={colors.harborBlue} size={15} strokeWidth={2} />
+              </View>
+              {photoBusy ? (
+                <View style={styles.photoOverlay}>
+                  <ActivityIndicator color={colors.warmWhite} size="small" />
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.photoActions}>
+              <OrdiloButton
+                disabled={photoBusy}
+                icon={<Camera color={colors.graphite} size={17} />}
+                onPress={() => void pickPhoto(true)}
+                title="Kamera"
+                variant="outline"
+              />
+              <OrdiloButton
+                disabled={photoBusy}
+                icon={<ImagePlus color={colors.graphite} size={17} />}
+                onPress={() => void pickPhoto(false)}
+                title="Fotos"
+                variant="outline"
+              />
+            </View>
+            {photoUrl ? (
+              <Pressable
+                accessibilityLabel="Foto entfernen"
+                accessibilityRole="button"
+                disabled={photoBusy}
+                hitSlop={8}
+                onPress={() => void removePhoto()}
+                style={({ pressed }) => [
+                  styles.photoRemove,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <X color={colors.destructive} size={14} />
+                <Text style={styles.photoRemoveText}>Foto entfernen</Text>
+              </Pressable>
+            ) : null}
+            {photoError ? (
+              <Text accessibilityRole="alert" style={styles.inlineError}>
+                {photoError}
+              </Text>
+            ) : null}
+          </View>
+
           <OrdiloFormField label="Name">
             <OrdiloFormInput
               accessibilityLabel="Name der Person"
@@ -733,4 +887,43 @@ const styles = StyleSheet.create({
     width: 36,
   },
   avatarColorSelected: { borderColor: colors.graphite },
+  photoSection: { alignItems: "center", gap: spacing.sm, paddingBottom: spacing.xs },
+  photoAvatarWrap: { position: "relative" },
+  photoBadge: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    bottom: -2,
+    height: 28,
+    justifyContent: "center",
+    position: "absolute",
+    right: -2,
+    width: 28,
+  },
+  photoOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(35,35,35,0.45)",
+    borderRadius: 44,
+    height: 88,
+    justifyContent: "center",
+    position: "absolute",
+    width: 88,
+  },
+  photoActions: { flexDirection: "row", gap: spacing.sm },
+  photoRemove: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    minHeight: sizes.touch,
+  },
+  photoRemoveText: { color: colors.destructive, ...typography.caption },
+  inlineError: {
+    backgroundColor: colors.destructiveBackground,
+    borderRadius: radii.sm,
+    color: colors.destructive,
+    padding: spacing.sm,
+    ...typography.timestamp,
+  },
 });
