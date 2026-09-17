@@ -73,24 +73,39 @@ const AiConsentContext = createContext<AiConsentContextValue>({
 });
 
 export function AiConsentProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<AiDataSharingStatus>(null);
+  const [status, setStatusState] = useState<AiDataSharingStatus>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const resolversRef = useRef<((granted: boolean) => void)[]>([]);
+  // ensureAiConsent reads status through this ref so the version waiting
+  // on the initial fetch never decides with a stale null.
+  const statusRef = useRef<AiDataSharingStatus>(null);
+  // The in-flight (or last completed) status read; the gate awaits it
+  // before treating "no status" as "no decision".
+  const readInFlightRef = useRef<Promise<void> | null>(null);
 
-  const refreshAiConsent = useCallback(async () => {
-    try {
-      setStatus(await fetchAiDataSharingStatus());
-    } catch {
-      // Offline or API down: keep the last known status. The AI routes
-      // enforce consent server-side, so a stale local status never lets
-      // unconsented data out.
-    } finally {
-      setIsLoading(false);
-    }
+  const setStatus = useCallback((next: AiDataSharingStatus) => {
+    statusRef.current = next;
+    setStatusState(next);
   }, []);
+
+  const refreshAiConsent = useCallback(() => {
+    const read = (async () => {
+      try {
+        setStatus(await fetchAiDataSharingStatus());
+      } catch {
+        // Offline or API down: keep the last known status. The AI routes
+        // enforce consent server-side, so a stale local status never lets
+        // unconsented data out.
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+    readInFlightRef.current = read;
+    return read;
+  }, [setStatus]);
 
   // Mount-only status read; refreshAiConsent has no reactive deps and
   // consumers can re-trigger it via `refreshAiConsent` from the context.
@@ -105,14 +120,21 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const ensureAiConsent = useCallback((): Promise<boolean> => {
-    if (status === "granted") return Promise.resolve(true);
-    const result = new Promise<boolean>((resolve) => {
-      resolversRef.current.push(resolve);
-    });
-    setSaveError(null);
-    setOpen(true);
-    return result;
-  }, [status]);
+    const decide = (): Promise<boolean> => {
+      if (statusRef.current === "granted") return Promise.resolve(true);
+      const result = new Promise<boolean>((resolve) => {
+        resolversRef.current.push(resolve);
+      });
+      setSaveError(null);
+      setOpen(true);
+      return result;
+    };
+    // Cold-load race: while the initial GET is still pending, status is
+    // null even for a consenting user. Wait for that read first so the
+    // drawer never opens for someone who already agreed.
+    const pending = readInFlightRef.current;
+    return pending ? pending.then(decide) : decide();
+  }, []);
 
   const reviewAiConsent = useCallback(() => {
     setSaveError(null);
@@ -141,7 +163,7 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
         setSaving(false);
       }
     },
-    [resolveAll, saving],
+    [resolveAll, saving, setStatus],
   );
 
   // Closing the drawer without a choice is not a decision: nothing is

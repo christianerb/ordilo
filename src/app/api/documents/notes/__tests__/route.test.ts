@@ -22,9 +22,6 @@ vi.mock("@/lib/jobs", () => ({
 vi.mock("next/server", () => ({
   after: vi.fn(),
 }));
-vi.mock("@/lib/ai/consent", () => ({
-  refuseWithoutAiConsent: vi.fn(async () => null),
-}));
 
 import { POST } from "@/app/api/documents/notes/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -256,6 +253,25 @@ describe("POST /api/documents/notes", () => {
     expect(enqueueCall.document_id).toBe(body.document_id);
     // The queue is drained only after the response is sent.
     expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves the note without an AI-consent gate — only enrichment waits", async () => {
+    // Apple 5.1.2(i): a manual note is not an AI feature, so saving must
+    // never be refused — a user who declined (or never answered) consent
+    // still keeps their text. The analyze job is queued regardless; the
+    // job worker defers it until the uploader consents to third-party AI.
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({}),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(createNoteRequest(VALID_FIELDS));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("confirmed");
+    expect(body.server_pipeline).toBe(true);
+    expect(enqueueJob).toHaveBeenCalledTimes(1);
   });
 
   it("returns the stored row so the client can render the note at once", async () => {

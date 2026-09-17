@@ -17,6 +17,7 @@ import { buildEntityRows } from "@/lib/pipeline/entity-rows";
 import { normalizeFactValue } from "@/lib/schemas/extraction";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { EmbeddingError } from "@/lib/ai/embeddings";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import {
   buildDocumentEmbeddings,
   buildLabelEmbeddings,
@@ -157,6 +158,12 @@ export async function PATCH(
   if (auth.status) {
     return Response.json(auth.json, { status: auth.status });
   }
+
+  // Explicit consent for third-party AI processing (Apple 5.1.2(i)):
+  // every edit rebuilds the document's embeddings via OpenAI (step 6), so
+  // a confirmed-document edit must not bypass the consent gate either.
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) return consentRefusal;
 
   const { id: documentId } = await params;
 

@@ -65,6 +65,14 @@ const RETRY_BASE_DELAY_SECONDS = 30;
  */
 const STALE_JOB_INTERVAL = "15 minutes";
 
+/**
+ * How long a consent-blocked job waits before the worker re-checks. Long
+ * enough to stay off the hot path, short enough that a freshly granted
+ * consent is picked up quickly. The deferral refunds the claim attempt:
+ * nothing was processed, so the retry budget stays untouched.
+ */
+const CONSENT_DEFER_INTERVAL_MS = 15 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Enqueue
 // ---------------------------------------------------------------------------
@@ -129,11 +137,13 @@ export interface RunJobsSummary {
   claimed: number;
   succeeded: number;
   failed: number;
+  /** Jobs returned to pending because the uploader has not consented yet. */
+  deferred: number;
   results: Array<{
     job_id: string;
     job_type: string;
     document_id: string | null;
-    outcome: "done" | "retry" | "dead" | "skipped";
+    outcome: "done" | "retry" | "dead" | "skipped" | "deferred";
     error?: string;
   }>;
 }
@@ -206,12 +216,27 @@ export async function runPendingJobs(
     claimed: (jobs ?? []).length,
     succeeded: 0,
     failed: 0,
+    deferred: 0,
     results: [],
   };
 
   for (const job of jobs ?? []) {
     try {
       const outcome = await executeJob(adminClient, job);
+      if (outcome === "deferred") {
+        // Consent missing: back to pending, never done — the job survives
+        // until the uploader decides, and granting consent in the app lets
+        // the next worker run pick it up automatically.
+        await deferJobForConsent(adminClient, job);
+        summary.deferred += 1;
+        summary.results.push({
+          job_id: job.id,
+          job_type: job.job_type,
+          document_id: job.document_id,
+          outcome,
+        });
+        continue;
+      }
       await markJobDone(adminClient, job.id);
       summary.succeeded += 1;
       summary.results.push({
@@ -262,7 +287,7 @@ export async function runPendingJobs(
 async function executeJob(
   adminClient: Client,
   job: JobRow,
-): Promise<"done" | "skipped"> {
+): Promise<"done" | "skipped" | "deferred"> {
   if (!job.document_id) {
     throw new Error("Job hat keine document_id.");
   }
@@ -270,8 +295,9 @@ async function executeJob(
   // Apple 5.1.2(i): every job type transmits document content to a
   // third-party AI (Datalab OCR, OpenAI extraction/embeddings), so the
   // uploader's explicit consent is required even in the background.
-  // Skipping — not failing — keeps the document in its pre-pipeline
-  // status: the user can grant consent in the app and retry from there.
+  // Deferring — not completing — keeps the job pending and the document in
+  // its pre-pipeline status: once the user grants consent in the app, the
+  // next worker run processes it without any manual retry.
   const { data: uploaderRow, error: uploaderError } = await adminClient
     .from("documents")
     .select("uploaded_by")
@@ -285,9 +311,9 @@ async function executeJob(
     !(await hasAiDataSharingConsent(uploaderRow.uploaded_by, adminClient))
   ) {
     console.warn(
-      `[jobs] Skipping ${job.job_type} job ${job.id}: uploader has not consented to third-party AI processing.`,
+      `[jobs] Deferring ${job.job_type} job ${job.id}: uploader has not consented to third-party AI processing.`,
     );
-    return "skipped";
+    return "deferred";
   }
 
   switch (job.job_type) {
@@ -467,6 +493,29 @@ async function executeReindexJob(
 // ---------------------------------------------------------------------------
 // Job state helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Release a consent-blocked job back to pending. Distinct from
+ * markJobDone: completing the job would strand the document in its
+ * pre-pipeline status forever (no active job, no retry affordance). The
+ * claim had incremented `attempts`, so refund it — a deferral is not a
+ * processing attempt and must not push the job towards 'dead'.
+ */
+async function deferJobForConsent(
+  adminClient: Client,
+  job: JobRow,
+): Promise<void> {
+  await adminClient
+    .from("processing_jobs")
+    .update({
+      status: "pending",
+      attempts: Math.max(0, job.attempts - 1),
+      run_after: new Date(Date.now() + CONSENT_DEFER_INTERVAL_MS).toISOString(),
+      started_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id);
+}
 
 async function markJobDone(adminClient: Client, jobId: string): Promise<void> {
   await adminClient

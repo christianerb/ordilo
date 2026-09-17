@@ -101,6 +101,30 @@ describe("AiConsentProvider", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("waits for the initial status read before deciding", async () => {
+    // Cold load: a consenting user who acts while the mount GET is still
+    // in flight must not see the drawer. The gate awaits the read, then
+    // resolves directly — no second decision is forced.
+    let resolveRead: (response: Response) => void = () => {};
+    mockFetch.mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+    renderProvider();
+
+    fireEvent.click(screen.getByTestId("ensure"));
+
+    // Still waiting on the read: no drawer, no resolution yet.
+    expect(screen.queryByText("Bevor Ordilo mitdenkt")).toBeNull();
+    expect(lastEnsureResult).toBeNull();
+
+    resolveRead(jsonResponse({ ai_data_sharing: "granted" }));
+
+    await waitFor(() => expect(lastEnsureResult).toBe(true));
+    expect(screen.queryByText("Bevor Ordilo mitdenkt")).toBeNull();
+  });
+
   it("opens the drawer when never asked and records the grant", async () => {
     givenStatus(null);
     mockFetch.mockResolvedValueOnce(jsonResponse({ ai_data_sharing: "granted" }));

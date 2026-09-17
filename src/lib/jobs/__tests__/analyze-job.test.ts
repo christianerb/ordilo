@@ -35,6 +35,7 @@ const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
  */
 function mockWorkerClient(docStatus: string) {
   const documentUpdates: Record<string, unknown>[] = [];
+  const jobUpdates: Record<string, unknown>[] = [];
 
   const rpc = vi.fn().mockImplementation((fn: string) => {
     if (fn === "reap_stale_processing_jobs") {
@@ -100,16 +101,19 @@ function mockWorkerClient(docStatus: string) {
       }
       if (table === "processing_jobs") {
         return {
-          update: vi.fn(() => ({
-            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-          })),
+          update: vi.fn((payload: Record<string, unknown>) => {
+            jobUpdates.push(payload);
+            return {
+              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }),
         };
       }
       throw new Error(`Unexpected table: ${table}`);
     }),
   } as unknown as Client;
 
-  return { client, documentUpdates };
+  return { client, documentUpdates, jobUpdates };
 }
 
 describe("analyze job failure handling", () => {
@@ -176,19 +180,33 @@ describe("analyze job failure handling", () => {
     expect(documentUpdates.at(-1)).toMatchObject({ status: "failed" });
   });
 
-  it("skips the job untouched when the uploader has no AI consent", async () => {
+  it("defers the job when the uploader has no AI consent, keeping it retryable", async () => {
     // Apple 5.1.2(i): without the uploader's explicit consent no content
-    // leaves for OpenAI — not even from the background worker. The job is
-    // skipped without a status transition so the user can grant consent
-    // and retry from the app.
+    // leaves for OpenAI — not even from the background worker. The job goes
+    // back to pending (claim attempt refunded, next run pushed out) instead
+    // of being completed: granting consent later lets the next worker run
+    // pick it up, and the document is never stranded without an active job.
     vi.mocked(hasAiDataSharingConsent).mockResolvedValueOnce(false);
-    const { client, documentUpdates } = mockWorkerClient("ocr_done");
+    const { client, documentUpdates, jobUpdates } = mockWorkerClient("ocr_done");
 
     const summary = await runPendingJobs(client, 1);
 
     expect(summary.failed).toBe(0);
-    expect(summary.results[0]?.outcome).toBe("skipped");
+    expect(summary.succeeded).toBe(0);
+    expect(summary.deferred).toBe(1);
+    expect(summary.results[0]?.outcome).toBe("deferred");
     expect(performAnalyzeStep).not.toHaveBeenCalled();
     expect(documentUpdates.some((u) => u.status === "analyzing")).toBe(false);
+    // Back to pending — never done — with the claim attempt (1) refunded.
+    expect(jobUpdates.some((u) => u.status === "done")).toBe(false);
+    const deferred = jobUpdates.at(-1);
+    expect(deferred).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      started_at: null,
+    });
+    expect(
+      new Date(deferred?.run_after as string).getTime(),
+    ).toBeGreaterThan(Date.now());
   });
 });

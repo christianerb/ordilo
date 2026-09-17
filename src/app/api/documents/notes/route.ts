@@ -11,7 +11,6 @@ import { DOCUMENT_TYPES } from "@/lib/schemas/extraction";
 import type { Database } from "@/types/database";
 import { jsonError, methodNotAllowed } from "@/lib/api/respond";
 import { encryptSecret } from "@/lib/secrets";
-import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import {
   buildStoragePath,
   readFileHeaderBytes,
@@ -119,10 +118,11 @@ export async function POST(request: Request): Promise<Response> {
   }
   const user = auth.user;
 
-  // 1b. Explicit consent for third-party AI processing (Apple 5.1.2(i)).
-  //     A saved note is enriched by OpenAI (analysis + embeddings).
-  const consentRefusal = await refuseWithoutAiConsent(user.id);
-  if (consentRefusal) return consentRefusal;
+  // Apple 5.1.2(i): deliberately NO consent refusal here. Saving a manual
+  // note is not an AI feature — the text is stored exactly as the user
+  // typed it. Only the optional background enrichment (step 7) touches a
+  // third-party AI, and the job worker defers it until the user consents.
+  // Refusing here would let a privacy choice destroy a non-AI feature.
 
   // 2. Parse multipart form data ------------------------------------------
   let formData: FormData;
@@ -313,6 +313,11 @@ export async function POST(request: Request): Promise<Response> {
   // (`next/server` after()), exactly like the upload route: the user gets
   // their note back immediately and enrichment lands a moment later via
   // realtime. Any failure here must never fail the note itself.
+  //
+  // Consent (Apple 5.1.2(i)): the worker checks the uploader's AI consent
+  // before calling OpenAI and defers the job while it is missing — so the
+  // note saves and shows up even without consent, and enrichment follows
+  // automatically once the user agrees.
   let serverPipeline = false;
 
   if (process.env.PIPELINE_MODE !== "sync") {
