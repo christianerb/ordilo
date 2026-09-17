@@ -89,13 +89,17 @@ video, which is optional.
 ## Pending blockers
 
 - Content-rights declaration: user clarification requested about supplied third-party content. No ownership/licensing attestation was guessed.
-- App Privacy is still incomplete. Reconcile the native app, backend, Sentry,
-  RevenueCat, OpenAI and Datalab against every Apple data-type question. The
-  public privacy notice now also describes RevenueCat and App Store purchases.
-  For guideline 5.1.2(i) the app now collects an explicit, revocable consent
-  before any content reaches OpenAI or Datalab (server-enforced via
-  `user_consents`, surfaced in the App Privacy answers and the review notes);
-  the questionnaire itself is still open.
+- App Privacy questionnaire is now filled in as a saved draft (not yet
+  published): 11 data types. Linked to the user — email address (login),
+  photos/videos, audio data, other user content, search history (all app
+  functionality), user ID and purchase history (app functionality), product
+  interaction (analytics + app functionality). Not linked — crash data,
+  performance data, other diagnostics (analytics only, Sentry with
+  sendDefaultPii off). Tracking: no for every type. Audio is declared because
+  dictation/live voice is transmitted to OpenAI even though Ordilo never
+  stores it. The answers match the public privacy notice and the
+  server-enforced AI consent (`user_consents`, 5.1.2(i)). Remaining: click
+  "Veröffentlichen" in App Store Connect before submission.
 - Build 27 is selected nowhere for release and predates RevenueCat. A fresh EAS
   production build from current `main` is required, followed by TestFlight
   installation and purchase acceptance before it can be selected for iOS 1.0.
@@ -103,9 +107,9 @@ video, which is optional.
   Production EAS secrets, a fresh native build, source maps and a synthetic
   test event still need verification.
 - Release build selection and device acceptance, subscription sandbox
-  acceptance, content-rights declaration, App Privacy, pricing/countries and EU
-  trader status remain release tasks. Contact details and manual release are
-  already saved.
+  acceptance, content-rights declaration, App Privacy publication (answers are
+  drafted), pricing/countries and EU trader status remain release tasks.
+  Contact details and manual release are already saved.
 - RevenueCat products, entitlement, offering, webhook and purchase UI are
   implemented. Entitlement enforcement remains disabled until purchase,
   restore, cancellation, expiry, refund and family-switch behavior pass.
