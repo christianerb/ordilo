@@ -20,10 +20,8 @@ function Section({
 }
 
 /**
- * Terms for the current free prelaunch product. A legal review is still
- * required before release, especially before paid plans or subscriptions are
- * introduced. Do not add prices, minimum terms or cancellation periods here
- * until those product and legal decisions are final.
+ * Product terms for Free and the iOS Plus subscription. Keep store disclosures
+ * in sync with the paywall; this copy does not replace legal review.
  */
 export default function NutzungsbedingungenPage() {
   return (
@@ -86,13 +84,67 @@ export default function NutzungsbedingungenPage() {
         </p>
       </Section>
 
-      <Section title="6. Kosten im aktuellen Stand">
+      <Section title="6. Kostenlos nutzen und Ordilo Plus">
         <p>
-          Ordilo wird im aktuellen Stand kostenlos bereitgestellt. Es
-          gibt derzeit kein kostenpflichtiges Abo in der App. Falls später
-          kostenpflichtige Funktionen angeboten werden, zeigen wir Preis,
-          Laufzeit und Kündigung vor einem Kauf klar an. Ohne deine
-          ausdrückliche Zustimmung entsteht kein kostenpflichtiges Abo.
+          Ordilo hat einen kostenlosen Einstieg. Zusätzlich kannst du Ordilo
+          Plus als freiwilliges Abo abschließen, sobald es dir in der App
+          angeboten wird. Plus enthält unter anderem das Live-Sprachgespräch
+          mit Ordilo. Die normale Diktierfunktion ist kein Live-Gespräch und
+          setzt kein Plus-Abo voraus.
+        </p>
+        <p>
+          Ein Plus-Abo gilt für den Ordilo-Familienbereich, in dem du es
+          abschließt. Die gemeinsame Nutzung erfolgt über eure Ordilo-Konten
+          und ist nicht mit Apples Familienfreigabe gleichzusetzen. Die
+          enthaltenen Funktionen und gegebenenfalls geltende Nutzungsgrenzen
+          zeigen wir dir vor dem Kauf. Es gibt keine automatische Abrechnung
+          einzelner zusätzlicher Fragen oder Dokumente.
+        </p>
+        <p>
+          In Deutschland kostet Ordilo Plus 7,99 € pro Monat oder 79,99 € pro
+          Jahr, einschließlich der anfallenden Umsatzsteuer. Das Jahresabo
+          wird für ein ganzes Jahr im Voraus abgerechnet. Maßgeblich sind der
+          Preis, die Währung und der Abrechnungszeitraum, die dir im App Store
+          vor der Bestätigung angezeigt werden. Preise in anderen Ländern
+          können abweichen. Zum Start gibt es keine kostenlose Testphase des
+          Plus-Abos. Ohne deine ausdrückliche Kaufbestätigung entsteht kein
+          kostenpflichtiges Abo.
+        </p>
+        <p>
+          Beim Kauf über die iOS-App wird dein Apple-Account nach der
+          Kaufbestätigung belastet. Das Abo verlängert sich automatisch um
+          den gewählten Monat oder das gewählte Jahr, wenn du es nicht
+          spätestens 24 Stunden vor Ablauf des aktuellen Zeitraums kündigst.
+          Apple kann die Zahlung für die Verlängerung innerhalb der letzten
+          24 Stunden dieses Zeitraums abbuchen.
+        </p>
+        <p>
+          Du kannst die automatische Verlängerung in den Einstellungen deines
+          iPhones unter deinem Namen → Abonnements → Ordilo beenden. Nach
+          einer Kündigung bleibt Plus grundsätzlich bis zum Ende des bereits
+          bezahlten Zeitraums nutzbar. Über „Käufe wiederherstellen“ in der
+          App kannst du einen vorhandenen Kauf mit dem verwendeten
+          Apple-Account erneut prüfen lassen.
+        </p>
+        <p>
+          Gesetzliche Widerrufs- und Erstattungsrechte bleiben unberührt.
+          Informationen zu einem über Apple abgewickelten Kauf und zur
+          Beantragung einer Erstattung findest du unter{" "}
+          <a className="text-primary underline" href="https://reportaproblem.apple.com">
+            reportaproblem.apple.com
+          </a>
+          . Du kannst dich bei Fragen auch an info@ordilo.de wenden.
+        </p>
+        <p>
+          Für die über den App Store bezogene App gilt ergänzend Apples{" "}
+          <a
+            className="text-primary underline"
+            href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
+          >
+            Standard-Lizenzvertrag (EULA)
+          </a>
+          . Diese Nutzungsbedingungen beschreiben die Nutzung des
+          Ordilo-Dienstes und ersetzen den Apple-Lizenzvertrag nicht.
         </p>
       </Section>
 
@@ -105,7 +157,7 @@ export default function NutzungsbedingungenPage() {
         </p>
       </Section>
 
-      <Section title="8. Export, Kündigung und Löschung">
+      <Section title="8. Export und Kontolöschung">
         <p>
           Du kannst deine Daten in den Einstellungen als JSON-Datei
           exportieren. Originaldateien sind nicht Teil dieser JSON-Datei und
@@ -116,6 +168,12 @@ export default function NutzungsbedingungenPage() {
           angelegt hat, löscht damit auch den gemeinsamen Familienbereich.
           Eingeladene Personen löschen nur ihr eigenes Konto und ihren Zugang;
           die Daten der übrigen Familie bleiben bestehen.
+        </p>
+        <p>
+          Wichtig: Das Löschen deines Kontos oder der App kündigt ein über
+          Apple abgeschlossenes Abo nicht automatisch. Beende die
+          Verlängerung zusätzlich in deinen Apple-Abonnements, damit keine
+          weiteren Zahlungen anfallen.
         </p>
       </Section>
 
@@ -136,7 +194,7 @@ export default function NutzungsbedingungenPage() {
         </p>
       </Section>
 
-      <p className="text-xs text-muted-foreground">Stand: September 2026</p>
+      <p className="text-xs text-muted-foreground">Stand: 16. September 2026</p>
     </article>
   );
 }

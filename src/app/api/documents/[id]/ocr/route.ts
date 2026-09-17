@@ -3,6 +3,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { isValidUuid, markDocumentFailed } from "@/lib/supabase/document-helpers";
 import { DatalabOcrError } from "@/lib/ai/ocr";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import { performOcrStep } from "@/lib/pipeline/ocr-step";
 import { CLEAR_DOCUMENT_FAILURE } from "@/lib/pipeline/failure-tracking";
 import {
@@ -62,6 +63,11 @@ export async function POST(
     const body: OcrErrorResponse = auth.json;
     return Response.json(body, { status: auth.status });
   }
+
+  // 1b. Explicit consent for third-party AI processing (Apple 5.1.2(i)):
+  //     the document is transmitted to Datalab.
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) return consentRefusal;
 
   // 2. Parse document ID from the route params -----------------------------
   const { id: documentId } = await params;

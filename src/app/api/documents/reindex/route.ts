@@ -3,6 +3,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { getFamilyId } from "@/lib/supabase/client-helpers";
 import { enqueueJob } from "@/lib/jobs";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { methodNotAllowed } from "@/lib/api/respond";
 import { reindexRequestSchema } from "@/lib/schemas/jobs";
@@ -29,6 +30,11 @@ export async function POST(request: Request): Promise<Response> {
   if (auth.status) {
     return Response.json(auth.json, { status: auth.status });
   }
+
+  // Reindexing re-embeds confirmed documents via OpenAI — explicit
+  // third-party AI consent required (Apple 5.1.2(i)).
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) return consentRefusal;
 
   const serverClient = await createServerClient();
   const familyId = await getFamilyId(serverClient);

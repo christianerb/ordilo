@@ -13,6 +13,10 @@ vi.mock("@/lib/auth/require-user", () => ({
   requireUser: () => mocks.requireUser(),
 }));
 
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
+
 // Keep the real metered transport, but isolate its database checkpoint from
 // the OpenAI fetch mock. CI supplies Supabase credentials unlike local tests.
 vi.mock("@/lib/supabase/admin", () => ({

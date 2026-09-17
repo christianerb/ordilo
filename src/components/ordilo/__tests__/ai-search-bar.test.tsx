@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const mockStart = vi.fn();
 const mockStop = vi.fn();
@@ -212,7 +212,7 @@ describe("AISearchBar", () => {
     expect(onSubmit).toHaveBeenCalledWith("Zeig mir Rechnungen von gestern");
   });
 
-  it("uses Realtime transcription in an installed PWA", () => {
+  it("uses Realtime transcription in an installed PWA", async () => {
     vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
     render(<AISearchBar onSubmit={vi.fn()} />);
@@ -221,7 +221,8 @@ describe("AISearchBar", () => {
       screen.getByRole("button", { name: "Mit Sprache fragen" }),
     );
 
-    expect(mockStart).toHaveBeenCalledOnce();
+    // The consent gate (Apple 5.1.2(i)) resolves before Realtime starts.
+    await waitFor(() => expect(mockStart).toHaveBeenCalledOnce());
     expect(MockSpeechRecognition.instance).toBeNull();
   });
 
@@ -255,7 +256,7 @@ describe("AISearchBar", () => {
     expect((meter.firstElementChild as HTMLElement).style.transform).toBe("");
   });
 
-  it("falls back to Realtime when native speech recognition fails", () => {
+  it("falls back to Realtime when native speech recognition fails", async () => {
     vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
     render(<AISearchBar onSubmit={vi.fn()} />);
 
@@ -266,7 +267,7 @@ describe("AISearchBar", () => {
       MockSpeechRecognition.instance?.onerror?.();
     });
 
-    expect(mockStart).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mockStart).toHaveBeenCalledOnce());
   });
 
   it("submits the final Realtime voice transcript", async () => {

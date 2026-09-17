@@ -20,6 +20,7 @@ import {
   sanitizeFilename,
 } from "@/lib/api/storage";
 import { recordProductEvent } from "@/lib/analytics/product-events";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import {
   billingEntitlementsEnabled,
   releaseMonthlyUsage,
@@ -99,6 +100,11 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: auth.status });
   }
   const user = auth.user;
+
+  // 1b. Explicit consent for third-party AI processing (Apple 5.1.2(i)).
+  //     An upload is always followed by Datalab OCR + OpenAI analysis.
+  const consentRefusal = await refuseWithoutAiConsent(user.id);
+  if (consentRefusal) return consentRefusal;
 
   // 2. Parse multipart form data ------------------------------------------
   let formData: FormData;

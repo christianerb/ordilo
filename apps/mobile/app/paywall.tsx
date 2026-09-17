@@ -23,6 +23,10 @@ import type { PurchasesPackage } from "react-native-purchases";
 import { OrdiloButton } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
 import { useBilling } from "@/src/lib/billing";
+import {
+  subscriptionPriceLabel,
+  subscriptionRenewalText,
+} from "@/src/lib/subscription-disclosure";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 function packageLabel(item: PurchasesPackage): string {
@@ -33,7 +37,7 @@ function packageLabel(item: PurchasesPackage): string {
 
 function packageDetail(item: PurchasesPackage): string {
   if (item.packageType === "ANNUAL" && item.product.pricePerMonthString) {
-    return `${item.product.pricePerMonthString} pro Monat`;
+    return `Entspricht ${item.product.pricePerMonthString} pro Monat`;
   }
   return item.product.priceString;
 }
@@ -141,15 +145,15 @@ export default function PaywallScreen() {
           <Text style={styles.eyebrow}>Ordilo Plus</Text>
           <Text style={styles.title}>Frag einfach. Ordilo hört zu.</Text>
           <Text style={styles.subtitle}>
-            Sprich deine Frage ein und bekomme schnell eine klare Antwort aus
-            euren Familienunterlagen.
+            Führe ein Live-Gespräch über eure Familienunterlagen.
+            Die normale Diktierfunktion bleibt kostenlos.
           </Text>
         </View>
 
         <View style={styles.benefits}>
           {[
-            [Mic2, "Fragen sprechen statt tippen"],
-            [Sparkles, "Antworten mit passender Quelle"],
+            [Mic2, "Live mit Ordilo sprechen"],
+            [Sparkles, "Gesprochene Antworten mit Fundstellen"],
             [ShieldCheck, "Ein Abo für eure ganze Familie"],
           ].map(([Icon, label]) => {
             const BenefitIcon = Icon as typeof Mic2;
@@ -172,7 +176,7 @@ export default function PaywallScreen() {
               const active = chosen?.identifier === item.identifier;
               return (
                 <Pressable
-                  accessibilityLabel={`${packageLabel(item)}, ${item.product.priceString}`}
+                  accessibilityLabel={subscriptionPriceLabel(item)}
                   accessibilityRole="radio"
                   accessibilityState={{ checked: active }}
                   key={item.identifier}
@@ -186,7 +190,7 @@ export default function PaywallScreen() {
                     <Text style={styles.planTitle}>{packageLabel(item)}</Text>
                     <Text style={styles.planDetail}>{packageDetail(item)}</Text>
                   </View>
-                  <Text style={styles.planPrice}>{item.product.priceString}</Text>
+                  <Text style={styles.planPrice}>{subscriptionPriceLabel(item)}</Text>
                 </Pressable>
               );
             })}
@@ -215,8 +219,7 @@ export default function PaywallScreen() {
           }
         />
         <Text style={styles.renewal}>
-          Zahlung über deinen App Store. Das Abo verlängert sich automatisch und
-          kann dort jederzeit gekündigt werden.
+          {subscriptionRenewalText(chosen)}
         </Text>
         <View style={styles.links}>
           <Pressable disabled={busy !== null} onPress={() => void restorePurchase()}>

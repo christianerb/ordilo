@@ -13,6 +13,7 @@ import {
   writeCollapsedPreference,
 } from "@/components/ordilo/app-shell-shared";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { AiConsentProvider } from "@/lib/ai/consent-context";
 import { ScanProvider } from "@/lib/scan/scan-context";
 import {
   CollectionsProvider,
@@ -75,6 +76,7 @@ export function AppShell({
   const hasServerData = initialCollections !== undefined;
   return (
     <TooltipProvider delayDuration={300}>
+      <AiConsentProvider>
       <ActiveSearchProvider>
         <ScanProvider initialFamilyId={familyId}>
           <CollectionsProvider initialCollections={initialCollections}>
@@ -92,6 +94,7 @@ export function AppShell({
           </CollectionsProvider>
         </ScanProvider>
       </ActiveSearchProvider>
+      </AiConsentProvider>
     </TooltipProvider>
   );
 }

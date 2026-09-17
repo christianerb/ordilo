@@ -57,6 +57,7 @@ import {
   cardRestShadow,
 } from "@/src/components/ui";
 import { ScanHeroIllustration } from "@/src/components/scan-hero-illustration";
+import { useAiConsent } from "@/src/lib/ai-consent-context";
 import { useFamily } from "@/src/lib/family-context";
 import {
   resumeScannedDocument,
@@ -231,6 +232,7 @@ export default function ScanModal() {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
+  const { ensureAiConsent } = useAiConsent();
   const [sheetVisible, setSheetVisible] = useState(true);
   const [flow, setFlow] = useState<ScanFlow>({ phase: "capture" });
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -348,6 +350,18 @@ export default function ScanModal() {
   const processQueueItem = useCallback(
     async (item: QueueItem) => {
       if (!family && !item.documentId) return;
+      // Apple 5.1.2(i): nothing reaches OpenAI/Datalab before the recorded
+      // consent. A dismissed sheet leaves the item failed but retryable —
+      // granting later re-runs this exact path.
+      if (!(await ensureAiConsent())) {
+        await markQueueFailed(item.id, {
+          documentId: item.documentId,
+          processingStep: item.processingStep,
+          error:
+            "Ordilo braucht deine Zustimmung zur KI-Verarbeitung. Tippe auf Wiederholen, sobald du zugestimmt hast.",
+        });
+        return;
+      }
       processingAbortRef.current?.abort();
       const controller = new AbortController();
       processingAbortRef.current = controller;
@@ -538,7 +552,7 @@ export default function ScanModal() {
         }
       }
     },
-    [family, markQueueFailed, person, router, updateQueue],
+    [ensureAiConsent, family, markQueueFailed, person, router, updateQueue],
   );
 
   const startQueueItem = useCallback(async (item: QueueItem) => {

@@ -17,6 +17,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Stable machine code from the API error body (e.g. AI_CONSENT_REQUIRED). */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -76,9 +78,20 @@ export async function apiFetch(
   }
 
   if (!response.ok) {
+    // The routes answer with { error, code }; the code lets callers react
+    // to specific refusals (e.g. a missing AI consent) while the generic
+    // German message stays the safe fallback for display.
+    let code: string | undefined;
+    try {
+      const body = (await response.clone().json()) as { code?: unknown };
+      if (typeof body?.code === "string") code = body.code;
+    } catch {
+      // Non-JSON error bodies carry no code.
+    }
     throw new ApiError(
       "Das hat nicht geklappt. Bitte versuch's nochmal.",
       response.status,
+      code,
     );
   }
   return response;

@@ -39,6 +39,10 @@ vi.mock("@/lib/billing/quota", () => ({
   releaseMonthlyUsage: (...args: unknown[]) => mocks.release(...args),
 }));
 
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
+
 vi.mock("@/lib/realtime/live-session-control", () => ({
   enforceLiveSessionLimit: (...args: unknown[]) =>
     mocks.enforceLimit(...args),

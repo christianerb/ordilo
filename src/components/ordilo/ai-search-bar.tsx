@@ -16,6 +16,7 @@ import {
 } from "@/lib/realtime/use-realtime-transcription";
 import { cn } from "@/lib/utils";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
+import { useAiConsent } from "@/lib/ai/consent-context";
 import { usePrefersReducedMotion } from "@/lib/hooks/use-media-query";
 
 /**
@@ -300,6 +301,7 @@ export function AISearchBar({
 
   const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
   const reducedMotion = usePrefersReducedMotion();
+  const { ensureAiConsent } = useAiConsent();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const {
     levels: nativeLevels,
@@ -408,8 +410,13 @@ export function AISearchBar({
 
     const SpeechRecognitionCtor = getSpeechRecognition();
     if (!SpeechRecognitionCtor || isStandalonePwa()) {
-      setVoiceMode("realtime");
-      void start();
+      // The Realtime fallback streams the microphone to OpenAI (Apple
+      // 5.1.2(i)) — collect the explicit consent before it starts.
+      void (async () => {
+        if (!(await ensureAiConsent())) return;
+        setVoiceMode("realtime");
+        void start();
+      })();
       return;
     }
 
@@ -436,8 +443,16 @@ export function AISearchBar({
     recognition.onerror = () => {
       recognitionRef.current = null;
       stopNativeMeter();
-      setVoiceMode("realtime");
-      void start();
+      // Same gate as the direct Realtime path: the microphone stream
+      // leaves the device for OpenAI only after consent.
+      void (async () => {
+        if (!(await ensureAiConsent())) {
+          setVoiceMode(null);
+          return;
+        }
+        setVoiceMode("realtime");
+        void start();
+      })();
     };
     recognition.onend = () => {
       recognitionRef.current = null;
@@ -451,6 +466,7 @@ export function AISearchBar({
     recognition.start();
   }, [
     cancel,
+    ensureAiConsent,
     handleSubmit,
     setValue,
     start,

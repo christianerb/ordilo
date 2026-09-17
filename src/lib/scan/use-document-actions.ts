@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { getFailedStage } from "@/lib/schemas/document";
 import { createNote } from "@/lib/notes";
 import { retryFailedDocument } from "@/lib/document-retry";
+import { useAiConsent } from "@/lib/ai/consent-context";
 import type { DocumentType } from "@/lib/schemas/extraction";
 import type { DocumentRow } from "@/lib/scan/scan-context-types";
 import type {
@@ -65,12 +66,19 @@ export function useDocumentActions({
   setWizardDocument: Dispatch<SetStateAction<DocumentRow | null>>;
 }) {
   const router = useRouter();
+  const { ensureAiConsent } = useAiConsent();
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
   // The collection category the note is filed into, set by openCreateNote.
   const [createNoteCategory, setCreateNoteCategory] = useState<string | null>(null);
 
   const handleRetryFailed = useCallback(
     async (documentId: string) => {
+      // Retrying sends the document to Datalab/OpenAI again, so collect
+      // the explicit consent decision first (Apple 5.1.2(i)). Without this
+      // gate a pre-consent user would just get the server's 403 as an
+      // error toast, with no way to grant consent from here.
+      if (!(await ensureAiConsent())) return;
+
       // Failed-stage routing needs `ocr_text`/`page_count`, which the
       // trimmed list fetch intentionally no longer carries — read the two
       // fields directly for this one document.
@@ -139,6 +147,7 @@ export function useDocumentActions({
     },
     [
       supabase,
+      ensureAiConsent,
       updateTrackedDocument,
       serverPipelineRef,
       triggeredAnalysisRef,

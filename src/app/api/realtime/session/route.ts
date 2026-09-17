@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 
 const REALTIME_MODEL = "gpt-realtime-2.1";
 
@@ -102,6 +103,15 @@ async function handleRealtimeSession(): Promise<Response> {
   }
 
   attributeUsageUser(auth.user.id);
+
+  // Explicit consent for third-party AI processing (Apple 5.1.2(i)): the
+  // minted secret lets the device stream audio straight to OpenAI.
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) {
+    reportRefusal("AI_CONSENT_REQUIRED");
+    return consentRefusal;
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return sessionUnavailable();

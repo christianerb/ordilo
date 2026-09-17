@@ -2,6 +2,7 @@ import { attributeUsageUser, withUsageScope } from "@/lib/analytics/api-usage";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { EmbeddingError } from "@/lib/ai/embeddings";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import { parseJsonBody } from "@/lib/api/parse-json";
 import { jsonError, methodNotAllowed } from "@/lib/api/respond";
 import {
@@ -73,6 +74,13 @@ async function handleSearch(request: Request): Promise<Response> {
   }
 
   attributeUsageUser(auth.user.id);
+
+  // 1b. Explicit consent for third-party AI processing (Apple 5.1.2(i)).
+  //     Every mode can reach OpenAI — semantic/hybrid embed the query and
+  //     graph search expands it via the LLM.
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) return consentRefusal;
+
   // 2. Parse & validate the request body -----------------------------------
   const parsed = await parseJsonBody(request, searchRequestSchema, {
     invalidPayload:

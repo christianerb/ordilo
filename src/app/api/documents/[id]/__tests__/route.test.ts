@@ -20,11 +20,17 @@ vi.mock("@/lib/ai/embeddings", () => ({
     }
   },
 }));
+// Every edit rebuilds the document's embeddings via OpenAI, so the route
+// checks the explicit AI consent first; tests here run with consent granted.
+vi.mock("@/lib/ai/consent", () => ({
+  refuseWithoutAiConsent: vi.fn(async () => null),
+}));
 
 import { PATCH } from "@/app/api/documents/[id]/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/document-embeddings";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import type { ConfirmRpcEmbedding, ConfirmRpcEntity } from "@/types/database";
 
 const REBUILT_EMBEDDING: ConfirmRpcEmbedding = {
@@ -163,6 +169,27 @@ describe("PATCH /api/documents/[id]", () => {
     const response = await PATCH(request(validPayload()), params());
 
     expect(response.status).toBe(401);
+  });
+
+  it("refuses the edit when AI consent is missing (Apple 5.1.2(i))", async () => {
+    // The edit rebuilds the embeddings from the document's OCR text via
+    // OpenAI, so without consent nothing may be sent — and nothing written.
+    const { client, rpcCalls } = mockServerClient();
+    vi.mocked(createServerClient).mockResolvedValue(client as never);
+    vi.mocked(createAdminClient).mockReturnValue(mockAdminClient() as never);
+    vi.mocked(refuseWithoutAiConsent).mockResolvedValueOnce(
+      Response.json(
+        { error: "Einwilligung fehlt.", code: "AI_CONSENT_REQUIRED" },
+        { status: 403 },
+      ),
+    );
+
+    const response = await PATCH(request(validPayload()), params());
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).code).toBe("AI_CONSENT_REQUIRED");
+    expect(vi.mocked(buildDocumentEmbeddings)).not.toHaveBeenCalled();
+    expect(rpcCalls).toHaveLength(0);
   });
 
   it("rejects an invalid payload", async () => {

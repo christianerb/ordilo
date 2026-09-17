@@ -3,7 +3,7 @@ import { ApiError } from "../lib/api";
 import { resumeScannedDocument, uploadScannedDocument, type PersistedScanQueueItem } from "../lib/scan";
 
 let mockQueue: PersistedScanQueueItem[] = [];
-jest.mock("../lib/api", () => ({ ApiError: class extends Error { status: number; constructor(message: string, code: number) { super(message); this.status = code; } } }));
+jest.mock("../lib/api", () => ({ ApiError: class extends Error { status: number; code?: string; constructor(message: string, status: number, code?: string) { super(message); this.status = status; this.code = code; } } }));
 jest.mock("../lib/scan", () => ({
   loadPersistedScanQueue: jest.fn(async () => mockQueue),
   mutateScanQueue: jest.fn(async (_family: string, transform: (items: PersistedScanQueueItem[]) => PersistedScanQueueItem[]) => { mockQueue = transform(mockQueue); return mockQueue; }),
@@ -64,6 +64,13 @@ it("does not start work after the account or route changes", async () => {
   await drainIntake("family", () => false);
   expect(upload).not.toHaveBeenCalled();
   expect(mockQueue).toHaveLength(3);
+});
+
+it("explains a missing AI consent instead of the generic access refusal", async () => {
+  upload.mockRejectedValue(new ApiError("Einwilligung fehlt", 403, "AI_CONSENT_REQUIRED"));
+  await drainIntake("family", () => true);
+  expect(mockQueue.every((item) => item.state === "failed")).toBe(true);
+  expect(mockQueue[0].error).toBe("Ordilo braucht deine Zustimmung zur KI-Verarbeitung. Du findest sie in den Einstellungen.");
 });
 
 it("keeps permanent failures for explicit retry", async () => {

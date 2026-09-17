@@ -1,6 +1,7 @@
 import { attributeUsageUser, meteredOpenAIFetch, withUsageScope } from "@/lib/analytics/api-usage";
 import { requireUser } from "@/lib/auth/require-user";
 import { reserveVoiceTranscription } from "@/lib/ai/voice-rate-limit";
+import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import { getM4aDurationMillis } from "@/lib/audio-duration";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -21,6 +22,11 @@ async function handleTranscription(request: Request): Promise<Response> {
   const auth = await requireUser();
   if (auth.status) return Response.json(auth.json, { status: auth.status });
   attributeUsageUser(auth.user.id);
+
+  // Explicit consent for third-party AI processing (Apple 5.1.2(i)):
+  // the recording is transmitted to OpenAI for transcription.
+  const consentRefusal = await refuseWithoutAiConsent(auth.user.id);
+  if (consentRefusal) return consentRefusal;
 
   const form = await request.formData().catch(() => null);
   const audio = form?.get("audio");
