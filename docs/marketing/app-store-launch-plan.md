@@ -45,7 +45,7 @@ Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto pr�
 | Screenshots | Sechs Motive gespeichert; Scan → Frage → Beleg steht zuerst | Kein weiteres Bild für den Erst-Submit nötig; App Preview optional |
 | Support-/Marketing-URL, Copyright | Gespeichert | Eigene Supportseite verbessert Hilfe; Impressum enthält derzeit Kontakt |
 | Datenschutz-URL | Gespeichert | URL ersetzt keine Datenerklärung |
-| App-Datenschutz | Fragebogen vollständig ausgefüllt (11 Datentypen, kein Tracking), als Entwurf gespeichert — noch nicht veröffentlicht | Vor dem Submit auf „Veröffentlichen" klicken; Antworten bei Änderungen an der Datenerhebung aktualisieren |
+| App-Datenschutz | Fragebogen ausgefüllt und veröffentlicht (11 Datentypen, kein Tracking) | Antworten bei Änderungen an der Datenerhebung aktualisieren und erneut veröffentlichen |
 | KI-Einwilligung (Richtlinie 5.1.2(i)) | Ausdrückliche Einwilligung vor der ersten Übertragung an OpenAI/Datalab umgesetzt: einmaliger Dialog in App und Web, serverseitig erzwungen (`user_consents`, 403 `AI_CONSENT_REQUIRED`), in den Einstellungen änder- und widerrufbar, Ablehnung sperrt nur KI-Funktionen | Dialog und Widerruf auf dem finalen Build prüfen; in den Review Notes und den App-Privacy-Antworten erwähnen |
 | Öffentliche Datenschutzerklärung | Einmalcode und Passwort beschrieben; vorläufiges Launch-Versprechen entfernt | Verträge, Rollen der Dienstleister und Drittland-Grundlagen pro Anbieter rechtlich und anhand der Vertragsunterlagen prüfen |
 | Datenexport | Authentifizierter JSON-Export über mobile Einstellungen umgesetzt | Auf Release-Backend und echtem Gerät prüfen; Originaldateien werden bewusst einzeln geteilt und sind nicht im JSON |
