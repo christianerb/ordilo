@@ -17,6 +17,7 @@ import {
   Check,
   FilePlus2,
   Images,
+  Mail,
   ScanLine,
   Upload,
   X,
@@ -1135,7 +1136,15 @@ export default function ScanModal() {
           </View>
         </SpringPressable>
 
-        <OrdiloButton title="Per E-Mail an Ordilo" variant="ghost" onPress={() => router.push("/posteingang")} />
+        <View style={styles.secondaryActions}>
+          <ScanSecondaryAction
+            accessibilityLabel="Per E-Mail an Ordilo schicken"
+            disabled={false}
+            icon={<Mail color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+            label="Per E-Mail an Ordilo"
+            onPress={() => router.push("/posteingang")}
+          />
+        </View>
         <View style={styles.secondaryActions}>
           <ScanSecondaryAction
             accessibilityLabel="Fotos auswählen"

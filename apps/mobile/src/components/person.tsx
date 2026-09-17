@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react-native";
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
 import {
   getPersonColor,
@@ -10,11 +10,11 @@ import {
 import { colors, radii, sizes, typography } from "@/src/theme/tokens";
 
 /**
- * The family on a row. Three sizes of the same idea — a coloured circle
- * with the first letter — so "wer?" reads identically on tasks, events,
- * documents and in the chat. Never decorative: an avatar always stands
- * for a real person, and an empty seat (dashed circle) always means the
- * question is still open.
+ * The family on a row. A circle with the person's photo, or — with none
+ * uploaded — the first letter on a coloured background, so "wer?" reads
+ * identically on tasks, events, documents and in the chat. Never
+ * decorative: an avatar always stands for a real person, and an empty
+ * seat (dashed circle) always means the question is still open.
  */
 export function PersonAvatar({
   person,
@@ -22,7 +22,7 @@ export function PersonAvatar({
   size = sizes.avatar,
   style,
 }: {
-  person: Pick<Person, "name" | "color">;
+  person: Pick<Person, "name" | "color" | "photoUrl">;
   /**
    * Assigned, but that person hasn't accepted it yet. Reuses the empty
    * seat's dashed ring for "still open" instead of a second, separate
@@ -33,6 +33,7 @@ export function PersonAvatar({
   style?: StyleProp<ViewStyle>;
 }) {
   const fontSize = Math.max(10, Math.round(size * 0.44));
+  const photoUrl = person.photoUrl;
   return (
     <View
       accessibilityElementsHidden
@@ -41,7 +42,7 @@ export function PersonAvatar({
         styles.avatar,
         pending && styles.avatarPending,
         {
-          backgroundColor: getPersonColor(person),
+          backgroundColor: photoUrl ? colors.sand : getPersonColor(person),
           borderRadius: size / 2,
           height: size,
           width: size,
@@ -49,12 +50,19 @@ export function PersonAvatar({
         style,
       ]}
     >
-      <Text
-        allowFontScaling={false}
-        style={[styles.initial, { fontSize, lineHeight: Math.round(fontSize * 1.2) }]}
-      >
-        {getPersonInitial(person.name)}
-      </Text>
+      {photoUrl ? (
+        <Image
+          source={{ uri: photoUrl }}
+          style={{ borderRadius: size / 2, height: size, width: size }}
+        />
+      ) : (
+        <Text
+          allowFontScaling={false}
+          style={[styles.initial, { fontSize, lineHeight: Math.round(fontSize * 1.2) }]}
+        >
+          {getPersonInitial(person.name)}
+        </Text>
+      )}
     </View>
   );
 }
@@ -92,7 +100,7 @@ export function AvatarStack({
   size = sizes.avatar,
   style,
 }: {
-  people: Pick<Person, "name" | "color">[];
+  people: Pick<Person, "name" | "color" | "photoUrl">[];
   max?: number;
   size?: number;
   style?: StyleProp<ViewStyle>;
@@ -143,7 +151,7 @@ export function PersonChip({
   selected = false,
   style,
 }: {
-  person: Pick<Person, "name" | "color">;
+  person: Pick<Person, "name" | "color" | "photoUrl">;
   selected?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -164,6 +172,7 @@ const styles = StyleSheet.create({
   avatar: {
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   initial: {
     color: colors.warmWhite,

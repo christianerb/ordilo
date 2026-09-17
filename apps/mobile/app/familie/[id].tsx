@@ -39,6 +39,7 @@ import {
   type HeuteEventOccurrence,
   type HeuteTask,
 } from "@/src/lib/heute";
+import { fetchMemberPhotoUrls } from "@/src/lib/member-photos";
 import {
   listMembers,
   type MemberRow,
@@ -57,6 +58,7 @@ export default function FamilyMemberScreen() {
   const { family } = useFamily();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [member, setMember] = useState<MemberRow | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [data, setData] = useState<HeuteData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,9 +75,10 @@ export default function FamilyMemberScreen() {
       else setLoading(true);
       setError(null);
       try {
-        const [membersResult, homeData] = await Promise.all([
+        const [membersResult, homeData, photoUrls] = await Promise.all([
           listMembers(family.id),
           loadHeuteData(family.id),
+          fetchMemberPhotoUrls(family.id),
         ]);
         if (!membersResult.success) throw new Error(membersResult.error);
         const found = membersResult.data.find(
@@ -83,6 +86,7 @@ export default function FamilyMemberScreen() {
         );
         if (!found) throw new Error("Diese Person wurde nicht gefunden.");
         setMember(found);
+        setPhotoUrl(photoUrls[found.id] ?? null);
         setData(homeData);
       } catch (caught) {
         setError(
@@ -211,7 +215,7 @@ export default function FamilyMemberScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.identity}>
-            <PersonAvatar person={memberToPerson(member)} size={104} />
+            <PersonAvatar person={{ ...memberToPerson(member), photoUrl }} size={104} />
             <View style={styles.identityCopy}>
               <Text numberOfLines={2} style={styles.name}>
                 {member.name}
