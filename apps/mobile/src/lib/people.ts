@@ -23,6 +23,7 @@ export interface MemberLike {
   name: string;
   avatar_color?: string | null;
   avatarColor?: string | null;
+  photoUrl?: string | null;
 }
 
 /** First letter of the first word, upper-cased; "?" for an empty name. */
@@ -60,6 +61,7 @@ export function memberToPerson(member: MemberLike): Person {
     id: member.id,
     name: member.name,
     color: member.avatar_color ?? member.avatarColor ?? null,
+    photoUrl: member.photoUrl ?? null,
   };
 }
 

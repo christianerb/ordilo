@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { fetchAllRows } from "./collections";
+import { fetchMemberPhotoUrls } from "./member-photos";
 import { getSupabase } from "./supabase";
 
 /**
@@ -46,6 +47,8 @@ export interface FamilyMemberOption {
   name: string;
   role: string | null;
   avatar_color: string | null;
+  /** Short-lived signed URL for an uploaded photo; null shows the initial. */
+  photoUrl: string | null;
 }
 
 /**
@@ -462,17 +465,23 @@ export async function fetchPlannerTasks(familyId: string): Promise<PlannerTask[]
   });
 }
 
-/** The family's members (id, name, role, color) for the assign sheet. */
+/** The family's members (id, name, role, color, photo) for the assign sheet. */
 export async function fetchFamilyMembers(
   familyId: string,
 ): Promise<FamilyMemberOption[]> {
-  const { data, error } = await getSupabase()
-    .from("family_members")
-    .select("id, name, role, avatar_color")
-    .eq("family_id", familyId)
-    .order("created_at", { ascending: true });
+  const [{ data, error }, photoUrls] = await Promise.all([
+    getSupabase()
+      .from("family_members")
+      .select("id, name, role, avatar_color")
+      .eq("family_id", familyId)
+      .order("created_at", { ascending: true }),
+    fetchMemberPhotoUrls(familyId),
+  ]);
   if (error) throw error;
-  return (data ?? []) as FamilyMemberOption[];
+  return (data ?? []).map((member) => ({
+    ...member,
+    photoUrl: photoUrls[member.id] ?? null,
+  })) as FamilyMemberOption[];
 }
 
 // ---------------------------------------------------------------------------

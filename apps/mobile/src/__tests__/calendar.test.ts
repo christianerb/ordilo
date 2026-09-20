@@ -91,8 +91,8 @@ describe("native calendar", () => {
 
   it("names attendees and the responsible family member", () => {
     expect(formatEventPeople(event, [
-      { id: "member-1", name: "Lina", role: null, avatar_color: null },
-      { id: "member-2", name: "Karina", role: null, avatar_color: null },
+      { id: "member-1", name: "Lina", role: null, avatar_color: null, photoUrl: null },
+      { id: "member-2", name: "Karina", role: null, avatar_color: null, photoUrl: null },
     ])).toBe("Für Lina · Karina kümmert sich");
   });
 

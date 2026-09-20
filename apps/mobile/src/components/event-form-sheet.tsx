@@ -16,6 +16,7 @@ import {
 } from "lucide-react-native";
 
 import { ConfirmDialog } from "./confirm-dialog";
+import { PersonAvatar } from "./person";
 import {
   OrdiloFormBody,
   OrdiloFormField,
@@ -32,6 +33,7 @@ import {
   type PlannerEvent,
   type PlannerEventInput,
 } from "@/src/lib/calendar";
+import { memberToPerson } from "@/src/lib/people";
 import type { FamilyMemberOption } from "@/src/lib/tasks";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -327,19 +329,7 @@ export function EventFormSheet({
                         selected && styles.memberChipSelected,
                       ]}
                     >
-                      <View
-                        style={[
-                          styles.memberCircle,
-                          {
-                            backgroundColor:
-                              member.avatar_color ?? colors.sandLight,
-                          },
-                        ]}
-                      >
-                        <Text style={styles.memberInitial}>
-                          {member.name.trim().charAt(0).toUpperCase() || "?"}
-                        </Text>
-                      </View>
+                      <PersonAvatar person={memberToPerson(member)} size={36} />
                       <Text numberOfLines={1} style={styles.memberName}>
                         {member.name}
                       </Text>
@@ -430,14 +420,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(48, 84, 96, 0.08)",
     borderColor: colors.harborBlue,
   },
-  memberCircle: {
-    alignItems: "center",
-    borderRadius: radii.pill,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  memberInitial: { color: colors.warmWhite, ...typography.title },
   memberName: {
     color: colors.graphite,
     textAlign: "center",
