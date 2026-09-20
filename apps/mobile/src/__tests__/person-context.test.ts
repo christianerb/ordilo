@@ -16,8 +16,8 @@ jest.mock("../lib/supabase", () => ({ getSupabase: () => ({}) }));
 const TODAY = "2026-09-08";
 
 const members: FamilyMemberOption[] = [
-  { id: "m-karina", name: "Karina", role: "Kind", avatar_color: "#C0392B" },
-  { id: "m-christian", name: "Christian", role: "Elternteil", avatar_color: "#E46018" },
+  { id: "m-karina", name: "Karina", role: "Kind", avatar_color: "#C0392B", photoUrl: null },
+  { id: "m-christian", name: "Christian", role: "Elternteil", avatar_color: "#E46018", photoUrl: null },
 ];
 
 function task(overrides: Partial<PlannerTask> = {}): PlannerTask {

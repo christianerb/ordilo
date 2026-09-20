@@ -33,7 +33,7 @@ describe("people", () => {
       [{ id: "m1", name: "Emma Müller", avatar_color: "#27AE60" }],
     );
     expect(people).toEqual([
-      { id: "m1", name: "Emma Müller", color: "#27AE60" },
+      { id: "m1", name: "Emma Müller", color: "#27AE60", photoUrl: null },
       { id: null, name: "Frau Dr. Weber", color: null },
     ]);
   });

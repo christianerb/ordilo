@@ -20,6 +20,7 @@ import {
 } from "react-native";
 
 import { ConfirmDialog } from "./confirm-dialog";
+import { PersonAvatar } from "./person";
 import { OrdiloPickerOverlay } from "./picker-sheet";
 import {
   OrdiloNestedSheet,
@@ -39,6 +40,7 @@ import {
   type FamilyMemberOption,
   type PlannerTask,
 } from "@/src/lib/tasks";
+import { memberToPerson } from "@/src/lib/people";
 import { toCalendarDate } from "@/src/lib/calendar";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -361,21 +363,7 @@ export function TaskFormSheet({
           ...members.map((member) => ({
             key: member.id,
             label: member.name,
-            leading: (
-              <View
-                style={[
-                  styles.pickerAvatar,
-                  {
-                    backgroundColor:
-                      member.avatar_color ?? colors.sandLight,
-                  },
-                ]}
-              >
-                <Text style={styles.memberInitial}>
-                  {member.name.trim().charAt(0).toUpperCase() || "?"}
-                </Text>
-              </View>
-            ),
+            leading: <PersonAvatar person={memberToPerson(member)} size={36} />,
             onPress: () => {
               setAssignedTo(member.id);
               setError(null);
@@ -417,10 +405,6 @@ const styles = StyleSheet.create({
   },
   cardPressed: {
     backgroundColor: colors.sandWarm,
-  },
-  memberInitial: {
-    color: colors.warmWhite,
-    ...typography.title,
   },
   dismissButton: {
     alignItems: "center",
