@@ -881,108 +881,116 @@ export default function ScanModal() {
           showsVerticalScrollIndicator={false}
           style={styles.processingScroll}
         >
-          <Animated.View
-            entering={contentEntering()}
-            key={failed ? "failed" : "processing"}
-            style={styles.processingContent}
-          >
-            <View style={styles.characterWrap}>
-              {failed ? (
-                <View style={styles.failedCharacter}>
-                  <XCircle color={colors.destructive} size={40} />
-                </View>
-              ) : (
-                <ScanProcessingHero stage={processingStage} />
-              )}
-            </View>
+          {/*
+            A plain View as the ScrollView's direct child, not the animated
+            one below — an entering/exiting Animated.View sitting right
+            inside a ScrollView can leave it unable to measure its content
+            (and so unable to scroll) for as long as that view is mounted.
+          */}
+          <View>
             <Animated.View
               entering={contentEntering()}
-              key={failed ? "failed-copy" : processingStage}
-              style={styles.processingMessage}
+              key={failed ? "failed" : "processing"}
+              style={styles.processingContent}
             >
-              <Text style={styles.processingHeading}>
-                {failed ? "Das hat noch nicht geklappt" : processingCopy.heading}
-              </Text>
-              <Text style={styles.processingCopy}>
-                {failed ? flow.error : processingCopy.description}
-              </Text>
-            </Animated.View>
-
-            {item ? (
-              <View style={styles.processingFile}>
-                <FilePlus2 color={colors.harborBlue} size={18} />
-                <Text numberOfLines={1} style={styles.processingFileName}>
-                  {item.name}
-                </Text>
-              </View>
-            ) : null}
-
-            {!failed ? (
-              <View style={styles.backgroundInfo}>
-                <Text style={styles.backgroundInfoTitle}>
-                  {canContinueInBackground
-                    ? "Du kannst ruhig weiter"
-                    : "Bitte noch kurz geöffnet lassen"}
-                </Text>
-                <Text style={styles.backgroundInfoText}>
-                  {canContinueInBackground
-                    ? "Du kannst diese Ansicht verlassen oder die App schließen. Ordilo arbeitet im Hintergrund weiter. Wenn du später zurückkommst, siehst du hier den Stand."
-                    : "Dieses Dokument wird gerade auf deinem Gerät vorbereitet. Lass diese Ansicht geöffnet, bis der nächste Schritt beginnt."}
-                </Text>
-              </View>
-            ) : null}
-
-            <View style={styles.stepCard}>
-              {DOCUMENT_PIPELINE_STEPS.map((step, index) => {
-                const done = index < completedSteps;
-                const active = !failed && index === completedSteps;
-                const failedStep = failed && index === completedSteps;
-
-                return (
-                  <View
-                    key={step.key}
-                    style={[
-                      styles.stepRow,
-                      index > 0 && styles.stepRowBorder,
-                    ]}
-                  >
-                    <Animated.View
-                      entering={done ? completionEntering(reduceMotion) : undefined}
-                      key={`${step.key}-${done ? "done" : active ? "active" : "waiting"}`}
-                      style={[
-                        styles.stepIcon,
-                        done && styles.stepIconDone,
-                        active && styles.stepIconActive,
-                        failedStep && styles.stepIconFailed,
-                      ]}
-                    >
-                      {done ? (
-                        <Check color={colors.warmWhite} size={16} strokeWidth={3} />
-                      ) : active ? (
-                        reduceMotion ? (
-                          <View style={styles.activeDot} />
-                        ) : (
-                          <ActivityIndicator color={colors.harborBlue} size="small" />
-                        )
-                      ) : failedStep ? (
-                        <X color={colors.destructive} size={16} strokeWidth={2.5} />
-                      ) : (
-                        <View style={styles.stepDot} />
-                      )}
-                    </Animated.View>
-                    <Text
-                      style={[
-                        styles.stepLabel,
-                        (done || active) && styles.stepLabelCurrent,
-                      ]}
-                    >
-                      {step.label}
-                    </Text>
+              <View style={styles.characterWrap}>
+                {failed ? (
+                  <View style={styles.failedCharacter}>
+                    <XCircle color={colors.destructive} size={40} />
                   </View>
-                );
-              })}
-            </View>
-          </Animated.View>
+                ) : (
+                  <ScanProcessingHero stage={processingStage} />
+                )}
+              </View>
+              <Animated.View
+                entering={contentEntering()}
+                key={failed ? "failed-copy" : processingStage}
+                style={styles.processingMessage}
+              >
+                <Text style={styles.processingHeading}>
+                  {failed ? "Das hat noch nicht geklappt" : processingCopy.heading}
+                </Text>
+                <Text style={styles.processingCopy}>
+                  {failed ? flow.error : processingCopy.description}
+                </Text>
+              </Animated.View>
+
+              {item ? (
+                <View style={styles.processingFile}>
+                  <FilePlus2 color={colors.harborBlue} size={18} />
+                  <Text numberOfLines={1} style={styles.processingFileName}>
+                    {item.name}
+                  </Text>
+                </View>
+              ) : null}
+
+              {!failed ? (
+                <View style={styles.backgroundInfo}>
+                  <Text style={styles.backgroundInfoTitle}>
+                    {canContinueInBackground
+                      ? "Du kannst ruhig weiter"
+                      : "Bitte noch kurz geöffnet lassen"}
+                  </Text>
+                  <Text style={styles.backgroundInfoText}>
+                    {canContinueInBackground
+                      ? "Du kannst diese Ansicht verlassen oder die App schließen. Ordilo arbeitet im Hintergrund weiter. Wenn du später zurückkommst, siehst du hier den Stand."
+                      : "Dieses Dokument wird gerade auf deinem Gerät vorbereitet. Lass diese Ansicht geöffnet, bis der nächste Schritt beginnt."}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.stepCard}>
+                {DOCUMENT_PIPELINE_STEPS.map((step, index) => {
+                  const done = index < completedSteps;
+                  const active = !failed && index === completedSteps;
+                  const failedStep = failed && index === completedSteps;
+
+                  return (
+                    <View
+                      key={step.key}
+                      style={[
+                        styles.stepRow,
+                        index > 0 && styles.stepRowBorder,
+                      ]}
+                    >
+                      <Animated.View
+                        entering={done ? completionEntering(reduceMotion) : undefined}
+                        key={`${step.key}-${done ? "done" : active ? "active" : "waiting"}`}
+                        style={[
+                          styles.stepIcon,
+                          done && styles.stepIconDone,
+                          active && styles.stepIconActive,
+                          failedStep && styles.stepIconFailed,
+                        ]}
+                      >
+                        {done ? (
+                          <Check color={colors.warmWhite} size={16} strokeWidth={3} />
+                        ) : active ? (
+                          reduceMotion ? (
+                            <View style={styles.activeDot} />
+                          ) : (
+                            <ActivityIndicator color={colors.harborBlue} size="small" />
+                          )
+                        ) : failedStep ? (
+                          <X color={colors.destructive} size={16} strokeWidth={2.5} />
+                        ) : (
+                          <View style={styles.stepDot} />
+                        )}
+                      </Animated.View>
+                      <Text
+                        style={[
+                          styles.stepLabel,
+                          (done || active) && styles.stepLabelCurrent,
+                        ]}
+                      >
+                        {step.label}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </Animated.View>
+          </View>
         </ScrollView>
 
         <View style={styles.processingActions}>

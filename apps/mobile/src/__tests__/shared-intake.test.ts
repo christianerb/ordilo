@@ -24,6 +24,21 @@ it("routes only native sharing links to intake and preserves invitations", () =>
 it("rejects remote file URLs rather than fetching arbitrary sites", () => {
   expect(() => sharedDocumentInput({ ...payload, contentUri: "https://example.com/document.pdf" }, "import-1")).toThrow("PDF-Datei");
 });
+it("replaces a Photos-app UUID filename with a friendly label, keeping a real name as-is", () => {
+  expect(sharedDocumentInput(payload, "import-1").name).toBe("brief.pdf");
+  expect(
+    sharedDocumentInput(
+      { ...payload, contentType: "image", originalName: "60F9043C-DD4A-424F-9D3C-29B3F00C7F8B.jpg" } as ResolvedSharePayload,
+      "import-1",
+    ).name,
+  ).toBe("Foto.jpg");
+  expect(
+    sharedDocumentInput(
+      { ...payload, originalName: "60f9043c-dd4a-424f-9d3c-29b3f00c7f8b.pdf" } as ResolvedSharePayload,
+      "import-1",
+    ).name,
+  ).toBe("Dokument.pdf");
+});
 it("stages and checkpoints imports in the selected family before acknowledging", async () => {
   await stageSharedDocuments([payload], "family-1");
   expect(stageScannedDocument).toHaveBeenCalledWith(expect.objectContaining({ name: "brief.pdf", id: "shared-first-import" }), "family-1");
