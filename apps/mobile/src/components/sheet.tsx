@@ -434,8 +434,18 @@ function ContainedNestedSheet({
   visible: boolean;
 }) {
   const reduceMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const [mounted, setMounted] = useState(visible);
+  // Lift the floating panel clear of the home indicator, same as the
+  // non-contained sheet — its bottom rounding must never sit under it.
+  // Kept here rather than relying solely on the parent OrdiloFormSheet's
+  // own bottom inset: with `keyboardAvoiding`, that inset is carried by a
+  // KeyboardAvoidingView whose padding is not guaranteed to still apply
+  // once the keyboard is not the reason this sheet is open (e.g. the
+  // inline date picker), which is what left the "Datum wählen" sheet's
+  // "Fertig" button flush against the bottom in the first place.
+  const slotBottomInset = Math.max(FLOATING_SHEET_INSET, insets.bottom);
   const overlayOpacity = useSharedValue(0);
   const sheetOffset = useSharedValue(windowHeight);
   const finishDismiss = useCallback(() => setMounted(false), []);
@@ -509,10 +519,15 @@ function ContainedNestedSheet({
           style={StyleSheet.absoluteFill}
         />
       </Animated.View>
-      <Animated.View style={[styles.nestedPanel, sheetStyle]}>
-        <View style={styles.floatingHandle} />
-        {children}
-      </Animated.View>
+      <View
+        pointerEvents="box-none"
+        style={[styles.nestedPanelSlot, { paddingBottom: slotBottomInset }]}
+      >
+        <Animated.View style={[styles.nestedPanel, sheetStyle]}>
+          <View style={styles.floatingHandle} />
+          {children}
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -878,9 +893,7 @@ const styles = StyleSheet.create({
   nestedOverlay: {
     bottom: 0,
     elevation: 20,
-    justifyContent: "flex-end",
     left: 0,
-    padding: 0,
     position: "absolute",
     right: 0,
     top: 0,
@@ -888,6 +901,14 @@ const styles = StyleSheet.create({
   },
   nestedBackdrop: {
     backgroundColor: "rgba(38, 36, 33, 0.28)",
+  },
+  // No horizontal inset here: every current `contained` caller already
+  // renders inside an OrdiloFormSheet, whose own outer slot already
+  // insets modalSheet — and therefore this overlay, which fills it — by
+  // FLOATING_SHEET_INSET. Adding it again would double the side margins.
+  nestedPanelSlot: {
+    flex: 1,
+    justifyContent: "flex-end",
   },
   nestedPanel: {
     backgroundColor: colors.warmWhite,
