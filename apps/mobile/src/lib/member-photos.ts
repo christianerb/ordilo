@@ -26,11 +26,14 @@ export async function fetchMemberPhotoUrls(
   try {
     const body = await apiJson<{ urls: Record<string, string> }>(
       `/api/family-members/photos?family_id=${encodeURIComponent(familyId)}`,
+      // A member's photo is a nice-to-have, not the reason to block the
+      // screen — a slow or unresponsive endpoint must not hold up callers
+      // (like the planner's task/event load) that only need the members
+      // themselves and treat a missing photo as a safe, expected fallback.
+      { signal: AbortSignal.timeout(5_000) },
     );
     return body.urls;
   } catch {
-    // A member's photo is a nice-to-have, not the reason to block the
-    // screen — the initial-letter avatar is always a safe fallback.
     return {};
   }
 }
