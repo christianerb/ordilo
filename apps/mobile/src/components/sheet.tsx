@@ -434,8 +434,12 @@ function ContainedNestedSheet({
   visible: boolean;
 }) {
   const reduceMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const [mounted, setMounted] = useState(visible);
+  // Lift the floating panel clear of the home indicator, same as the
+  // non-contained sheet — its bottom rounding must never sit under it.
+  const slotBottomInset = Math.max(FLOATING_SHEET_INSET, insets.bottom);
   const overlayOpacity = useSharedValue(0);
   const sheetOffset = useSharedValue(windowHeight);
   const finishDismiss = useCallback(() => setMounted(false), []);
@@ -509,10 +513,15 @@ function ContainedNestedSheet({
           style={StyleSheet.absoluteFill}
         />
       </Animated.View>
-      <Animated.View style={[styles.nestedPanel, sheetStyle]}>
-        <View style={styles.floatingHandle} />
-        {children}
-      </Animated.View>
+      <View
+        pointerEvents="box-none"
+        style={[styles.nestedPanelSlot, { paddingBottom: slotBottomInset }]}
+      >
+        <Animated.View style={[styles.nestedPanel, sheetStyle]}>
+          <View style={styles.floatingHandle} />
+          {children}
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -878,9 +887,7 @@ const styles = StyleSheet.create({
   nestedOverlay: {
     bottom: 0,
     elevation: 20,
-    justifyContent: "flex-end",
     left: 0,
-    padding: 0,
     position: "absolute",
     right: 0,
     top: 0,
@@ -888,6 +895,11 @@ const styles = StyleSheet.create({
   },
   nestedBackdrop: {
     backgroundColor: "rgba(38, 36, 33, 0.28)",
+  },
+  nestedPanelSlot: {
+    flex: 1,
+    justifyContent: "flex-end",
+    paddingHorizontal: FLOATING_SHEET_INSET,
   },
   nestedPanel: {
     backgroundColor: colors.warmWhite,
