@@ -16,7 +16,11 @@ changes arrive through Fast Refresh instead of a TestFlight upload.
    ```
 
 3. Install the resulting internal-build link on the iPhone. Expo Go is not
-   sufficient for microphone and camera checks.
+   sufficient for microphone and camera checks, and it also cannot show the
+   Ordilo app icon: push notifications inside Expo Go always carry Expo Go's
+   own icon, since iOS reads the icon from the installed app bundle, not
+   from the notification payload. The real Ordilo icon only appears in a
+   development build, TestFlight, or production.
 
 ## Daily device loop
 
