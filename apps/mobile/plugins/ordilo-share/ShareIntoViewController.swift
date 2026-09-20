@@ -1,13 +1,19 @@
 import UIKit
 import UniformTypeIdentifiers
 
-// A share extension cannot reliably launch its containing app. Store each
-// delivery atomically in the app group and finish through the supported API.
-// No session tokens or network dependency are needed to accept a document.
+// Store each delivery atomically in the app group first — a share extension
+// runs in its own process with no session token or network dependency, so
+// the save itself never depends on reaching the host app. Opening Ordilo
+// afterwards is a separate, user-initiated step (see openInHostApp below).
 class ShareIntoViewController: UIViewController {
   private let label = UILabel()
   private let button = UIButton(type: .system)
   private var started = false
+  private var succeeded = false
+
+  private var hostAppScheme: String? {
+    Bundle.main.object(forInfoDictionaryKey: "MainTargetUrlScheme") as? String
+  }
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -41,7 +47,30 @@ class ShareIntoViewController: UIViewController {
     Task { await receive() }
   }
 
-  @objc private func finish() { extensionContext?.completeRequest(returningItems: nil) }
+  // One tap: on success it jumps straight into Ordilo's inbox, otherwise it
+  // just dismisses — there is nothing to open yet after a failed share.
+  @objc private func finish() {
+    if succeeded, let scheme = hostAppScheme, let url = URL(string: "\(scheme)://expo-sharing") {
+      openInHostApp(url)
+    }
+    extensionContext?.completeRequest(returningItems: nil)
+  }
+
+  // A share extension runs in its own process, so UIApplication.shared is
+  // unavailable here. Walking the responder chain to the host app is the
+  // same workaround expo-sharing's own default extension uses to jump
+  // back — deliberate here, not a fallback, and only fired from this
+  // button's tap so it always runs with a user gesture behind it.
+  private func openInHostApp(_ url: URL) {
+    var responder: UIResponder? = self
+    while responder != nil {
+      if let application = responder as? UIApplication {
+        application.open(url, options: [:], completionHandler: nil)
+        return
+      }
+      responder = responder?.next
+    }
+  }
 
   private func receive() async {
     var delivery: URL?
@@ -64,7 +93,9 @@ class ShareIntoViewController: UIViewController {
       // A manifest is the commit marker. The app ignores unfinished directories.
       let data = try JSONSerialization.data(withJSONObject: payloads)
       try data.write(to: directory.appendingPathComponent("ready.json"), options: .atomic)
-      label.text = "Sicher auf deinem iPhone gespeichert.\n\nÖffne jetzt Ordilo, um deine Post einzuordnen."
+      succeeded = true
+      label.text = "Sicher auf deinem iPhone gespeichert."
+      button.setTitle("Ordilo öffnen", for: .normal)
       UIAccessibility.post(notification: .announcement, argument: "Für Ordilo gespeichert")
     } catch {
       if let delivery { try? FileManager.default.removeItem(at: delivery) }
