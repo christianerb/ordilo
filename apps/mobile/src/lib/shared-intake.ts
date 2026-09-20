@@ -3,11 +3,24 @@ import type { ResolvedSharePayload } from "expo-sharing";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { getScanMimeType, stageScannedDocument, loadPersistedScanQueue, reconcileScanQueue, validateScannedDocument } from "./scan";
 
+// Photos shared straight from the Photos app carry a UUID as their asset
+// filename, not something a person ever typed — showing it verbatim just
+// reads as a glitch. Swap only that pattern for a plain, friendly label.
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function friendlySharedName(originalName: string, contentType: string | null | undefined): string {
+  const [, base = originalName, extension = ""] = originalName.match(/^(.*?)(\.[^./]+)?$/) ?? [];
+  if (!UUID_LIKE.test(base)) return originalName;
+  return (contentType === "image" ? "Foto" : "Dokument") + extension;
+}
+
 export function sharedDocumentInput(payload: ResolvedSharePayload, id: string) {
   if (!payload.contentUri || !/^(file|content):\/\//.test(payload.contentUri)) {
     throw new Error("Bitte teile eine PDF-Datei oder ein Foto. Links und Texte kannst du per E-Mail weiterleiten.");
   }
-  const name = payload.originalName || `Dokument-${id}`;
+  const name = payload.originalName
+    ? friendlySharedName(payload.originalName, payload.contentType)
+    : `Dokument-${id}`;
   return { id, name, uri: payload.contentUri, mimeType: getScanMimeType(payload.contentMimeType, name), size: payload.contentSize ?? undefined };
 }
 
