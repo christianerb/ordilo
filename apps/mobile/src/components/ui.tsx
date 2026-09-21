@@ -63,6 +63,24 @@ const pressedTransitionStyle: AnimatedStyle<ViewStyle> = {
 };
 
 /**
+ * Row presses tint through a crossfading overlay instead of a snapped
+ * background swap: the finger gets its answer in pressDuration, the
+ * release fades out on the calmer base beat. Opacity keeps the whole
+ * thing on the UI runtime, interpolates no colors, and stays on under
+ * Reduce Motion because a state cue carries no movement.
+ */
+const rowPressTransitionStyle: AnimatedStyle<ViewStyle> = {
+  opacity: 0,
+  transitionDuration: durations.base,
+  transitionProperty: "opacity",
+  transitionTimingFunction: PRESS_EASE_OUT,
+};
+const rowPressedTransitionStyle: AnimatedStyle<ViewStyle> = {
+  opacity: 1,
+  transitionDuration: pressDuration,
+};
+
+/**
  * A Pressable with near-imperceptible physical feedback. Its two-state
  * CSS transition is interruptible without a shared value, stays on the
  * UI runtime, and is skipped under Reduce Motion.
@@ -412,6 +430,7 @@ export function ListRow({
   chevron?: boolean;
   muted?: boolean;
 }) {
+  const [pressed, setPressed] = useState(false);
   const content = (
     <>
       {leading ? <View style={styles.rowLeading}>{leading}</View> : null}
@@ -441,7 +460,7 @@ export function ListRow({
     );
   }
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityHint={accessibilityHint}
       accessibilityLabel={accessibilityLabel ?? title}
       accessibilityRole="button"
@@ -449,14 +468,21 @@ export function ListRow({
         tap();
         onPress();
       }}
-      style={({ pressed }) => [
-        styles.row,
-        !first && styles.rowDivider,
-        pressed && styles.rowPressed,
-      ]}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      pressRetentionOffset={16}
+      style={[styles.row, !first && styles.rowDivider]}
     >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.rowPressedOverlay,
+          rowPressTransitionStyle,
+          pressed && rowPressedTransitionStyle,
+        ]}
+      />
       {content}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -925,8 +951,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.mistLight,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  rowPressed: {
+  rowPressedOverlay: {
     backgroundColor: colors.sandWarm,
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   rowLeading: {
     alignItems: "center",
