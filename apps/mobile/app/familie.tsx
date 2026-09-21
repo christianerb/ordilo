@@ -350,7 +350,7 @@ export default function FamilieScreen() {
         <View style={styles.section}>
           <SectionHeader title="Mehr" />
           <ListGroup>
-            <ListRow first chevron title="Post für Ordilo" subtitle="E-Mail-Adresse und Teilen aus anderen Apps" leading={<IconTile><Mail color={colors.harborBlue} size={20} /></IconTile>} onPress={() => router.push("/posteingang")} />
+            <ListRow first chevron title="Post für Ordilo" subtitle="Eingegangene Post und eure E-Mail-Adresse" leading={<IconTile><Mail color={colors.harborBlue} size={20} /></IconTile>} onPress={() => router.push("/posteingang")} />
             <ListRow
               chevron
               first
