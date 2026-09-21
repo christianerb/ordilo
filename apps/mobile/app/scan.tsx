@@ -243,6 +243,12 @@ export default function ScanModal() {
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
+  // A route that finishClose opens after the sheet has fully closed.
+  // Navigating while the sheet's RN Modal is still open presents the new
+  // screen on top of that modal; swiping it away then leaves the native
+  // view hierarchy and the JS navigation state out of sync and the whole
+  // display stops reacting to touches.
+  const routeAfterCloseRef = useRef<"/posteingang" | null>(null);
   const bodyRef = useRef<ScrollView>(null);
   const followFlowRef = useRef(true);
   const processingAbortRef = useRef<AbortController | null>(null);
@@ -759,7 +765,12 @@ export default function ScanModal() {
     (item) => item.state === "uploading" || item.state === "processing",
   );
   const close = useCallback(() => setSheetVisible(false), []);
-  const finishClose = useCallback(() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)"); }, [router]);
+  const finishClose = useCallback(() => {
+    const routeAfterClose = routeAfterCloseRef.current;
+    routeAfterCloseRef.current = null;
+    if (router.canGoBack()) router.back(); else router.replace("/(tabs)");
+    if (routeAfterClose) router.push(routeAfterClose);
+  }, [router]);
   const leaveProcessing = useCallback(async (
     keepRunning: boolean,
     item?: QueueItem,
@@ -1147,10 +1158,15 @@ export default function ScanModal() {
         <View style={styles.secondaryActions}>
           <ScanSecondaryAction
             accessibilityLabel="Per E-Mail an Ordilo schicken"
-            disabled={false}
+            disabled={isProcessing}
             icon={<Mail color={colors.harborBlue} size={20} strokeWidth={1.8} />}
             label="Per E-Mail an Ordilo"
-            onPress={() => router.push("/posteingang")}
+            onPress={() => {
+              // Close the sheet first — pushing over the open sheet modal
+              // freezes the app once the pushed screen is swiped away.
+              routeAfterCloseRef.current = "/posteingang";
+              close();
+            }}
           />
         </View>
         <View style={styles.secondaryActions}>
