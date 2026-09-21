@@ -301,8 +301,6 @@ export default function PlanScreen() {
   const [quickTaskId, setQuickTaskId] = useState<string | null>(null);
   /** The row that should animate its arrival — set at creation, never on load. */
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
-  /** The task that should fade out — set when it leaves its section. */
-  const [justDepartedId, setJustDepartedId] = useState<string | null>(null);
   /** The last open task was completed by hand — the quiet all-done moment. */
   const [allDoneCheered, setAllDoneCheered] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -310,6 +308,26 @@ export default function PlanScreen() {
   const undoSeqRef = useRef(0);
   const createSheetRef = useRef<OrdiloSheetHandle>(null);
   const pendingCreateRef = useRef<"task" | "event" | null>(null);
+  const justCreatedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * Marks the one row that should animate its arrival. The marker steps
+   * aside a beat after the entrance (~220ms) so a later remount — view
+   * switch, collapsed section, filter change — does not replay it.
+   */
+  const markJustCreated = useCallback((id: string) => {
+    setJustCreatedId(id);
+    if (justCreatedTimerRef.current) clearTimeout(justCreatedTimerRef.current);
+    justCreatedTimerRef.current = setTimeout(() => setJustCreatedId(null), 1000);
+  }, []);
+
+  // The arrival timer follows the screen's life, not the other way round.
+  useEffect(
+    () => () => {
+      if (justCreatedTimerRef.current) clearTimeout(justCreatedTimerRef.current);
+    },
+    [],
+  );
 
   const showUndo = useCallback((message: string, revert: () => Promise<void>) => {
     undoSeqRef.current += 1;
@@ -475,7 +493,7 @@ export default function PlanScreen() {
     setTasks((prev) => [optimistic, ...prev]);
     // The fresh row animates its arrival; the server twin replacing it
     // keeps the same spot and does not replay the entrance.
-    setJustCreatedId(tempId);
+    markJustCreated(tempId);
     setAllDoneCheered(false);
     setQuickTitle("");
     setQuickBusy(true);
@@ -496,7 +514,7 @@ export default function PlanScreen() {
     } finally {
       setQuickBusy(false);
     }
-  }, [family, personContextMember, quickBusy, quickTitle]);
+  }, [family, markJustCreated, personContextMember, quickBusy, quickTitle]);
 
   /** The fresh quick-entry task the Wann?/Wer? bar belongs to. */
   const quickTask = useMemo(() => {
@@ -571,9 +589,8 @@ export default function PlanScreen() {
         return;
       }
       if (markingDone) {
-        // The row leaves its section — let it fade instead of teleporting,
-        // and when that was the last open task, say so once.
-        setJustDepartedId(task.id);
+        // The row leaves its section — the armed exit motion lets it fade
+        // instead of teleporting. When that was the last open task, say so once.
         if (personFilter === null && openTaskCount === 1) {
           setAllDoneCheered(true);
         }
@@ -605,9 +622,6 @@ export default function PlanScreen() {
       if (newDue === task.due_date) return;
       const previousDue = task.due_date;
       const rescheduledTask: PlannerTask = { ...task, due_date: newDue };
-      // A new due date can move the row into another section — same
-      // fade-out bridge as completing.
-      setJustDepartedId(task.id);
       replaceTask(rescheduledTask);
       const ok = await patchTask(task.id, { due_date: newDue });
       if (!ok) {
@@ -717,12 +731,12 @@ export default function PlanScreen() {
       const result = await createTask(family.id, values);
       if (!result.success) return { success: false, error: result.error };
       setTasks((prev) => [result.task, ...prev]);
-      setJustCreatedId(result.task.id);
+      markJustCreated(result.task.id);
       setAllDoneCheered(false);
       void success();
       return { success: true };
     },
-    [editingTask, family, replaceTask],
+    [editingTask, family, markJustCreated, replaceTask],
   );
 
   const openTaskCreate = useCallback(() => {
@@ -774,14 +788,14 @@ export default function PlanScreen() {
       const result = await createPlannerEvent(family.id, values);
       if (!result.success) return result;
       setEvents((current) => [...current, result.event]);
-      setJustCreatedId(result.event.id);
+      markJustCreated(result.event.id);
       setSelectedDate(target);
       setActiveMonth(monthStart(target));
       setView("calendar");
       void success();
       return { success: true };
     },
-    [editingEvent, family],
+    [editingEvent, family, markJustCreated],
   );
 
   const openEdit = useCallback((task: PlannerTask) => {
@@ -1256,10 +1270,13 @@ export default function PlanScreen() {
                         entryMotion={
                           entry.id === justCreatedId ? arrivalMotion : undefined
                         }
+                        // Exits stay armed on every list row: the fade must be
+                        // in the committed tree before the row moves sections,
+                        // and React batching would never commit a marker set
+                        // in the same beat. Unmounts here are deliberate acts
+                        // (complete, reschedule, filter, collapse) — never scroll.
                         exitMotion={
-                          entry.kind === "task" && entry.id === justDepartedId
-                            ? departureMotion
-                            : undefined
+                          entry.kind === "task" ? departureMotion : undefined
                         }
                         key={planEntryKey(entry)}
                         members={members}
@@ -1779,7 +1796,8 @@ function PlanRow({
   entry: PlanEntry;
   /** Set on the one freshly created row — never on an ordinary visit. */
   entryMotion?: BaseAnimationBuilder;
-  /** Set on the one row that is leaving its section right now. */
+  /** Armed on list rows so leaving a section fades; off in the calendar
+   *  day list, where switching days unmounts rows constantly. */
   exitMotion?: BaseAnimationBuilder;
   members: FamilyMemberOption[];
   onAcceptHandoff?: () => void;

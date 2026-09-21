@@ -214,14 +214,21 @@ describe("native motion wiring", () => {
     const plan = source("app/(tabs)/plan.tsx");
     const motion = source("src/theme/motion.ts");
 
-    // Arrival and departure are gated to one id — an ordinary tab visit
-    // must never stagger or fade the whole list.
+    // Arrival is gated to one id — an ordinary tab visit must never
+    // stagger the list — and the marker clears itself after the entrance
+    // so a later remount stays quiet. Exits stay armed on list rows: the
+    // fade must exist in the committed tree before a section move, which
+    // batching would otherwise skip. The calendar day list arms nothing,
+    // because switching days unmounts rows constantly.
     expect(plan).toContain("justCreatedId");
-    expect(plan).toContain("justDepartedId");
+    expect(plan).not.toContain("justDepartedId");
+    expect(plan).toContain("markJustCreated(");
+    expect(plan).toContain("clearTimeout(justCreatedTimerRef.current)");
+    expect(plan).toContain("setTimeout(() => setJustCreatedId(null), 1000)");
     expect(plan).toContain("entry.id === justCreatedId ? arrivalMotion : undefined");
-    expect(plan).toContain("entry.id === justDepartedId");
     expect(plan).toContain("entering={entryMotion}");
     expect(plan).toContain("exiting={exitMotion}");
+    expect(plan).toContain("entry.kind === \"task\" ? departureMotion : undefined");
     expect(motion).toContain("export function feedbackEntering");
     expect(motion).toContain("export function feedbackExiting");
 
