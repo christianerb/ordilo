@@ -22,7 +22,8 @@
 
 alter table public.tasks
   add column if not exists recurrence text not null default 'none',
-  add column if not exists recurrence_until date;
+  add column if not exists recurrence_until date,
+  add column if not exists recurrence_parent_id uuid references public.tasks(id) on delete set null;
 
 alter table public.tasks drop constraint if exists tasks_recurrence_check;
 alter table public.tasks
@@ -38,6 +39,11 @@ comment on column public.tasks.recurrence is
   'Rhythm of the series this open row carries: none | weekly | biweekly | monthly | yearly. Finishing the row materializes the next instance.';
 comment on column public.tasks.recurrence_until is
   'Last day a new instance may be due; null repeats without an end.';
+comment on column public.tasks.recurrence_parent_id is
+  'The completed row that spawned this instance. Identity of a spawn: the '
+  'trigger deduplicates on this, never on user-visible attributes like the '
+  'title, so two independent series that happen to look alike cannot '
+  'suppress each other''s continuations.';
 
 /**
  * The next due date of a series after `due`, strictly later than `today`.
@@ -106,11 +112,22 @@ comment on function public.task_next_recurrence(date, text, date, date) is
  * Materialize the next instance when a recurring task becomes done.
  *
  * Any transition into 'done' counts — app, web, undo-redo, chat tool. The
- * exists-guard keeps the spawn single: an undo followed by redo (or two
- * family members ticking the same row) finds the continuation it already
- * made instead of piling up twins. An undo that reopens a finished row
- * never deletes the spawned future instance; it is a row of its own and
- * can be discarded like any other.
+ * guard keys on lineage, not looks: it asks whether THIS row already
+ * spawned a live continuation (recurrence_parent_id), so an undo followed
+ * by redo or two family members ticking the same row stays single, while
+ * two independent series that share a title, rhythm and due date each get
+ * their own continuation. A discarded continuation does not block a redo —
+ * the family said "skip this one", and redoing the source means it again.
+ *
+ * An undo that reopens a finished row never deletes the spawned future
+ * instance; it is a row of its own and can be discarded like any other.
+ *
+ * The catch-up anchors on the database's current_date (UTC). A device in
+ * a different zone completing a task around midnight can see the spawned
+ * occurrence land one day off from what its local clock would compute;
+ * the catch-up loop self-corrects on the next completion, so the trigger
+ * deliberately keeps the server date as the single source of truth rather
+ * than trusting a client-supplied clock.
  */
 create or replace function public.tasks_spawn_recurrence()
 returns trigger
@@ -138,12 +155,8 @@ begin
 
   if exists (
     select 1 from public.tasks
-    where family_id = new.family_id
-      and id <> new.id
-      and title = new.title
-      and status = 'open'
-      and recurrence = new.recurrence
-      and due_date = next_due
+    where recurrence_parent_id = new.id
+      and status <> 'dismissed'
   ) then
     return null;
   end if;
@@ -151,11 +164,11 @@ begin
   insert into public.tasks (
     family_id, document_id, title, description, due_date,
     status, confidence, confirmed, tags, assigned_to,
-    recurrence, recurrence_until
+    recurrence, recurrence_until, recurrence_parent_id
   ) values (
     new.family_id, new.document_id, new.title, new.description, next_due,
     'open', new.confidence, new.confirmed, new.tags, new.assigned_to,
-    new.recurrence, new.recurrence_until
+    new.recurrence, new.recurrence_until, new.id
   );
 
   return null;

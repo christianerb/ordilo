@@ -106,8 +106,9 @@ begin
      and spawned.tags = array['haushalt']
      and spawned.recurrence = 'weekly'
      and spawned.confirmed
-     and spawned.completed_at is null,
-    'spawned instance carries the series and its context';
+     and spawned.completed_at is null
+     and spawned.recurrence_parent_id = source,
+    'spawned instance carries the series, its context and its lineage';
 
   -- Undo and redo must not pile up a twin: the guard finds the existing
   -- continuation and stays quiet.
@@ -117,6 +118,59 @@ begin
   from public.tasks
   where family_id = fam and id <> source and status = 'open';
   assert spawned_count = 1, 'undo and redo do not spawn a twin';
+end $$;
+
+do $$
+declare
+  fam uuid := '10000000-0000-0000-0000-000000000003';
+  first uuid;
+  second uuid;
+  open_count int;
+begin
+  -- Two independent series may share title, rhythm and due date ("Müll
+  -- rausbringen" for two people). Deduplication keys on lineage, so each
+  -- completion must still spawn its own continuation.
+  insert into public.tasks (family_id, title, due_date, recurrence)
+  values (fam, 'Müll rausbringen', current_date - 1, 'weekly')
+  returning id into first;
+  insert into public.tasks (family_id, title, due_date, recurrence)
+  values (fam, 'Müll rausbringen', current_date - 1, 'weekly')
+  returning id into second;
+
+  update public.tasks set status = 'done' where id = first;
+  update public.tasks set status = 'done' where id = second;
+
+  select count(*) into open_count
+  from public.tasks where family_id = fam and status = 'open';
+  assert open_count = 2,
+    'lookalike series each spawn their own continuation';
+end $$;
+
+do $$
+declare
+  fam uuid := '10000000-0000-0000-0000-000000000004';
+  source uuid;
+  child uuid;
+  open_count int;
+begin
+  -- Discarding the spawned instance means "skip this one". An undo/redo
+  -- of the source afterwards is a fresh statement and may spawn again.
+  insert into public.tasks (family_id, title, due_date, recurrence)
+  values (fam, 'Müll rausbringen', current_date - 1, 'weekly')
+  returning id into source;
+  update public.tasks set status = 'done' where id = source;
+
+  select id into child from public.tasks
+  where recurrence_parent_id = source;
+  update public.tasks set status = 'dismissed' where id = child;
+
+  update public.tasks set status = 'open' where id = source;
+  update public.tasks set status = 'done' where id = source;
+
+  select count(*) into open_count
+  from public.tasks where family_id = fam and status = 'open';
+  assert open_count = 1,
+    'redo after discarding the spawned instance spawns a fresh one';
 end $$;
 
 do $$

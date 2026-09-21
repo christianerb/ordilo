@@ -140,6 +140,22 @@ export function TaskDetailSheet({
         })
         .eq("id", task.id);
 
+      // A finished row is history, but the series it carried lives on the
+      // open continuation the database trigger spawned from it. A rhythm
+      // change must reach that row — otherwise the series keeps spawning
+      // with the old rule while the sheet claims otherwise.
+      if (
+        !updateError &&
+        task.status === "done" &&
+        recurrence !== ((task.recurrence as TaskRecurrence) ?? "none")
+      ) {
+        await supabase
+          .from("tasks")
+          .update({ recurrence })
+          .eq("recurrence_parent_id", task.id)
+          .eq("status", "open");
+      }
+
       if (updateError) {
         setError("Speichern hat nicht geklappt.");
         setSaving(false);

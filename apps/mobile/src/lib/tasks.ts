@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { toCalendarDate, type CalendarRecurrence } from "./calendar";
+import { type CalendarRecurrence } from "./calendar";
 import { fetchAllRows } from "./collections";
 import { fetchMemberPhotoUrls } from "./member-photos";
 import { getSupabase } from "./supabase";
@@ -457,52 +457,6 @@ export function validateTaskInput(
 }
 
 // ---------------------------------------------------------------------------
-// Recurrence
-// ---------------------------------------------------------------------------
-
-/**
- * The next due date of a series after `dueDate`, strictly later than
- * `today` — the TypeScript twin of `public.task_next_recurrence` from
- * migration 0087, and it must stay in step: the database trigger uses the
- * SQL version to spawn, this one only predicts the spawned row's due date
- * so the UI can greet the new instance without waiting for a refetch.
- *
- * Month and year steps clamp to the last valid day (the 31st becomes
- * Feb 28) and the chain anchors on the clamped date — the same drift the
- * SQL interval arithmetic produces.
- */
-export function nextTaskRecurrenceDate(
-  dueDate: string,
-  recurrence: TaskRecurrence,
-  today: string,
-): string | null {
-  if (recurrence === "none" || !dueDate) return null;
-
-  const stepOnce = (value: string): string => {
-    const date = new Date(`${value}T12:00:00`);
-    if (recurrence === "weekly" || recurrence === "biweekly") {
-      date.setDate(date.getDate() + (recurrence === "weekly" ? 7 : 14));
-      return toCalendarDate(date);
-    }
-    const months = recurrence === "monthly" ? 1 : 12;
-    const target = new Date(date.getFullYear(), date.getMonth() + months, 1, 12);
-    const daysInTarget = new Date(
-      target.getFullYear(),
-      target.getMonth() + 1,
-      0,
-    ).getDate();
-    target.setDate(Math.min(date.getDate(), daysInTarget));
-    return toCalendarDate(target);
-  };
-
-  let candidate = stepOnce(dueDate);
-  for (let guard = 0; candidate <= today && guard <= 200; guard += 1) {
-    candidate = stepOnce(candidate);
-  }
-  return candidate > today ? candidate : null;
-}
-
-// ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
@@ -617,36 +571,46 @@ export async function patchTask(
  * leaves — instead of appearing silently on the next refetch.
  *
  * The database trigger (migration 0087) owns the spawn; this only reads
- * the result. The match mirrors the trigger's own idempotency guard:
- * same family, title and rhythm, the predicted next due date, still open.
- * Returns null when the series ended (recurrence_until) or the row has
- * not landed yet — the next regular load picks it up either way.
+ * the result. The match keys on lineage (recurrence_parent_id), never on
+ * a predicted due date: the trigger anchors its catch-up on the server's
+ * UTC day, which can differ from the device clock around midnight, and a
+ * date prediction would silently miss exactly then. Returns null when the
+ * series ended (recurrence_until) or the row has not landed yet — the
+ * next regular load picks it up either way.
  */
 export async function fetchRecurrenceSpawn(
-  familyId: string,
-  completed: PlannerTask,
-  today: string,
+  completedTaskId: string,
 ): Promise<PlannerTask | null> {
-  if (completed.recurrence === "none" || !completed.due_date) return null;
-  const expectedDue = nextTaskRecurrenceDate(
-    completed.due_date,
-    completed.recurrence,
-    today,
-  );
-  if (!expectedDue) return null;
-
   const { data, error } = await getSupabase()
     .from("tasks")
     .select(plannerTaskSelect)
-    .eq("family_id", familyId)
+    .eq("recurrence_parent_id", completedTaskId)
     .eq("status", "open")
-    .eq("title", completed.title)
-    .eq("recurrence", completed.recurrence)
-    .eq("due_date", expectedDue)
-    .neq("id", completed.id)
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error || !data) return null;
   return data as PlannerTask;
+}
+
+/**
+ * Carry a rhythm change from a finished row to the live continuation the
+ * trigger spawned from it. The completed row is history, but the series
+ * it carried lives on that open row — editing the rhythm on the history
+ * entry must reach it, or the series keeps spawning with the old rule.
+ * Best effort: the edit of the finished row itself already succeeded.
+ */
+export async function updateOpenRecurrenceContinuation(
+  completedTaskId: string,
+  recurrence: TaskRecurrence,
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("tasks")
+    .update({ recurrence })
+    .eq("recurrence_parent_id", completedTaskId)
+    .eq("status", "open");
+  if (error) {
+    console.warn("recurrence continuation update failed", error);
+  }
 }

@@ -115,6 +115,7 @@ import {
   formatTaskDayHint,
   parseQuickTaskTitle,
   fetchRecurrenceSpawn,
+  updateOpenRecurrenceContinuation,
   patchTask,
   resolveKnownMemberId,
   resolveSchedulePreset,
@@ -601,8 +602,8 @@ export default function PlanScreen() {
         // A recurring task continues: the database trigger has spawned the
         // next instance — greet it with the same arrival a fresh row gets
         // instead of letting it slip in on the next refetch.
-        if (family && task.recurrence !== "none") {
-          const spawned = await fetchRecurrenceSpawn(family.id, task, todayStr);
+        if (task.recurrence !== "none") {
+          const spawned = await fetchRecurrenceSpawn(task.id);
           if (spawned) {
             setTasks((prev) =>
               prev.some((item) => item.id === spawned.id)
@@ -625,7 +626,7 @@ export default function PlanScreen() {
         });
       }
     },
-    [family, markJustCreated, openTaskCount, personFilter, replaceTask, showUndo, todayStr],
+    [markJustCreated, openTaskCount, personFilter, replaceTask, showUndo],
   );
 
   /**
@@ -742,6 +743,18 @@ export default function PlanScreen() {
         if (!ok) {
           replaceTask(previous);
           return { success: false, error: "Speichern hat nicht geklappt." };
+        }
+        // A finished row is history; the series it carried lives on the
+        // open continuation the trigger spawned. A rhythm change must
+        // reach that row, or the series keeps spawning with the old rule.
+        if (
+          editingTask.status === "done" &&
+          values.recurrence !== editingTask.recurrence
+        ) {
+          await updateOpenRecurrenceContinuation(
+            editingTask.id,
+            values.recurrence,
+          );
         }
         void success();
         return { success: true };
