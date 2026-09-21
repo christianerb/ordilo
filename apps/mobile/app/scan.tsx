@@ -768,8 +768,14 @@ export default function ScanModal() {
   const finishClose = useCallback(() => {
     const routeAfterClose = routeAfterCloseRef.current;
     routeAfterCloseRef.current = null;
+    if (routeAfterClose) {
+      // dismissTo pops back to an existing instance — scan can itself be
+      // opened from the Posteingang — instead of stacking a duplicate,
+      // and pushes the route when it is not in the stack yet.
+      router.dismissTo(routeAfterClose);
+      return;
+    }
     if (router.canGoBack()) router.back(); else router.replace("/(tabs)");
-    if (routeAfterClose) router.push(routeAfterClose);
   }, [router]);
   const leaveProcessing = useCallback(async (
     keepRunning: boolean,
