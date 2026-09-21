@@ -10,30 +10,6 @@ Reihenfolge = grobe Priorität, nicht Zeitplan.
 
 ## Aufgaben
 
-### Wiederkehrende Aufgaben (Recurrence)
-
-**Was fehlt.** „Müll rausbringen, jeden Dienstag." Aufgaben kennen nur ein
-einzelnes `due_date`. Termine im Kalender können `recurrence` schon
-(`calendar_events.recurrence`, `recurrence_until`,
-`recurrence_exceptions`) — Aufgaben nicht.
-
-**Warum es heute geht.** Familien legen die Aufgabe jede Woche neu an, oder
-sie steht als Termin im Kalender. Beides ist Handarbeit, aber nichts geht
-verloren.
-
-**Was es kostet.** Migration auf `tasks` (dieselben drei Spalten wie bei
-Terminen), eine Entscheidung über das Verhalten beim Abhaken (nächste
-Instanz erzeugen vs. virtuelle Instanzen aus einer Regel ableiten), und die
-Wiederholungs-UI in Anlege- und Detail-Sheet. Die Kalender-Implementierung
-ist die Vorlage.
-
-**Offene Produktfrage.** Beim Abhaken einer wöchentlichen Aufgabe: rückt
-`due_date` eine Woche weiter (eine Zeile, ewig), oder entsteht eine neue
-Zeile und die alte landet in „Erledigt" (Historie, aber wachsende Liste)?
-Die zweite Variante passt besser zu `completed_at` und zum Erledigt-Fenster.
-
----
-
 ### Gleichzeitiges Bearbeiten (Lost Update)
 
 **Was fehlt.** Optimistic Concurrency beim Speichern im Detail-Sheet. Wenn

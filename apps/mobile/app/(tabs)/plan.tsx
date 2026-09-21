@@ -114,6 +114,7 @@ import {
   formatPlanHeaderSubtitle,
   formatTaskDayHint,
   parseQuickTaskTitle,
+  fetchRecurrenceSpawn,
   patchTask,
   resolveKnownMemberId,
   resolveSchedulePreset,
@@ -488,6 +489,8 @@ export default function PlanScreen() {
       created_at: new Date().toISOString(),
       tags: [],
       assigned_to: assignee,
+      recurrence: "none",
+      recurrence_until: null,
       completed_at: null,
     };
     setTasks((prev) => [optimistic, ...prev]);
@@ -595,6 +598,20 @@ export default function PlanScreen() {
           setAllDoneCheered(true);
         }
         void success();
+        // A recurring task continues: the database trigger has spawned the
+        // next instance — greet it with the same arrival a fresh row gets
+        // instead of letting it slip in on the next refetch.
+        if (family && task.recurrence !== "none") {
+          const spawned = await fetchRecurrenceSpawn(family.id, task, todayStr);
+          if (spawned) {
+            setTasks((prev) =>
+              prev.some((item) => item.id === spawned.id)
+                ? prev
+                : [...prev, spawned],
+            );
+            markJustCreated(spawned.id);
+          }
+        }
         showUndo("Erledigt", async () => {
           replaceTask({ ...task, ...previous });
           const undoOk = await patchTask(task.id, {
@@ -608,7 +625,7 @@ export default function PlanScreen() {
         });
       }
     },
-    [openTaskCount, personFilter, replaceTask, showUndo],
+    [family, markJustCreated, openTaskCount, personFilter, replaceTask, showUndo, todayStr],
   );
 
   /**
@@ -717,6 +734,7 @@ export default function PlanScreen() {
           description: values.description || null,
           due_date: values.dueDate || null,
           assigned_to: values.assignedTo || null,
+          recurrence: values.recurrence,
         };
         const previous = editingTask;
         replaceTask({ ...editingTask, ...updates });

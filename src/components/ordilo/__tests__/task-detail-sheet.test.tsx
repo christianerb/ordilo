@@ -26,6 +26,8 @@ const task: TaskCardData = {
   tags: [],
   assigned_to: null,
   completed_at: null,
+  recurrence: "none",
+  recurrence_until: null,
 };
 
 const members = [

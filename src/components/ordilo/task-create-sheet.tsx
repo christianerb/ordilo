@@ -15,7 +15,11 @@ import { recordProductEvent } from "@/lib/analytics/product-events";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
 import { DuePresetChips } from "@/components/ordilo/due-preset-chips";
 import { AssigneePicker } from "@/components/ordilo/assignee-picker";
-import { todayAsIsoDate } from "@/lib/task-utils";
+import {
+  TASK_RECURRENCE_OPTIONS,
+  todayAsIsoDate,
+  type TaskRecurrence,
+} from "@/lib/task-utils";
 
 export interface TaskCreateSheetProps {
   open: boolean;
@@ -48,6 +52,7 @@ export function TaskCreateSheet({
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [assignedTo, setAssignedTo] = useState<string>(defaultAssignee ?? "");
+  const [recurrence, setRecurrence] = useState<TaskRecurrence>("none");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const minDueDate = todayAsIsoDate();
@@ -57,6 +62,7 @@ export function TaskCreateSheet({
     setDescription("");
     setDueDate("");
     setAssignedTo(defaultAssignee ?? "");
+    setRecurrence("none");
     setError(null);
   }, [defaultAssignee]);
 
@@ -79,6 +85,10 @@ export function TaskCreateSheet({
       setError("Bitte wähle heute oder einen späteren Tag.");
       return;
     }
+    if (recurrence !== "none" && !dueDate) {
+      setError("Eine Wiederholung braucht ein Datum, an dem sie beginnt.");
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -95,6 +105,7 @@ export function TaskCreateSheet({
         confirmed: true,
         tags: [],
         assigned_to: assignedTo || null,
+        recurrence,
       });
 
       if (insertError) {
@@ -122,7 +133,7 @@ export function TaskCreateSheet({
     } finally {
       setSaving(false);
     }
-  }, [title, description, dueDate, assignedTo, familyId, supabase, onCreated, handleOpenChange, minDueDate]);
+  }, [title, description, dueDate, assignedTo, recurrence, familyId, supabase, onCreated, handleOpenChange, minDueDate]);
 
   return (
     <OrdiloDrawer
@@ -210,6 +221,34 @@ export function TaskCreateSheet({
             aria-label="Fällig am"
             data-testid="task-create-due-date"
           />
+        </div>
+
+        {/* Recurrence — a rhythm needs the date above as its anchor */}
+        <div className="mt-4">
+          <label
+            htmlFor="task-create-recurrence"
+            className="mb-2 block text-sm font-medium text-foreground"
+          >
+            Wiederholung
+          </label>
+          <select
+            id="task-create-recurrence"
+            value={recurrence}
+            onChange={(e) => setRecurrence(e.target.value as TaskRecurrence)}
+            className="h-12 w-full rounded-ordilo-sm border border-border/70 bg-card px-3.5 text-base outline-none transition-colors hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20 md:text-sm"
+            data-testid="task-create-recurrence"
+          >
+            {TASK_RECURRENCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {recurrence !== "none" && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Beim Abhaken kommt die nächste Instanz automatisch in die Liste.
+            </p>
+          )}
         </div>
 
         {/* Assignee — faces, matching the detail sheet and the row */}

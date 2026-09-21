@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { toCalendarDate, type CalendarRecurrence } from "./calendar";
 import { fetchAllRows } from "./collections";
 import { fetchMemberPhotoUrls } from "./member-photos";
 import { getSupabase } from "./supabase";
@@ -23,6 +24,9 @@ export const FRIENDLY_ERROR =
 // Types
 // ---------------------------------------------------------------------------
 
+/** How often a task series repeats — the same vocabulary as calendar events. */
+export type TaskRecurrence = CalendarRecurrence;
+
 /** A task row from the `tasks` table (subset the planner UI uses). */
 export interface PlannerTask {
   id: string;
@@ -39,6 +43,10 @@ export interface PlannerTask {
   assigned_to: string | null;
   /** When it was ticked off; null while open, or if completed long ago. */
   completed_at: string | null;
+  /** The rhythm this row carries; "none" is a one-off task. */
+  recurrence: TaskRecurrence;
+  /** Last day a new instance may be due; null repeats without an end. */
+  recurrence_until: string | null;
 }
 
 /** A family member a task can belong to. */
@@ -64,6 +72,8 @@ export interface TaskPatch {
   due_date?: string | null;
   assigned_to?: string | null;
   completed_at?: string | null;
+  recurrence?: TaskRecurrence;
+  recurrence_until?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +415,10 @@ export const taskInputSchema = z.object({
     .optional()
     .default(""),
   assignedTo: z.string().optional().default(""),
+  recurrence: z
+    .enum(["none", "weekly", "biweekly", "monthly", "yearly"])
+    .optional()
+    .default("none"),
 });
 
 export type TaskInput = z.infer<typeof taskInputSchema>;
@@ -416,7 +430,7 @@ export type TaskInput = z.infer<typeof taskInputSchema>;
  * touching its date must not fail on the date it already had.
  */
 export function validateTaskInput(
-  input: { title: string; description?: string; dueDate?: string; assignedTo?: string },
+  input: { title: string; description?: string; dueDate?: string; assignedTo?: string; recurrence?: TaskRecurrence },
   todayStr = todayLocalDate(),
   allowPastDueDate = false,
 ): { success: true; data: TaskInput } | { success: false; error: string } {
@@ -433,7 +447,59 @@ export function validateTaskInput(
       error: "Bitte wähle heute oder einen späteren Tag.",
     };
   }
+  if (parsed.data.recurrence !== "none" && !parsed.data.dueDate) {
+    return {
+      success: false,
+      error: "Eine Wiederholung braucht ein Datum, an dem sie beginnt.",
+    };
+  }
   return { success: true, data: parsed.data };
+}
+
+// ---------------------------------------------------------------------------
+// Recurrence
+// ---------------------------------------------------------------------------
+
+/**
+ * The next due date of a series after `dueDate`, strictly later than
+ * `today` — the TypeScript twin of `public.task_next_recurrence` from
+ * migration 0087, and it must stay in step: the database trigger uses the
+ * SQL version to spawn, this one only predicts the spawned row's due date
+ * so the UI can greet the new instance without waiting for a refetch.
+ *
+ * Month and year steps clamp to the last valid day (the 31st becomes
+ * Feb 28) and the chain anchors on the clamped date — the same drift the
+ * SQL interval arithmetic produces.
+ */
+export function nextTaskRecurrenceDate(
+  dueDate: string,
+  recurrence: TaskRecurrence,
+  today: string,
+): string | null {
+  if (recurrence === "none" || !dueDate) return null;
+
+  const stepOnce = (value: string): string => {
+    const date = new Date(`${value}T12:00:00`);
+    if (recurrence === "weekly" || recurrence === "biweekly") {
+      date.setDate(date.getDate() + (recurrence === "weekly" ? 7 : 14));
+      return toCalendarDate(date);
+    }
+    const months = recurrence === "monthly" ? 1 : 12;
+    const target = new Date(date.getFullYear(), date.getMonth() + months, 1, 12);
+    const daysInTarget = new Date(
+      target.getFullYear(),
+      target.getMonth() + 1,
+      0,
+    ).getDate();
+    target.setDate(Math.min(date.getDate(), daysInTarget));
+    return toCalendarDate(target);
+  };
+
+  let candidate = stepOnce(dueDate);
+  for (let guard = 0; candidate <= today && guard <= 200; guard += 1) {
+    candidate = stepOnce(candidate);
+  }
+  return candidate > today ? candidate : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -441,7 +507,7 @@ export function validateTaskInput(
 // ---------------------------------------------------------------------------
 
 const plannerTaskSelect =
-  "id, family_id, document_id, title, description, due_date, status, confidence, confirmed, created_at, tags, assigned_to, completed_at";
+  "id, family_id, document_id, title, description, due_date, status, confidence, confirmed, created_at, tags, assigned_to, completed_at, recurrence, recurrence_until";
 
 /**
  * Open tasks plus what the family finished in the last week — the same
@@ -494,7 +560,7 @@ export async function fetchFamilyMembers(
  */
 export async function createTask(
   familyId: string,
-  input: { title: string; description?: string; dueDate?: string; assignedTo?: string },
+  input: { title: string; description?: string; dueDate?: string; assignedTo?: string; recurrence?: TaskRecurrence },
 ): Promise<{ success: true; task: PlannerTask } | { success: false; error: string }> {
   const validation = validateTaskInput(input);
   if (!validation.success) {
@@ -514,6 +580,7 @@ export async function createTask(
       confirmed: true,
       tags: [],
       assigned_to: validation.data.assignedTo || null,
+      recurrence: validation.data.recurrence,
     })
     .select(plannerTaskSelect)
     .single();
@@ -542,4 +609,44 @@ export async function patchTask(
   } catch {
     return false;
   }
+}
+
+/**
+ * Fetch the instance the database just spawned for a completed recurring
+ * task, so the new row can arrive in the list the moment the old one
+ * leaves — instead of appearing silently on the next refetch.
+ *
+ * The database trigger (migration 0087) owns the spawn; this only reads
+ * the result. The match mirrors the trigger's own idempotency guard:
+ * same family, title and rhythm, the predicted next due date, still open.
+ * Returns null when the series ended (recurrence_until) or the row has
+ * not landed yet — the next regular load picks it up either way.
+ */
+export async function fetchRecurrenceSpawn(
+  familyId: string,
+  completed: PlannerTask,
+  today: string,
+): Promise<PlannerTask | null> {
+  if (completed.recurrence === "none" || !completed.due_date) return null;
+  const expectedDue = nextTaskRecurrenceDate(
+    completed.due_date,
+    completed.recurrence,
+    today,
+  );
+  if (!expectedDue) return null;
+
+  const { data, error } = await getSupabase()
+    .from("tasks")
+    .select(plannerTaskSelect)
+    .eq("family_id", familyId)
+    .eq("status", "open")
+    .eq("title", completed.title)
+    .eq("recurrence", completed.recurrence)
+    .eq("due_date", expectedDue)
+    .neq("id", completed.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as PlannerTask;
 }

@@ -41,6 +41,8 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     description: null,
     due_date: isoInDays(30),
     status: "open",
+    recurrence: "none",
+    recurrence_until: null,
     confidence: 0.9,
     confirmed: true,
     created_at: "2026-07-01T00:00:00Z",

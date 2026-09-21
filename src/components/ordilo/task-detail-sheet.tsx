@@ -35,8 +35,10 @@ import { TagInput } from "@/components/ordilo/tag-input";
 import { DuePresetChips } from "@/components/ordilo/due-preset-chips";
 import { AssigneePicker } from "@/components/ordilo/assignee-picker";
 import {
+  TASK_RECURRENCE_OPTIONS,
   TASK_SCHEDULE_PRESET_LABELS,
   todayAsIsoDate,
+  type TaskRecurrence,
 } from "@/lib/task-utils";
 
 /** Order-insensitive comparison of two tag arrays. */
@@ -84,6 +86,9 @@ export function TaskDetailSheet({
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
   const [tags, setTags] = useState<string[]>(task?.tags ?? []);
   const [assignedTo, setAssignedTo] = useState<string>(task?.assigned_to ?? "");
+  const [recurrence, setRecurrence] = useState<TaskRecurrence>(
+    (task?.recurrence as TaskRecurrence) ?? "none",
+  );
   const [showMore, setShowMore] = useState((task?.tags?.length ?? 0) > 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +108,7 @@ export function TaskDetailSheet({
       description !== (task.description ?? "") ||
       dueDate !== (task.due_date ?? "") ||
       assignedTo !== (task.assigned_to ?? "") ||
+      recurrence !== ((task.recurrence as TaskRecurrence) ?? "none") ||
       !areTagsEqual(tags, task.tags ?? []));
 
   const handleSave = useCallback(async () => {
@@ -113,6 +119,10 @@ export function TaskDetailSheet({
       dueDate < minDueDate
     ) {
       setError("Bitte wähle heute oder einen späteren Tag.");
+      return;
+    }
+    if (recurrence !== "none" && !dueDate) {
+      setError("Eine Wiederholung braucht ein Datum, an dem sie beginnt.");
       return;
     }
     setSaving(true);
@@ -126,6 +136,7 @@ export function TaskDetailSheet({
           due_date: dueDate || null,
           tags,
           assigned_to: assignedTo || null,
+          recurrence,
         })
         .eq("id", task.id);
 
@@ -141,7 +152,7 @@ export function TaskDetailSheet({
     } finally {
       setSaving(false);
     }
-  }, [task, title, description, dueDate, tags, assignedTo, supabase, onSaved, onOpenChange, minDueDate]);
+  }, [task, title, description, dueDate, tags, assignedTo, recurrence, supabase, onSaved, onOpenChange, minDueDate]);
 
   /**
    * Closing with unsaved edits asks first.
@@ -306,6 +317,34 @@ export function TaskDetailSheet({
                   aria-label="Fällig am"
                   data-testid="task-detail-due-date"
                 />
+              </div>
+
+              <div className="border-t border-border/70 p-4">
+                <label
+                  htmlFor="task-detail-recurrence"
+                  className="mb-2 block text-sm font-medium text-foreground"
+                >
+                  Wiederholung
+                </label>
+                <select
+                  id="task-detail-recurrence"
+                  value={recurrence}
+                  onChange={(e) => setRecurrence(e.target.value as TaskRecurrence)}
+                  className="h-12 w-full rounded-ordilo-sm border border-border/70 bg-card px-3.5 text-base outline-none transition-colors hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20 md:text-sm"
+                  data-testid="task-detail-recurrence"
+                >
+                  {TASK_RECURRENCE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {recurrence !== "none" && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Beim Abhaken kommt die nächste Instanz automatisch in die
+                    Liste — die Änderung gilt für die Serie.
+                  </p>
+                )}
               </div>
 
               {members.length > 0 && (

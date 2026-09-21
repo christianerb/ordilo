@@ -71,6 +71,8 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     tags: [],
     assigned_to: null,
     completed_at: null,
+    recurrence: "none",
+    recurrence_until: null,
     ...overrides,
   };
 }

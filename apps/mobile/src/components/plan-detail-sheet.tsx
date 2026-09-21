@@ -342,6 +342,14 @@ function buildFacts(
         value: RECURRENCE_LABELS[entry.event.recurrence],
       });
     }
+  } else if (entry.task.recurrence !== "none") {
+    // A recurring task carries its series on the open row — the detail
+    // sheet says so, like the calendar does for repeating appointments.
+    facts.push({
+      icon: Repeat,
+      label: "Wiederholung",
+      value: RECURRENCE_LABELS[entry.task.recurrence],
+    });
   }
 
   const ids = planEntryMemberIds(entry);

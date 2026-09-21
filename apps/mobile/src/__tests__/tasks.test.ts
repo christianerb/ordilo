@@ -192,6 +192,7 @@ describe("validateTaskInput", () => {
         description: "Stadtwerke",
         dueDate: "2026-08-25",
         assignedTo: "member-1",
+        recurrence: "none",
       },
     });
   });

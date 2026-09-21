@@ -75,6 +75,8 @@ describe("task-utils", () => {
         tags: [],
         assigned_to: null,
         completed_at: null,
+        recurrence: "none",
+        recurrence_until: null,
       },
       {
         id: "2",
@@ -90,6 +92,8 @@ describe("task-utils", () => {
         tags: [],
         assigned_to: null,
         completed_at: null,
+        recurrence: "none",
+        recurrence_until: null,
       },
       {
         id: "3",
@@ -105,6 +109,8 @@ describe("task-utils", () => {
         tags: [],
         assigned_to: null,
         completed_at: null,
+        recurrence: "none",
+        recurrence_until: null,
       },
       {
         id: "4",
@@ -120,6 +126,8 @@ describe("task-utils", () => {
         tags: [],
         assigned_to: null,
         completed_at: null,
+        recurrence: "none",
+        recurrence_until: null,
       },
     ];
 

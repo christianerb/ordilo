@@ -25,7 +25,26 @@ export interface TaskRow {
   assigned_to: string | null;
   /** When it was ticked off; null while open, or if completed long ago. */
   completed_at: string | null;
+  /** The rhythm this row carries; "none" is a one-off task. */
+  recurrence: string;
+  /** Last day a new instance may be due; null repeats without an end. */
+  recurrence_until: string | null;
 }
+
+/** How often a task series repeats — the same vocabulary as calendar events. */
+export type TaskRecurrence = "none" | "weekly" | "biweekly" | "monthly" | "yearly";
+
+/**
+ * Select options for the recurrence field, shared by the create and the
+ * detail sheet. Labels match the event sheet's wording.
+ */
+export const TASK_RECURRENCE_OPTIONS: { value: TaskRecurrence; label: string }[] = [
+  { value: "none", label: "Keine" },
+  { value: "weekly", label: "Wöchentlich" },
+  { value: "biweekly", label: "Alle 14 Tage" },
+  { value: "monthly", label: "Monatlich" },
+  { value: "yearly", label: "Jährlich" },
+];
 
 /** The three status filter options shown in the Aufgaben tab. */
 export type TaskStatusFilter = "open" | "done" | "all";
