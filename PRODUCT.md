@@ -1,8 +1,6 @@
 # Product
 
-## Register
-
-product
+<!-- impeccable:product-schema 1 -->
 
 ## Platform
 
@@ -49,7 +47,26 @@ conversational Q&A. Success means a family never loses track of an
 important document again, and finding any piece of information takes a
 natural-language question instead of a filing-cabinet hunt.
 
-## Premium: Mit Ordilo sprechen
+## Positioning
+
+Ordilo is not a filing system with search — it is the family's memory.
+Every scanned or forwarded document is read, understood, and becomes part
+of a family knowledge graph that answers natural-language questions from
+the family's own papers. A scanner app or cloud drive can copy "we store
+your documents"; it cannot truthfully copy "we answer your questions from
+your own records."
+
+## Operating Context
+
+Paperwork arrives in everyday moments and is dealt with in short windows:
+scan a letter on the phone when the mail comes in, forward an email to
+the family address, or hand a PDF or photo to Ordilo through the share
+sheet. Review and search happen later, on phone or desktop. Premium
+families can also talk to Ordilo live.
+
+## Capabilities and Constraints
+
+### Premium: Mit Ordilo sprechen
 
 Premium-Familien können mit Ordilo ein natürliches, unterbrechbares
 Live-Gespräch führen. GPT‑Live‑1 übernimmt Zuhören, Sprechfluss und
@@ -65,7 +82,7 @@ Gespräch. Audio wird live an OpenAI übertragen, aber nicht von Ordilo
 gespeichert; nur die finalen Transkripte und Antworten werden wie normale
 Chat-Nachrichten im Familienverlauf gespeichert.
 
-## Brand Personality
+## Brand Commitments
 
 Warm. Calm. Loving.
 
@@ -81,7 +98,7 @@ sage greens, warm browns, and soft cream surfaces; natural, organic,
 calm; generous spacing; rounded, gentle forms. The feeling is a
 well-kept family journal, not an enterprise tool.
 
-## Anti-references
+**Anti-references:**
 
 - **Corporate / enterprise document management** (SharePoint, SAP,
   DocuSign admin panels). Cold, grid-heavy, permission-dialogue
@@ -95,7 +112,13 @@ well-kept family journal, not an enterprise tool.
   typography, novelty gradient accents. Ordilo is a family app, not a
   developer tool.
 
-## Design Principles
+## Evidence on Hand
+
+No customer testimonials, metrics, or press exist — no surface may
+fabricate them. The design references on record are internal mockups
+(ChatGPT mockups, July 2026), not user evidence.
+
+## Product Principles
 
 1. **Loving, not clinical.** Every surface should feel cared-for — warm
    tones, gentle radii, soft shadows. The app is a family keepsake, not
