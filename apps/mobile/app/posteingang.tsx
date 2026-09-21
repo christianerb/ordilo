@@ -105,7 +105,9 @@ export default function PosteingangScreen() {
                   first={index === 0}
                   onPress={email.documentId ? () => openDocument(email.documentId!) : undefined}
                   subtitle={
-                    [email.fromAddress, formatInboxReceivedAt(email.receivedAt)]
+                    // Time first: the row clamps the subtitle to one line,
+                    // so a long sender address must truncate, never the time.
+                    [formatInboxReceivedAt(email.receivedAt), email.fromAddress]
                       .filter(Boolean)
                       .join(" · ") || undefined
                   }

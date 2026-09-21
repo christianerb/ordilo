@@ -77,7 +77,8 @@ it("shows the status pill only for mail with new suggestions", async () => {
 it("merges sender and time into one subtitle line", async () => {
   const tree = await renderScreen();
   const rows = tree.root.findAllByType("ListRow");
-  expect(rows[0].props.subtitle).toBe("mara@example.de · vor 2 Stunden");
+  // Time leads the single line: a long sender truncates, never the time.
+  expect(rows[0].props.subtitle).toBe("vor 2 Stunden · mara@example.de");
   expect(rows[0].props.meta).toBeUndefined();
 });
 
