@@ -210,6 +210,39 @@ describe("native motion wiring", () => {
     expect(bar).not.toContain("withRepeat");
   });
 
+  it("lets plan rows arrive, depart, and settle instead of teleporting", () => {
+    const plan = source("app/(tabs)/plan.tsx");
+    const motion = source("src/theme/motion.ts");
+
+    // Arrival is gated to one id — an ordinary tab visit must never
+    // stagger the list — and the marker clears itself after the entrance
+    // so a later remount stays quiet. Exits stay armed on list rows: the
+    // fade must exist in the committed tree before a section move, which
+    // batching would otherwise skip. The calendar day list arms nothing,
+    // because switching days unmounts rows constantly.
+    expect(plan).toContain("justCreatedId");
+    expect(plan).not.toContain("justDepartedId");
+    expect(plan).toContain("markJustCreated(");
+    expect(plan).toContain("clearTimeout(justCreatedTimerRef.current)");
+    expect(plan).toContain("setTimeout(() => setJustCreatedId(null), 1000)");
+    expect(plan).toContain("entry.id === justCreatedId ? arrivalMotion : undefined");
+    expect(plan).toContain("entering={entryMotion}");
+    expect(plan).toContain("exiting={exitMotion}");
+    expect(plan).toContain("entry.kind === \"task\" ? departureMotion : undefined");
+    expect(motion).toContain("export function feedbackEntering");
+    expect(motion).toContain("export function feedbackExiting");
+
+    // The done state eases its color; the strikethrough cannot animate.
+    expect(plan).toContain('transitionProperty: "color"');
+    expect(plan).toContain("transitionTimingFunction: cssEaseOut");
+
+    // The all-done moment exists, is quiet, and only fires by hand.
+    expect(plan).toContain("Alles erledigt");
+    expect(plan).toContain("openTaskCount === 1");
+    expect(plan).toContain("allDoneCheered && openTaskCount === 0");
+    expect(plan).toContain('accessibilityLiveRegion="polite"');
+  });
+
   it("aborts native setup so the server can close an accepted stale session", () => {
     const live = source("src/lib/live-conversation.ts");
     const search = source("app/suche.tsx");

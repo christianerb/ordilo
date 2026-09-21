@@ -37,11 +37,16 @@ import {
   Text,
   TextInput,
   View,
+  type TextStyle,
 } from "react-native";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { useReducedMotion } from "react-native-reanimated";
+import Animated, {
+  useReducedMotion,
+  type AnimatedStyle,
+  type BaseAnimationBuilder,
+} from "react-native-reanimated";
 
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
@@ -51,6 +56,7 @@ import {
   type PlanDetailAction,
 } from "@/src/components/plan-detail-sheet";
 import { AvatarStack, EmptyPersonSeat, PersonAvatar, PersonChip } from "@/src/components/person";
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { TaskCheck } from "@/src/components/task-check";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
@@ -122,6 +128,9 @@ import {
   type TaskSectionId,
 } from "@/src/lib/tasks";
 import {
+  contentEntering,
+  cssEaseOut,
+  durations,
   feedbackEntering,
   feedbackExiting,
   listLayout,
@@ -129,6 +138,30 @@ import {
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const UNDO_BANNER_MS = 6000;
+
+const AnimatedText = Animated.createAnimatedComponent(Text);
+
+/**
+ * A row that was just created arrives; a row that just left by
+ * completion or rescheduling departs. Both reuse the feedback-banner
+ * vocabulary — 8px and a fade — gated to the one affected id so an
+ * ordinary tab visit never staggers the whole list.
+ *
+ * The done state on a title eases its color over to mist: the
+ * strikethrough itself cannot animate, so the color carries the state
+ * change as a settle instead of a snap. Color interpolates on the UI
+ * runtime and stays on under Reduce Motion — it is a state cue, not
+ * movement.
+ */
+const taskTitleColorTransition: AnimatedStyle<TextStyle> = {
+  color: colors.graphite,
+  transitionDuration: durations.fast,
+  transitionProperty: "color",
+  transitionTimingFunction: cssEaseOut,
+};
+const taskTitleColorTransitionDone: AnimatedStyle<TextStyle> = {
+  color: colors.mistDark,
+};
 
 /**
  * The two lenses on one plan: "Liste" groups by urgency, "Kalender"
@@ -266,11 +299,35 @@ export default function PlanScreen() {
   const [quickBusy, setQuickBusy] = useState(false);
   /** The task the quick entry just made — the row the Wann?/Wer? bar points at. */
   const [quickTaskId, setQuickTaskId] = useState<string | null>(null);
+  /** The row that should animate its arrival — set at creation, never on load. */
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
+  /** The last open task was completed by hand — the quiet all-done moment. */
+  const [allDoneCheered, setAllDoneCheered] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));
   const undoSeqRef = useRef(0);
   const createSheetRef = useRef<OrdiloSheetHandle>(null);
   const pendingCreateRef = useRef<"task" | "event" | null>(null);
+  const justCreatedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * Marks the one row that should animate its arrival. The marker steps
+   * aside a beat after the entrance (~220ms) so a later remount — view
+   * switch, collapsed section, filter change — does not replay it.
+   */
+  const markJustCreated = useCallback((id: string) => {
+    setJustCreatedId(id);
+    if (justCreatedTimerRef.current) clearTimeout(justCreatedTimerRef.current);
+    justCreatedTimerRef.current = setTimeout(() => setJustCreatedId(null), 1000);
+  }, []);
+
+  // The arrival timer follows the screen's life, not the other way round.
+  useEffect(
+    () => () => {
+      if (justCreatedTimerRef.current) clearTimeout(justCreatedTimerRef.current);
+    },
+    [],
+  );
 
   const showUndo = useCallback((message: string, revert: () => Promise<void>) => {
     undoSeqRef.current += 1;
@@ -377,6 +434,11 @@ export default function PlanScreen() {
       ),
     [personFilter, tasks],
   );
+  /** Open means: visible and not done. The all-done moment hangs off this. */
+  const openTaskCount = useMemo(
+    () => visibleTasks.filter((task) => task.status !== "done").length,
+    [visibleTasks],
+  );
   const personEvents = useMemo(
     () =>
       personFilter === null
@@ -429,6 +491,10 @@ export default function PlanScreen() {
       completed_at: null,
     };
     setTasks((prev) => [optimistic, ...prev]);
+    // The fresh row animates its arrival; the server twin replacing it
+    // keeps the same spot and does not replay the entrance.
+    markJustCreated(tempId);
+    setAllDoneCheered(false);
     setQuickTitle("");
     setQuickBusy(true);
     try {
@@ -448,7 +514,7 @@ export default function PlanScreen() {
     } finally {
       setQuickBusy(false);
     }
-  }, [family, personContextMember, quickBusy, quickTitle]);
+  }, [family, markJustCreated, personContextMember, quickBusy, quickTitle]);
 
   /** The fresh quick-entry task the Wann?/Wer? bar belongs to. */
   const quickTask = useMemo(() => {
@@ -493,6 +559,10 @@ export default function PlanScreen() {
     [grouped],
   );
 
+  // The all-done moment hides itself: it only renders while
+  // openTaskCount is 0, and the create paths clear the flag when new
+  // work arrives. Only a completion by hand sets it (see toggleDone),
+  // never a load that happens to find nothing.
   const replaceTask = useCallback((updated: PlannerTask) => {
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
   }, []);
@@ -519,6 +589,11 @@ export default function PlanScreen() {
         return;
       }
       if (markingDone) {
+        // The row leaves its section — the armed exit motion lets it fade
+        // instead of teleporting. When that was the last open task, say so once.
+        if (personFilter === null && openTaskCount === 1) {
+          setAllDoneCheered(true);
+        }
         void success();
         showUndo("Erledigt", async () => {
           replaceTask({ ...task, ...previous });
@@ -533,7 +608,7 @@ export default function PlanScreen() {
         });
       }
     },
-    [replaceTask, showUndo],
+    [openTaskCount, personFilter, replaceTask, showUndo],
   );
 
   /**
@@ -656,10 +731,12 @@ export default function PlanScreen() {
       const result = await createTask(family.id, values);
       if (!result.success) return { success: false, error: result.error };
       setTasks((prev) => [result.task, ...prev]);
+      markJustCreated(result.task.id);
+      setAllDoneCheered(false);
       void success();
       return { success: true };
     },
-    [editingTask, family, replaceTask],
+    [editingTask, family, markJustCreated, replaceTask],
   );
 
   const openTaskCreate = useCallback(() => {
@@ -711,13 +788,14 @@ export default function PlanScreen() {
       const result = await createPlannerEvent(family.id, values);
       if (!result.success) return result;
       setEvents((current) => [...current, result.event]);
+      markJustCreated(result.event.id);
       setSelectedDate(target);
       setActiveMonth(monthStart(target));
       setView("calendar");
       void success();
       return { success: true };
     },
-    [editingEvent, family],
+    [editingEvent, family, markJustCreated],
   );
 
   const openEdit = useCallback((task: PlannerTask) => {
@@ -960,6 +1038,12 @@ export default function PlanScreen() {
     );
   }
 
+  // The two one-row motions: a freshly created entry arrives, a
+  // completed or rescheduled task departs. Both stay gated to the one id
+  // they belong to — an ordinary visit never replays them.
+  const arrivalMotion = feedbackEntering(reduceMotion);
+  const departureMotion = feedbackExiting();
+
   const tabItems = [
     {
       icon: List,
@@ -988,7 +1072,9 @@ export default function PlanScreen() {
       {view === "calendar" ? (
         <CalendarView
           activeMonth={activeMonth}
+          createdEntryId={justCreatedId}
           entries={dayEntries}
+          entryArrival={arrivalMotion}
           events={personEvents}
           header={
             <>
@@ -1091,6 +1177,19 @@ export default function PlanScreen() {
               </EmptyState>
             )
           ) : null}
+          {allDoneCheered && openTaskCount === 0 && personFilter === null ? (
+            <Animated.View
+              accessibilityLiveRegion="polite"
+              entering={contentEntering()}
+              style={styles.allDone}
+            >
+              <OrdiloCharacter animated size={88} />
+              <Text style={styles.allDoneTitle}>Alles erledigt</Text>
+              <Text style={styles.allDoneText}>
+                Es ist nichts mehr offen. Lehnt euch zurück.
+              </Text>
+            </Animated.View>
+          ) : null}
           {TASK_SECTIONS.map((section) => {
             const sectionEntries = grouped[section.id];
             if (sectionEntries.length === 0) return null;
@@ -1168,6 +1267,17 @@ export default function PlanScreen() {
                         acceptBusy={acceptBusy}
                         accepted={accepted}
                         entry={entry}
+                        entryMotion={
+                          entry.id === justCreatedId ? arrivalMotion : undefined
+                        }
+                        // Exits stay armed on every list row: the fade must be
+                        // in the committed tree before the row moves sections,
+                        // and React batching would never commit a marker set
+                        // in the same beat. Unmounts here are deliberate acts
+                        // (complete, reschedule, filter, collapse) — never scroll.
+                        exitMotion={
+                          entry.kind === "task" ? departureMotion : undefined
+                        }
                         key={planEntryKey(entry)}
                         members={members}
                         onAcceptHandoff={
@@ -1442,7 +1552,9 @@ function QuickTaskEntry({
  */
 function CalendarView({
   activeMonth,
+  createdEntryId,
   entries,
+  entryArrival,
   events,
   header,
   members,
@@ -1457,8 +1569,11 @@ function CalendarView({
   todayStr,
 }: {
   activeMonth: Date;
+  /** A freshly created entry animates its arrival in the day list. */
+  createdEntryId?: string | null;
   /** The selected day's appointments and tasks, already in order. */
   entries: PlanEntry[];
+  entryArrival?: BaseAnimationBuilder;
   events: PlannerEvent[];
   /** Screen header and view tabs, scrolled away with the content. */
   header?: ReactNode;
@@ -1636,6 +1751,9 @@ function CalendarView({
           {entries.map((entry) => (
             <PlanRow
               entry={entry}
+              entryMotion={
+                entry.id === createdEntryId ? entryArrival : undefined
+              }
               key={planEntryKey(entry)}
               members={members}
               onAssign={onAssign}
@@ -1661,6 +1779,8 @@ function PlanRow({
   acceptBusy,
   accepted,
   entry,
+  entryMotion,
+  exitMotion,
   members,
   onAcceptHandoff,
   onAssign,
@@ -1674,6 +1794,11 @@ function PlanRow({
   acceptBusy?: string | null;
   accepted?: TaskAcceptance[];
   entry: PlanEntry;
+  /** Set on the one freshly created row — never on an ordinary visit. */
+  entryMotion?: BaseAnimationBuilder;
+  /** Armed on list rows so leaving a section fades; off in the calendar
+   *  day list, where switching days unmounts rows constantly. */
+  exitMotion?: BaseAnimationBuilder;
   members: FamilyMemberOption[];
   onAcceptHandoff?: () => void;
   onAssign: (task: PlannerTask) => void;
@@ -1689,6 +1814,8 @@ function PlanRow({
       <SwipeableTaskRow
         acceptBusy={acceptBusy}
         accepted={accepted}
+        entryMotion={entryMotion}
+        exitMotion={exitMotion}
         members={members}
         onAcceptHandoff={onAcceptHandoff}
         onAssign={() => onAssign(entry.task)}
@@ -1705,7 +1832,7 @@ function PlanRow({
   }
 
   return (
-    <Animated.View layout={listLayout()}>
+    <Animated.View entering={entryMotion} layout={listLayout()}>
       <EventRow
         entry={entry}
         members={members}
@@ -1788,6 +1915,8 @@ function EventRow({
 function SwipeableTaskRow({
   acceptBusy,
   accepted,
+  entryMotion,
+  exitMotion,
   members,
   onAcceptHandoff,
   onAssign,
@@ -1802,6 +1931,8 @@ function SwipeableTaskRow({
 }: {
   acceptBusy?: string | null;
   accepted?: TaskAcceptance[];
+  entryMotion?: BaseAnimationBuilder;
+  exitMotion?: BaseAnimationBuilder;
   members: FamilyMemberOption[];
   onAcceptHandoff?: () => void;
   onAssign: () => void;
@@ -1830,6 +1961,8 @@ function SwipeableTaskRow({
 
   return (
     <Animated.View
+      entering={entryMotion}
+      exiting={exitMotion}
       layout={listLayout()}
     >
       <ReanimatedSwipeable
@@ -1966,12 +2099,17 @@ function TaskRow({
         onPress={onPress}
         style={styles.taskBody}
       >
-        <Text
+        <AnimatedText
           numberOfLines={2}
-          style={[styles.taskTitle, done && styles.taskTitleDone]}
+          style={[
+            styles.taskTitle,
+            done && styles.taskTitleDone,
+            taskTitleColorTransition,
+            done && taskTitleColorTransitionDone,
+          ]}
         >
           {task.title}
-        </Text>
+        </AnimatedText>
         {!done && task.description ? (
           <Text numberOfLines={1} style={styles.taskNote}>
             {task.description}
@@ -2354,6 +2492,22 @@ const styles = StyleSheet.create({
   taskBody: {
     flex: 1,
     gap: 2,
+  },
+  allDone: {
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+  },
+  allDoneTitle: {
+    color: colors.graphite,
+    textAlign: "center",
+    ...typography.display,
+  },
+  allDoneText: {
+    color: colors.mistDark,
+    textAlign: "center",
+    ...typography.body,
   },
   taskTitle: {
     color: colors.graphite,
