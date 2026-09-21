@@ -1234,6 +1234,9 @@ export type Database = {
           tags: string[];
           assigned_to: string | null;
           completed_at: string | null;
+          recurrence: string;
+          recurrence_until: string | null;
+          recurrence_parent_id: string | null;
         };
         Insert: {
           id?: string;
@@ -1249,6 +1252,9 @@ export type Database = {
           tags?: string[];
           assigned_to?: string | null;
           completed_at?: string | null;
+          recurrence?: string;
+          recurrence_until?: string | null;
+          recurrence_parent_id?: string | null;
         };
         Update: {
           id?: string;
@@ -1264,6 +1270,9 @@ export type Database = {
           tags?: string[];
           assigned_to?: string | null;
           completed_at?: string | null;
+          recurrence?: string;
+          recurrence_until?: string | null;
+          recurrence_parent_id?: string | null;
         };
         Relationships: [];
       };

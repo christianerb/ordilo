@@ -66,6 +66,16 @@ families can also talk to Ordilo live.
 
 ## Capabilities and Constraints
 
+### Wiederkehrende Aufgaben
+
+Aufgaben können sich wiederholen: wöchentlich, alle zwei Wochen, monatlich
+oder jährlich — derselbe Wortschatz wie bei Terminen. Die offene Aufgabe
+trägt die Serie; beim Abhaken legt die Datenbank die nächste Instanz als
+neue offene Zeile an, und die erledigte bleibt als Historie in „Erledigt".
+Eine Serie endet, indem die Wiederholung auf „Keine" gestellt oder die
+offene Aufgabe verworfen wird. Es gibt keine Ausnahme-Tage: eine Instanz
+überspringen heißt, ihre Zeile zu verwerfen.
+
 ### Premium: Mit Ordilo sprechen
 
 Premium-Familien können mit Ordilo ein natürliches, unterbrechbares

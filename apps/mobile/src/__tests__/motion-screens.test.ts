@@ -629,7 +629,10 @@ describe("native motion wiring", () => {
     expect(taskForm).toContain("Aufgabe bearbeiten");
     expect(taskForm).toContain("<DateTimePicker");
     expect(taskForm).toContain('display={Platform.OS === "ios" ? "inline" : "default"}');
-    expect(taskForm.match(/<OrdiloPickerOverlay/g)).toHaveLength(1);
+    // One picker for the person, one for the recurrence rhythm.
+    expect(taskForm.match(/<OrdiloPickerOverlay/g)).toHaveLength(2);
+    expect(taskForm).toContain('label="Wiederholung"');
+    expect(taskForm).toContain("RECURRENCE_LABELS[recurrence]");
     expect(taskForm).not.toContain("memberScroller");
     expect(taskForm).toContain("<OrdiloFormSelect");
     expect(taskForm).not.toContain("memberCircleSelected");

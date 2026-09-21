@@ -114,6 +114,8 @@ import {
   formatPlanHeaderSubtitle,
   formatTaskDayHint,
   parseQuickTaskTitle,
+  fetchRecurrenceSpawn,
+  updateOpenRecurrenceContinuation,
   patchTask,
   resolveKnownMemberId,
   resolveSchedulePreset,
@@ -488,6 +490,8 @@ export default function PlanScreen() {
       created_at: new Date().toISOString(),
       tags: [],
       assigned_to: assignee,
+      recurrence: "none",
+      recurrence_until: null,
       completed_at: null,
     };
     setTasks((prev) => [optimistic, ...prev]);
@@ -595,6 +599,20 @@ export default function PlanScreen() {
           setAllDoneCheered(true);
         }
         void success();
+        // A recurring task continues: the database trigger has spawned the
+        // next instance — greet it with the same arrival a fresh row gets
+        // instead of letting it slip in on the next refetch.
+        if (task.recurrence !== "none") {
+          const spawned = await fetchRecurrenceSpawn(task.id);
+          if (spawned) {
+            setTasks((prev) =>
+              prev.some((item) => item.id === spawned.id)
+                ? prev
+                : [...prev, spawned],
+            );
+            markJustCreated(spawned.id);
+          }
+        }
         showUndo("Erledigt", async () => {
           replaceTask({ ...task, ...previous });
           const undoOk = await patchTask(task.id, {
@@ -608,7 +626,7 @@ export default function PlanScreen() {
         });
       }
     },
-    [openTaskCount, personFilter, replaceTask, showUndo],
+    [markJustCreated, openTaskCount, personFilter, replaceTask, showUndo],
   );
 
   /**
@@ -717,6 +735,7 @@ export default function PlanScreen() {
           description: values.description || null,
           due_date: values.dueDate || null,
           assigned_to: values.assignedTo || null,
+          recurrence: values.recurrence,
         };
         const previous = editingTask;
         replaceTask({ ...editingTask, ...updates });
@@ -724,6 +743,18 @@ export default function PlanScreen() {
         if (!ok) {
           replaceTask(previous);
           return { success: false, error: "Speichern hat nicht geklappt." };
+        }
+        // A finished row is history; the series it carried lives on the
+        // open continuation the trigger spawned. A rhythm change must
+        // reach that row, or the series keeps spawning with the old rule.
+        if (
+          editingTask.status === "done" &&
+          values.recurrence !== editingTask.recurrence
+        ) {
+          await updateOpenRecurrenceContinuation(
+            editingTask.id,
+            values.recurrence,
+          );
         }
         void success();
         return { success: true };

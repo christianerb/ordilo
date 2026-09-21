@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Heart,
+  Repeat,
   Trash2,
   UserRound,
 } from "lucide-react-native";
@@ -39,9 +40,10 @@ import {
   validateTaskInput,
   type FamilyMemberOption,
   type PlannerTask,
+  type TaskRecurrence,
 } from "@/src/lib/tasks";
 import { memberToPerson } from "@/src/lib/people";
-import { toCalendarDate } from "@/src/lib/calendar";
+import { RECURRENCE_LABELS, toCalendarDate } from "@/src/lib/calendar";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 export interface TaskFormValues {
@@ -49,6 +51,7 @@ export interface TaskFormValues {
   description: string;
   dueDate: string;
   assignedTo: string;
+  recurrence: TaskRecurrence;
 }
 
 export type TaskFormSubmit = (
@@ -90,11 +93,13 @@ export function TaskFormSheet({
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
+  const [recurrence, setRecurrence] = useState<TaskRecurrence>("none");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [todayStr, setTodayStr] = useState(todayLocalDate());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [personPickerOpen, setPersonPickerOpen] = useState(false);
+  const [recurrencePickerOpen, setRecurrencePickerOpen] = useState(false);
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
 
   // The assignee the sheet opens with: the task's own when editing,
@@ -112,11 +117,13 @@ export function TaskFormSheet({
       setDescription(initialTask?.description ?? "");
       setDueDate(initialTask?.due_date ?? "");
       setAssignedTo(initialAssignedTo);
+      setRecurrence(initialTask?.recurrence ?? "none");
       setError(null);
       setSubmitting(false);
       setTodayStr(todayLocalDate());
       setDatePickerOpen(false);
       setPersonPickerOpen(false);
+      setRecurrencePickerOpen(false);
       setDiscardDraftOpen(false);
     }
   }
@@ -142,7 +149,8 @@ export function TaskFormSheet({
     title !== (initialTask?.title ?? "") ||
     description !== (initialTask?.description ?? "") ||
     dueDate !== (initialTask?.due_date ?? "") ||
-    assignedTo !== initialAssignedTo;
+    assignedTo !== initialAssignedTo ||
+    recurrence !== (initialTask?.recurrence ?? "none");
 
   const requestClose = useCallback(() => {
     // A save in flight owns the sheet: closing now would hide a failure
@@ -161,7 +169,7 @@ export function TaskFormSheet({
     // — that is the task's reality, not a new mistake to reject.
     const dateUnchanged = isEdit && dueDate === (initialTask?.due_date ?? "");
     const validation = validateTaskInput(
-      { title, description, dueDate, assignedTo },
+      { title, description, dueDate, assignedTo, recurrence },
       todayStr,
       dateUnchanged,
     );
@@ -177,6 +185,7 @@ export function TaskFormSheet({
         description: validation.data.description,
         dueDate: validation.data.dueDate,
         assignedTo: validation.data.assignedTo,
+        recurrence: validation.data.recurrence,
       });
       if (result.success) {
         onClose();
@@ -188,7 +197,7 @@ export function TaskFormSheet({
     } finally {
       setSubmitting(false);
     }
-  }, [assignedTo, description, dueDate, initialTask, isEdit, onClose, onSubmit, title, todayStr]);
+  }, [assignedTo, description, dueDate, initialTask, isEdit, onClose, onSubmit, recurrence, title, todayStr]);
 
   const [dismissOpen, setDismissOpen] = useState(false);
 
@@ -244,6 +253,26 @@ export function TaskFormSheet({
               onPress={() => setDatePickerOpen(true)}
               trailing={<ChevronRight color={colors.harborBlue} size={20} strokeWidth={2} />}
               value={dueDate ? formatTaskDayHint(dueDate) ?? "Datum wählen" : "Datum wählen"}
+            />
+          </OrdiloFormField>
+
+          <OrdiloFormField
+            helper={
+              isEdit && recurrence !== "none"
+                ? "Diese Aufgabe wiederholt sich. Beim Abhaken kommt die nächste — deine Änderung gilt für die Serie."
+                : undefined
+            }
+            label="Wiederholung"
+          >
+            <OrdiloFormSelect
+              accessibilityHint="Öffnet die Auswahl für die Wiederholung"
+              accessibilityLabel={`Wiederholung: ${RECURRENCE_LABELS[recurrence]}`}
+              leading={<View style={styles.selectionIcon}>
+                <Repeat color={colors.harborBlue} size={20} strokeWidth={1.8} />
+              </View>}
+              onPress={() => setRecurrencePickerOpen(true)}
+              trailing={<ChevronDown color={colors.harborBlue} size={20} strokeWidth={2} />}
+              value={RECURRENCE_LABELS[recurrence]}
             />
           </OrdiloFormField>
 
@@ -389,6 +418,24 @@ export function TaskFormSheet({
         ]}
         title="Wer macht das?"
         visible={personPickerOpen}
+      />
+
+      <OrdiloPickerOverlay
+        onClose={() => setRecurrencePickerOpen(false)}
+        options={(
+          ["none", "weekly", "biweekly", "monthly", "yearly"] as const
+        ).map((value) => ({
+          key: value,
+          label: RECURRENCE_LABELS[value],
+          onPress: () => {
+            setRecurrence(value);
+            setError(null);
+            setRecurrencePickerOpen(false);
+          },
+          selected: recurrence === value,
+        }))}
+        title="Wie oft?"
+        visible={recurrencePickerOpen}
       />
     </OrdiloFormSheet>
   );

@@ -90,6 +90,8 @@ const taskEntry = {
     tags: [],
     assigned_to: "m-karina",
     completed_at: null,
+    recurrence: "none",
+    recurrence_until: null,
   },
 };
 

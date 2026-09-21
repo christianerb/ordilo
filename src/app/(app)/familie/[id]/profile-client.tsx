@@ -141,6 +141,10 @@ export function ProfileClient({
     tags: [],
     assigned_to: null,
     completed_at: null,
+    // The profile timeline never reads the series a task carries; the
+    // spawn on completion lives in the database trigger regardless.
+    recurrence: "none",
+    recurrence_until: null,
     document_title: task.document_id ? documentTitles?.get(task.document_id) ?? null : null,
     }));
 

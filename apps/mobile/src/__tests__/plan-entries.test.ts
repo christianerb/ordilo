@@ -40,6 +40,8 @@ function task(overrides: Partial<PlannerTask> = {}): PlannerTask {
     tags: [],
     assigned_to: null,
     completed_at: null,
+    recurrence: "none",
+    recurrence_until: null,
     ...overrides,
   };
 }

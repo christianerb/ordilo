@@ -284,8 +284,12 @@ export function HomeClient({
     assigned_to: t.assigned_to ?? null,
     assigned_member_name: null,
     // The home dashboard shows what is open, never an Erledigt section, so
-    // it has no use for the completion stamp.
+    // it has no use for the completion stamp — and nothing here reads the
+    // series a task carries (completing from home still spawns the next
+    // instance; the database trigger owns that, not this card).
     completed_at: null,
+    recurrence: "none",
+    recurrence_until: null,
   });
 
   // Existing events, converted for EventSheet's double-booking check.
