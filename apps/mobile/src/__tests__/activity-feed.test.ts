@@ -34,6 +34,7 @@ function activityRow(overrides: Record<string, unknown> = {}) {
     detail: "analyzed",
     occurred_at: "2026-09-12T10:00:00.000Z",
     ref_id: "doc-1",
+    document_id: "doc-1",
     ...overrides,
   };
 }
@@ -65,6 +66,7 @@ describe("loadFamilyActivity", () => {
         detail: "analyzed",
         occurredAt: "2026-09-12T10:00:00.000Z",
         refId: "doc-1",
+        documentId: "doc-1",
       },
     ]);
   });
@@ -102,41 +104,78 @@ describe("loadFamilyActivity", () => {
 
 describe("activityDestination", () => {
   it("leads documents to their detail page", () => {
-    expect(activityDestination({ kind: "document", refId: "doc-1" })).toEqual({
+    expect(
+      activityDestination({ kind: "document", refId: "doc-1", documentId: "doc-1" }),
+    ).toEqual({
       pathname: "/document/[id]",
       params: { id: "doc-1" },
     });
   });
 
-  it("leads tasks and events into the plan, preselected", () => {
-    expect(activityDestination({ kind: "task", refId: "t-1" })).toEqual({
+  it("leads a document-born task to its document, not to a management screen", () => {
+    expect(
+      activityDestination({ kind: "task", refId: "t-1", documentId: "doc-9" }),
+    ).toEqual({
+      pathname: "/document/[id]",
+      params: { id: "doc-9" },
+    });
+  });
+
+  it("keeps the plan as the fallback for tasks without a document and for events", () => {
+    expect(
+      activityDestination({ kind: "task", refId: "t-1", documentId: null }),
+    ).toEqual({
       pathname: "/(tabs)/plan",
       params: { task: "t-1" },
     });
-    expect(activityDestination({ kind: "event", refId: "e-1" })).toEqual({
+    expect(
+      activityDestination({ kind: "event", refId: "e-1", documentId: null }),
+    ).toEqual({
       pathname: "/(tabs)/plan",
       params: { event: "e-1" },
     });
   });
 
   it("leads mail to the Posteingang and members to the Familie", () => {
-    expect(activityDestination({ kind: "email", refId: null })).toEqual({
+    expect(
+      activityDestination({ kind: "email", refId: null, documentId: null }),
+    ).toEqual({
       pathname: "/posteingang",
     });
-    expect(activityDestination({ kind: "member", refId: "p-1" })).toEqual({
+    expect(
+      activityDestination({ kind: "member", refId: "p-1", documentId: null }),
+    ).toEqual({
       pathname: "/familie",
     });
   });
 
   it("keeps rows without a ref read-only", () => {
-    expect(activityDestination({ kind: "document", refId: null })).toBeNull();
-    expect(activityDestination({ kind: "task", refId: null })).toBeNull();
-    expect(activityDestination({ kind: "event", refId: null })).toBeNull();
+    expect(
+      activityDestination({ kind: "document", refId: null, documentId: null }),
+    ).toBeNull();
+    expect(
+      activityDestination({ kind: "task", refId: null, documentId: null }),
+    ).toBeNull();
+    expect(
+      activityDestination({ kind: "event", refId: null, documentId: null }),
+    ).toBeNull();
   });
 });
 
 describe("activityDetailLabel", () => {
-  it("translates raw document statuses into plain German", () => {
+  it("translates every raw document status into plain German", () => {
+    expect(activityDetailLabel({ kind: "document", detail: "uploaded" })).toBe(
+      "Hochgeladen",
+    );
+    expect(
+      activityDetailLabel({ kind: "document", detail: "ocr_processing" }),
+    ).toBe("Wird gelesen");
+    expect(activityDetailLabel({ kind: "document", detail: "ocr_done" })).toBe(
+      "Wird gelesen",
+    );
+    expect(
+      activityDetailLabel({ kind: "document", detail: "analyzing" }),
+    ).toBe("Wird einsortiert");
     expect(
       activityDetailLabel({ kind: "document", detail: "analyzed" }),
     ).toBe("Gelesen");
@@ -146,15 +185,12 @@ describe("activityDetailLabel", () => {
     expect(activityDetailLabel({ kind: "document", detail: "failed" })).toBe(
       "Nicht lesbar",
     );
-    expect(activityDetailLabel({ kind: "document", detail: "uploaded" })).toBe(
-      "Hochgeladen",
-    );
   });
 
-  it("capitalizes the done marker of tasks", () => {
-    expect(activityDetailLabel({ kind: "task", detail: "erledigt" })).toBe(
-      "Erledigt",
-    );
+  it("never leaks an unknown document status as a raw enum value", () => {
+    expect(
+      activityDetailLabel({ kind: "document", detail: "some_future_status" }),
+    ).toBe("In Arbeit");
   });
 
   it("passes event dates, senders, and the member line through", () => {
