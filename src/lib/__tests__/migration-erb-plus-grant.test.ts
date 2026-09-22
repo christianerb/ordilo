@@ -11,7 +11,11 @@ describe("erb family plus grant migration", () => {
   it("grants the operating family an indefinite active Plus entitlement", () => {
     expect(migration).toContain("insert into public.family_entitlements");
     expect(migration).toContain("select id, 'plus', 'active'");
-    expect(migration).toContain("lower(name) like '%erb%'");
+  });
+
+  it("targets the family by its stable id, never by a name match", () => {
+    expect(migration).toContain("where id = '71b7f002-0329-419d-b149-0a6a12e6cfad'");
+    expect(migration).not.toContain("%erb%");
   });
 
   it("is re-appliable and never overwrites a later non-free state", () => {

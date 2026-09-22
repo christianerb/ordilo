@@ -4,6 +4,10 @@
 -- indefinite access; the provider pair stays null, which the entitlement
 -- constraints allow.
 --
+-- The family is targeted by its stable UUID. Family names are user-
+-- controlled and non-unique, so a name match could comp an unrelated
+-- family whose name merely contains the same substring.
+--
 -- The `where status = 'free'` guard keeps the grant a one-way upgrade:
 -- reapplying the migration is a no-op, and a row that later carries a real
 -- RevenueCat subscription (or any non-free state) is never overwritten.
@@ -19,7 +23,7 @@ insert into public.family_entitlements (
 )
 select id, 'plus', 'active', null, null, null, false, now()
 from public.families
-where lower(name) like '%erb%'
+where id = '71b7f002-0329-419d-b149-0a6a12e6cfad'
 on conflict (family_id) do update
 set plan_code = excluded.plan_code,
     status = excluded.status,
