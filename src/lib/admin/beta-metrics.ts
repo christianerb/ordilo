@@ -64,7 +64,15 @@ export type ScanFailureSummary = {
  * The scan-quality signal the documents table cannot carry: a failed
  * upload leaves no row, so the app reports failures itself. Counts are
  * attempts (a retry counts again) — that is what a failure rate needs.
- * Properties carry coarse codes only (stage, reason), never content.
+ * Properties carry coarse codes only (stage, reason, source), never
+ * content.
+ *
+ * Both sides of the rate are scoped to the mobile scan client. The
+ * success event comes from the shared upload route, which also serves
+ * the web uploader, so a success without `source: "mobile_scan"` must
+ * not inflate the rate. Failure events predate the source property and
+ * only ever came from the mobile scan client, so a missing source still
+ * counts there.
  */
 export function summarizeScanFailures(events: BetaEvent[]): ScanFailureSummary {
   const stages = new Map<string, number>();
@@ -72,13 +80,18 @@ export function summarizeScanFailures(events: BetaEvent[]): ScanFailureSummary {
   let total = 0;
   let uploadsSucceeded = 0;
   for (const event of events) {
-    if (event.event_name === "document_upload_succeeded") uploadsSucceeded++;
-    if (event.event_name !== "document_upload_failed") continue;
-    total++;
     const properties =
       typeof event.properties === "object" && event.properties !== null
         ? (event.properties as Record<string, unknown>)
         : {};
+    const source = typeof properties.source === "string" ? properties.source : null;
+    if (event.event_name === "document_upload_succeeded") {
+      if (source === "mobile_scan") uploadsSucceeded++;
+      continue;
+    }
+    if (event.event_name !== "document_upload_failed") continue;
+    if (source !== null && source !== "mobile_scan") continue;
+    total++;
     const stage = typeof properties.stage === "string" ? properties.stage : "unbekannt";
     stages.set(stage, (stages.get(stage) ?? 0) + 1);
     const reason = typeof properties.reason === "string" ? properties.reason : "unbekannt";

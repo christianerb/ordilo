@@ -499,7 +499,7 @@ export async function uploadScannedDocument(
       uploadType: FileSystem.FileSystemUploadType.MULTIPART,
       fieldName: "file",
       mimeType: document.mimeType,
-      parameters: { family_id: familyId, upload_key: document.id },
+      parameters: { family_id: familyId, upload_key: document.id, client: "mobile_scan" },
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {

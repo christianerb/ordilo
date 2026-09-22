@@ -168,7 +168,7 @@ describe("native scan helpers", () => {
 
     expect(FileSystem.uploadAsync).toHaveBeenCalledWith("https://ordilo.test/api/documents/upload", "file:///documents/ordilo-scan/scan-1.jpg", expect.objectContaining({
       sessionType: 0, uploadType: 1, fieldName: "file", mimeType: "image/jpeg",
-      parameters: { family_id: "family-1", upload_key: "scan-1" },
+      parameters: { family_id: "family-1", upload_key: "scan-1", client: "mobile_scan" },
       headers: { Authorization: "Bearer test-token" },
     }));
   });

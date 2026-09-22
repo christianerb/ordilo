@@ -99,7 +99,7 @@ describe("recordScanFailure", () => {
     return insert;
   }
 
-  it("records coarse stage and reason codes, never content", async () => {
+  it("records coarse stage, reason, and source codes, never content", async () => {
     const insert = mockSession({ id: "user-1" });
 
     await recordScanFailure({
@@ -113,7 +113,7 @@ describe("recordScanFailure", () => {
         user_id: "user-1",
         family_id: "fam-1",
         event_name: "document_upload_failed",
-        properties: { stage: "upload", reason: "network" },
+        properties: { stage: "upload", reason: "network", source: "mobile_scan" },
       }),
     );
   });

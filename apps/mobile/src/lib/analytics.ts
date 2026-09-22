@@ -51,9 +51,11 @@ export async function recordProductEvent(
 
 /**
  * Quality signal for the scan pipeline: a failure the documents table can
- * never show, because a failed upload leaves no row. Stage and reason are
- * coarse codes (`upload`/`ocr`/`analysis`, `network`/`server`/...) so the
- * admin view can slice without a single byte of document content.
+ * never show, because a failed upload leaves no row. Stage, reason, and
+ * source are coarse codes (`upload`/`ocr`/`analysis`, `network`/`server`/...,
+ * `mobile_scan`) so the admin view can slice without a single byte of
+ * document content. The source matches the one on the success event, so
+ * the failure rate compares attempts from the same surface.
  *
  * Best effort; a retry or the failure screen never waits for analytics.
  */
@@ -74,7 +76,7 @@ export async function recordScanFailure({
       userId: data.user.id,
       familyId,
       eventName: "document_upload_failed",
-      properties: { stage, reason },
+      properties: { stage, reason, source: "mobile_scan" },
     });
   } catch {
     // Analytics must never block a user-facing action.

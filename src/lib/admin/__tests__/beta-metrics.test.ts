@@ -34,11 +34,11 @@ describe("scan failure quality signal", () => {
 
   it("counts failed attempts with their stage and reason codes", () => {
     const result = summarizeScanFailures([
-      event("document_upload_failed", { stage: "upload", reason: "network" }),
-      event("document_upload_failed", { stage: "upload", reason: "server" }),
-      event("document_upload_failed", { stage: "ocr", reason: "server" }),
-      event("document_upload_succeeded"),
-      event("document_upload_succeeded"),
+      event("document_upload_failed", { stage: "upload", reason: "network", source: "mobile_scan" }),
+      event("document_upload_failed", { stage: "upload", reason: "server", source: "mobile_scan" }),
+      event("document_upload_failed", { stage: "ocr", reason: "server", source: "mobile_scan" }),
+      event("document_upload_succeeded", { source: "mobile_scan" }),
+      event("document_upload_succeeded", { source: "mobile_scan" }),
     ]);
 
     expect(result.total).toBe(3);
@@ -53,6 +53,29 @@ describe("scan failure quality signal", () => {
     ]);
   });
 
+  it("scopes the rate to the mobile scan client on both sides", () => {
+    const result = summarizeScanFailures([
+      event("document_upload_succeeded", { source: "mobile_scan" }),
+      event("document_upload_succeeded", { source: "web" }),
+      event("document_upload_succeeded"),
+      event("document_upload_failed", { stage: "upload", reason: "network", source: "mobile_scan" }),
+      event("document_upload_failed", { stage: "upload", reason: "server", source: "web" }),
+    ]);
+
+    expect(result.total).toBe(1);
+    expect(result.uploadsSucceeded).toBe(1);
+    expect(result.stages).toEqual([{ stage: "upload", count: 1 }]);
+    expect(result.reasons).toEqual([{ reason: "network", count: 1 }]);
+  });
+
+  it("still counts legacy failures from before the source property", () => {
+    const result = summarizeScanFailures([
+      event("document_upload_failed", { stage: "upload", reason: "network" }),
+    ]);
+
+    expect(result.total).toBe(1);
+  });
+
   it("labels events without properties as unknown instead of dropping them", () => {
     const result = summarizeScanFailures([event("document_upload_failed")]);
 
@@ -61,7 +84,11 @@ describe("scan failure quality signal", () => {
   });
 
   it("reports zeroes when nothing failed", () => {
-    expect(summarizeScanFailures([event("document_upload_succeeded")])).toEqual({
+    expect(
+      summarizeScanFailures([
+        event("document_upload_succeeded", { source: "mobile_scan" }),
+      ]),
+    ).toEqual({
       total: 0,
       uploadsSucceeded: 1,
       stages: [],

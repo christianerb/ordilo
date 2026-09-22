@@ -42,6 +42,7 @@ export function uploadFile(
     formData.append("file", file);
     formData.append("family_id", familyId);
     formData.append("upload_key", uploadKey);
+    formData.append("client", "web");
 
     // Track upload progress.
     xhr.upload.addEventListener("progress", (event) => {

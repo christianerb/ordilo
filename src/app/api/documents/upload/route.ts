@@ -209,6 +209,16 @@ export async function POST(request: Request): Promise<Response> {
     if (existing) return resumeExistingUpload(existing, familyId);
   }
 
+  // Which surface sent the upload. The success event carries it so the
+  // scan failure rate can compare against scan successes only — this
+  // route also serves the web uploader. Unknown values are dropped
+  // rather than trusted.
+  const clientField = formData.get("client");
+  const uploadSource =
+    clientField === "mobile_scan" || clientField === "web"
+      ? clientField
+      : null;
+
   // 4b. Check daily upload limit ------------------------------------------
   // Count documents created today for this family to prevent cost runaway
   // from mass uploads. Each document triggers OCR + LLM extraction.
@@ -367,6 +377,7 @@ export async function POST(request: Request): Promise<Response> {
     userId: user.id,
     familyId,
     eventName: "document_upload_succeeded",
+    ...(uploadSource ? { properties: { source: uploadSource } } : {}),
   });
 
   // 7. Async pipeline: enqueue the OCR job and process it in-band ----------
