@@ -1,6 +1,10 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/admin";
-import { summarizeBetaEvents, type BetaEvent } from "./beta-metrics";
+import {
+  summarizeBetaEvents,
+  summarizeScanFailures,
+  type BetaEvent,
+} from "./beta-metrics";
 
 export async function getBetaOverview(days: number) {
   const client = createClient();
@@ -38,5 +42,8 @@ export async function getBetaOverview(days: number) {
     processing: documents.filter((document) => ["uploaded", "ocr_processing", "ocr_done", "analyzing"].includes(document.status)).length,
     failed: documents.filter((document) => document.status === "failed").length,
     failureStages: ["upload", "ocr", "analyze", "embed"].map((stage) => ({ stage, count: documents.filter((document) => document.status === "failed" && document.failure_stage === stage).length })),
+    // App-reported failures, including the uploads that never produced a
+    // documents row at all.
+    scanFailures: summarizeScanFailures(events),
   };
 }

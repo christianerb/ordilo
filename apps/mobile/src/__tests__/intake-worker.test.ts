@@ -10,7 +10,23 @@ jest.mock("../lib/scan", () => ({
   uploadScannedDocument: jest.fn(),
   resumeScannedDocument: jest.fn(async () => {}),
   removeStagedScannedDocument: jest.fn(async () => {}),
+  // Mirrors lib/scan's classifier — the unit under test is the worker,
+  // not the mapping (that one is covered in scan.test.ts).
+  classifyScanFailureReason: jest.fn((error: unknown) => {
+    const status = error instanceof Error && "status" in error ? (error as { status?: number }).status : undefined;
+    const code = error instanceof Error && "code" in error ? (error as { code?: string }).code : undefined;
+    if (code === "AI_CONSENT_REQUIRED") return "consent";
+    if (status === 0) return "network";
+    if (status === 401) return "auth";
+    if (status === 403) return "access_denied";
+    if (status === 413) return "file_too_large";
+    if (status === 429) return "quota_limited";
+    if (status !== undefined && (status === 408 || status >= 500)) return "server";
+    return "unknown";
+  }),
 }));
+jest.mock("../lib/analytics", () => ({ recordScanFailure: jest.fn(async () => {}) }));
+const recordScanFailure = jest.mocked(jest.requireMock("../lib/analytics").recordScanFailure);
 const upload = jest.mocked(uploadScannedDocument);
 beforeEach(() => {
   jest.clearAllMocks();
@@ -37,6 +53,8 @@ it("retains offline files and reuses their upload keys on retry", async () => {
   await drainIntake("family", () => true);
   expect(mockQueue).toHaveLength(3);
   expect(mockQueue.every((item) => item.state === "queued")).toBe(true);
+  // Retryable blips are not scan failures — the quality signal stays clean.
+  expect(recordScanFailure).not.toHaveBeenCalled();
   upload.mockImplementation(async (item) => ({ document_id: item.id, status: "uploaded", server_pipeline: true }));
   await drainIntake("family", () => true);
   expect(mockQueue).toEqual([]);
@@ -79,4 +97,10 @@ it("keeps permanent failures for explicit retry", async () => {
   await drainIntake("family", () => true);
   expect(upload).toHaveBeenCalledTimes(3);
   expect(mockQueue.every((item) => item.state === "failed")).toBe(true);
+  expect(recordScanFailure).toHaveBeenCalledTimes(3);
+  expect(recordScanFailure).toHaveBeenCalledWith({
+    familyId: "family",
+    stage: "upload",
+    reason: "file_too_large",
+  });
 });

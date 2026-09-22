@@ -50,3 +50,45 @@ export function summarizeBetaEvents(events: BetaEvent[], since: string) {
     daily: [...activeByDay].sort(([a], [b]) => a.localeCompare(b)).map(([day, users]) => ({ day, users: users.size })),
   };
 }
+
+export type ScanFailureSummary = {
+  /** Failed scan attempts the app reported in the window. */
+  total: number;
+  /** Successful uploads in the same window — the rate's other half. */
+  uploadsSucceeded: number;
+  stages: { stage: string; count: number }[];
+  reasons: { reason: string; count: number }[];
+};
+
+/**
+ * The scan-quality signal the documents table cannot carry: a failed
+ * upload leaves no row, so the app reports failures itself. Counts are
+ * attempts (a retry counts again) — that is what a failure rate needs.
+ * Properties carry coarse codes only (stage, reason), never content.
+ */
+export function summarizeScanFailures(events: BetaEvent[]): ScanFailureSummary {
+  const stages = new Map<string, number>();
+  const reasons = new Map<string, number>();
+  let total = 0;
+  let uploadsSucceeded = 0;
+  for (const event of events) {
+    if (event.event_name === "document_upload_succeeded") uploadsSucceeded++;
+    if (event.event_name !== "document_upload_failed") continue;
+    total++;
+    const properties =
+      typeof event.properties === "object" && event.properties !== null
+        ? (event.properties as Record<string, unknown>)
+        : {};
+    const stage = typeof properties.stage === "string" ? properties.stage : "unbekannt";
+    stages.set(stage, (stages.get(stage) ?? 0) + 1);
+    const reason = typeof properties.reason === "string" ? properties.reason : "unbekannt";
+    reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+  }
+  const byCount = (a: { count: number }, b: { count: number }) => b.count - a.count;
+  return {
+    total,
+    uploadsSucceeded,
+    stages: [...stages].map(([stage, count]) => ({ stage, count })).sort(byCount),
+    reasons: [...reasons].map(([reason, count]) => ({ reason, count })).sort(byCount),
+  };
+}

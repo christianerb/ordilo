@@ -15,6 +15,7 @@ export type ProductEventName =
   | "onboarding_completed"
   | "onboarding_scan_started"
   | "document_upload_succeeded"
+  | "document_upload_failed"
   | "document_confirmed"
   | "calendar_event_created"
   | "chat_answer_repair_started"

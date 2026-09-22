@@ -1,4 +1,5 @@
 import { ApiError, apiFetch, getApiUrl } from "./api";
+import { AI_CONSENT_REQUIRED_CODE } from "./ai-consent";
 import { getSupabase } from "./supabase";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -42,6 +43,130 @@ export type PersistedScanQueueItem = ScannedDocument & {
 };
 
 export class ScanValidationError extends Error {}
+
+// ---------------------------------------------------------------------------
+// Failure copy — one place that names where a scan stopped and why.
+// ---------------------------------------------------------------------------
+
+/** The pipeline leg a scan failure belongs to. */
+export type ScanFailureStage = "upload" | "ocr" | "analysis";
+
+/**
+ * A pipeline failure whose stage the server already recorded on the
+ * document row (`documents.failure_stage`). Carries that stage so the
+ * failure screen can name the step that actually failed instead of the
+ * step the client happened to be waiting for.
+ */
+export class ScanStageError extends Error {
+  constructor(
+    message: string,
+    readonly stage?: ScanFailureStage,
+  ) {
+    super(message);
+    this.name = "ScanStageError";
+  }
+}
+
+/** Coarse reason codes for quality monitoring — never messages, filenames or content. */
+export type ScanFailureReason =
+  | "consent"
+  | "network"
+  | "auth"
+  | "file_too_large"
+  | "quota_limited"
+  | "access_denied"
+  | "server"
+  | "unknown";
+
+/** Classify a failure for the scan-failure product event. */
+export function classifyScanFailureReason(error: unknown): ScanFailureReason {
+  if (error instanceof ApiError) {
+    if (error.code === AI_CONSENT_REQUIRED_CODE) return "consent";
+    if (error.status === 0) return "network";
+    if (error.status === 401) return "auth";
+    if (error.status === 403) return "access_denied";
+    if (error.status === 413) return "file_too_large";
+    if (error.status === 429) return "quota_limited";
+    if (error.status === 408 || error.status >= 500) return "server";
+    return "unknown";
+  }
+  if (error instanceof ScanStageError) return "server";
+  return "unknown";
+}
+
+/**
+ * Stage lines say WHERE the scan stopped and that a retry is safe; they
+ * are the same sentences the queue rows show, so a failed item reads the
+ * same on the failure screen and in the list.
+ */
+const SCAN_STAGE_MESSAGES: Record<ScanFailureStage, string> = {
+  upload: "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.",
+  ocr: "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten.",
+  analysis: "Die Analyse hat nicht geklappt. Du kannst sie erneut starten.",
+};
+
+/** Fallback strings that only repeat the stage line — never a useful detail. */
+const GENERIC_FAILURE_MESSAGES = new Set([
+  ...Object.values(SCAN_STAGE_MESSAGES),
+  "Das hat nicht geklappt. Bitte versuch's nochmal.",
+  "Das Dokument konnte nicht verarbeitet werden.",
+  "Die Verarbeitung des Dokuments ist fehlgeschlagen.",
+  "Der Upload konnte nicht abgeschlossen werden.",
+]);
+
+/**
+ * Build the failure-screen copy: the stage line plus a second line with
+ * the concrete cause when one is known (no connection, file too large,
+ * day quota, missing consent, ...). Unknown causes stay a single calm
+ * sentence instead of a doubled generic one.
+ */
+export function describeScanFailure(
+  stage: ScanFailureStage,
+  error: unknown,
+): { message: string; detail?: string; reason: ScanFailureReason } {
+  const message = SCAN_STAGE_MESSAGES[stage];
+  const reason = classifyScanFailureReason(error);
+  switch (reason) {
+    case "consent":
+      return {
+        message,
+        reason,
+        detail:
+          "Ordilo braucht deine Zustimmung zur KI-Verarbeitung. Du findest sie in den Einstellungen.",
+      };
+    case "network":
+      return {
+        message,
+        reason,
+        detail: "Keine Verbindung. Dein Dokument bleibt auf diesem Gerät gespeichert.",
+      };
+    case "auth":
+      return { message, reason, detail: "Bitte melde dich erneut an." };
+    case "file_too_large":
+      return {
+        message,
+        reason,
+        detail: `Die Datei ist zu groß. Maximum: ${MAX_DOCUMENT_FILE_SIZE_LABEL}.`,
+      };
+    case "quota_limited":
+      return {
+        message,
+        reason,
+        detail: "Das Tageslimit ist erreicht. Bitte versuch es morgen erneut.",
+      };
+    case "access_denied":
+      return {
+        message,
+        reason,
+        detail: "Der Zugriff wurde abgelehnt. Deine Datei bleibt auf diesem Gerät.",
+      };
+    default:
+      break;
+  }
+  const raw = error instanceof Error ? error.message : "";
+  const detail = raw && !GENERIC_FAILURE_MESSAGES.has(raw) ? raw : undefined;
+  return { message, reason, detail };
+}
 
 const SCAN_QUEUE_DIRECTORY = `${FileSystem.documentDirectory}ordilo-scan/`;
 function queueDirectory(familyId?: string): string {
@@ -106,6 +231,20 @@ async function getDocumentProcessingState(documentId: string) {
   }
 }
 
+/**
+ * The server records its own stage names on the document row
+ * (`ocr`, `analyze`, `embed`, ...); the client pipeline knows three legs.
+ * Anything past analysis reads as the analysis leg here — the screen
+ * cannot show a fourth step anyway.
+ */
+function scanFailureStageFromDb(
+  stage: string | null | undefined,
+): ScanFailureStage | undefined {
+  if (stage === "upload" || stage === "ocr") return stage;
+  if (stage) return "analysis";
+  return undefined;
+}
+
 async function waitForDocumentStatus(
   documentId: string,
   expected: ReadonlySet<string>,
@@ -123,9 +262,12 @@ async function waitForDocumentStatus(
     if (options.signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    const { status } = await getDocumentProcessingState(documentId);
+    const { status, failure_stage } = await getDocumentProcessingState(documentId);
     if (status === "failed") {
-      throw new Error(options.failureMessage);
+      throw new ScanStageError(
+        options.failureMessage,
+        scanFailureStageFromDb(failure_stage),
+      );
     }
     if (status !== previousStatus) {
       await options.onStatus?.(status);

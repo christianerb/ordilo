@@ -1,4 +1,10 @@
-import { recordOnboardingStartedIfFirstTime } from "../lib/analytics";
+import {
+  recordOnboardingStartedIfFirstTime,
+  recordScanFailure,
+} from "../lib/analytics";
+import { getSupabase } from "../lib/supabase";
+
+jest.mock("../lib/supabase", () => ({ getSupabase: jest.fn() }));
 
 /**
  * Funnel-start parity with the web login form
@@ -79,5 +85,54 @@ describe("recordOnboardingStartedIfFirstTime", () => {
     );
 
     expect(client.inserts).toHaveLength(1);
+  });
+});
+
+describe("recordScanFailure", () => {
+  /** Supabase stand-in with a signed-in user and an insert recorder. */
+  function mockSession(user: { id: string } | null) {
+    const insert = jest.fn(async () => ({ error: null }));
+    jest.mocked(getSupabase).mockReturnValue({
+      auth: { getUser: jest.fn(async () => ({ data: { user } })) },
+      from: jest.fn(() => ({ insert })),
+    } as never);
+    return insert;
+  }
+
+  it("records coarse stage and reason codes, never content", async () => {
+    const insert = mockSession({ id: "user-1" });
+
+    await recordScanFailure({
+      familyId: "fam-1",
+      stage: "upload",
+      reason: "network",
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "user-1",
+        family_id: "fam-1",
+        event_name: "document_upload_failed",
+        properties: { stage: "upload", reason: "network" },
+      }),
+    );
+  });
+
+  it("records nothing when signed out", async () => {
+    const insert = mockSession(null);
+
+    await recordScanFailure({ familyId: null, stage: "ocr", reason: "server" });
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("never lets analytics throw into the scan flow", async () => {
+    jest.mocked(getSupabase).mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+
+    await expect(
+      recordScanFailure({ familyId: "fam-1", stage: "upload", reason: "server" }),
+    ).resolves.toBeUndefined();
   });
 });
