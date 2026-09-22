@@ -39,6 +39,7 @@ const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
 function mockServerClient(options: {
   user?: { id: string; email: string } | null;
   family?: { id: string } | null;
+  familyError?: unknown;
   /** The row the insert returns — the route selects the full list shape. */
   docInsert?: Record<string, unknown> | null;
   docInsertError?: unknown;
@@ -46,6 +47,7 @@ function mockServerClient(options: {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
     family = { id: FAMILY_ID },
+    familyError = null,
     docInsert = { id: "doc-1" },
     docInsertError = null,
   } = options;
@@ -53,7 +55,7 @@ function mockServerClient(options: {
   // families select chain: .select("id").eq().maybeSingle()
   const familiesChain = {
     eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: family, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: family, error: familyError }),
   };
 
   // documents insert chain: .insert(payload).select("id").single()
@@ -193,6 +195,33 @@ describe("POST /api/documents/notes", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  it("returns 403 when the family does not belong to the user", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({ family: null }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(createNoteRequest(VALID_FIELDS));
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.code).toBe("FAMILY_NOT_FOUND");
+  });
+
+  it("returns a retryable 503 on family query error instead of claiming access loss", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({ family: null, familyError: new Error("postgrest unreachable") }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(createNoteRequest(VALID_FIELDS));
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.code).toBe("FAMILY_CHECK_FAILED");
+    expect(body.error).toContain("konnte gerade nicht geprüft werden");
   });
 
   it("encrypts a secret and never stores the plaintext", async () => {

@@ -1180,7 +1180,9 @@ export default function ScanModal() {
                   <Text numberOfLines={1} style={[typography.title, styles.rowTitle]}>
                     {item.name}
                   </Text>
-                  <Text numberOfLines={2} style={[typography.timestamp, item.state === "failed" ? styles.queueStatusFailed : styles.queueStatus]}>
+                  {/* A failed row's message is the whole point of the row —
+                      never clamp away the guidance it ends with. */}
+                  <Text numberOfLines={item.state === "failed" ? undefined : 2} style={[typography.timestamp, item.state === "failed" ? styles.queueStatusFailed : styles.queueStatus]}>
                     {item.state === "done"
                       ? "Hochgeladen, wird vorbereitet"
                       : item.state === "uploading"

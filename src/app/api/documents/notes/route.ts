@@ -173,7 +173,17 @@ export async function POST(request: Request): Promise<Response> {
     .eq("id", familyId)
     .maybeSingle();
 
-  if (familyError || !familyRow) {
+  // A failed lookup is not a verdict on access: a transient database or
+  // network error must not tell the user they lost the family. Report a
+  // retryable server problem so clients keep their input and try again.
+  if (familyError) {
+    return jsonError(
+      "Die Familie konnte gerade nicht geprüft werden. Bitte versuch es gleich erneut.",
+      "FAMILY_CHECK_FAILED",
+      503,
+    );
+  }
+  if (!familyRow) {
     return jsonError(
       "Kein Zugriff auf diese Familie.",
       "FAMILY_NOT_FOUND",
