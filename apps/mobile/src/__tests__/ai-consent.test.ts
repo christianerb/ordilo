@@ -2,7 +2,9 @@ import {
   AI_CONSENT_REQUIRED_CODE,
   fetchAiDataSharingStatus,
   parseAiDataSharingStatus,
+  publishAiConsentStatus,
   recordAiDataSharingDecision,
+  subscribeAiConsentStatus,
 } from "../lib/ai-consent";
 
 const mockApiJson = jest.fn();
@@ -90,6 +92,34 @@ describe("recordAiDataSharingDecision", () => {
     await expect(recordAiDataSharingDecision("granted")).resolves.toBe(
       "granted",
     );
+  });
+});
+
+describe("consent status sharing", () => {
+  it("delivers a recorded decision to every mounted provider", () => {
+    const root = jest.fn();
+    const scanSheet = jest.fn();
+    const unsubscribeRoot = subscribeAiConsentStatus(root);
+    const unsubscribeScan = subscribeAiConsentStatus(scanSheet);
+    try {
+      publishAiConsentStatus("granted");
+
+      expect(root).toHaveBeenCalledWith("granted");
+      expect(scanSheet).toHaveBeenCalledWith("granted");
+    } finally {
+      unsubscribeRoot();
+      unsubscribeScan();
+    }
+  });
+
+  it("stops delivering after a provider unmounts", () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeAiConsentStatus(listener);
+
+    unsubscribe();
+    publishAiConsentStatus("declined");
+
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

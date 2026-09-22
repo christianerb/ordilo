@@ -22,7 +22,9 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { getApiUrl } from "./api";
 import {
   fetchAiDataSharingStatus,
+  publishAiConsentStatus,
   recordAiDataSharingDecision,
+  subscribeAiConsentStatus,
   type AiDataSharingStatus,
 } from "./ai-consent";
 import { useSession } from "./session";
@@ -43,6 +45,13 @@ import { useSession } from "./session";
  *
  * Declining (or dismissing the sheet) changes nothing else: family, plan,
  * documents and settings keep working — only the AI features wait.
+ *
+ * Several providers can be mounted at once — the app root and a
+ * native-modal flow like the scan sheet, which renders the sheet inside
+ * its own hierarchy. Every status change is broadcast to the other
+ * providers, so a decision made inside a modal also lands in the root
+ * provider: the next search, dictation, or live action after leaving the
+ * modal does not ask again.
  */
 
 interface AiConsentContextValue {
@@ -99,7 +108,20 @@ export function AiConsentProvider({
   const setStatus = useCallback((next: AiDataSharingStatus) => {
     statusRef.current = next;
     setStatusState(next);
+    publishAiConsentStatus(next);
   }, []);
+
+  // A decision recorded by another mounted provider (e.g. the scan
+  // sheet's nested one) is adopted here, so this provider never serves a
+  // stale "not asked" while the server already holds the answer.
+  useEffect(
+    () =>
+      subscribeAiConsentStatus((next) => {
+        statusRef.current = next;
+        setStatusState(next);
+      }),
+    [],
+  );
 
   const refreshAiConsent = useCallback(() => {
     const read = (async () => {

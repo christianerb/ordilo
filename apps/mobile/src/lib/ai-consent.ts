@@ -17,6 +17,30 @@ export type AiDataSharingStatus = "granted" | "declined" | null;
 /** Error code returned by AI routes when no consent is on record. */
 export const AI_CONSENT_REQUIRED_CODE = "AI_CONSENT_REQUIRED";
 
+/**
+ * Several consent providers can be mounted at once — the app root plus a
+ * native-modal flow like the scan sheet. A decision recorded in one must
+ * reach the others, or the next AI action after leaving the modal asks
+ * again despite the consent stored on the server. Module scope, because
+ * every provider shares the same server truth.
+ */
+const statusListeners = new Set<(status: AiDataSharingStatus) => void>();
+
+/** Subscribe to consent statuses recorded by any mounted provider. */
+export function subscribeAiConsentStatus(
+  listener: (status: AiDataSharingStatus) => void,
+): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+/** Broadcast a status change to every mounted consent provider. */
+export function publishAiConsentStatus(status: AiDataSharingStatus): void {
+  for (const listener of statusListeners) listener(status);
+}
+
 interface AiConsentResponse {
   ai_data_sharing?: unknown;
 }
