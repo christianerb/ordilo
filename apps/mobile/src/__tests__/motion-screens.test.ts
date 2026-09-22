@@ -495,6 +495,7 @@ describe("native motion wiring", () => {
     const confirm = source("src/components/confirm-dialog.tsx");
     const task = source("src/components/task-form-sheet.tsx");
     const scan = source("app/scan.tsx");
+    const consent = source("src/lib/ai-consent-context.tsx");
     const layout = source("app/_layout.tsx");
 
     expect(sheet).toContain("export function OrdiloSheetHeader");
@@ -511,7 +512,11 @@ describe("native motion wiring", () => {
     expect(task).not.toContain("dateOverlay");
     expect(scan).toContain("<OrdiloFormSheet");
     expect(scan).toContain("<OrdiloFormBody");
+    expect(scan).toContain("renderSheet={(consentSheet) =>");
+    expect(scan).toContain("<ScanModalContent consentSheet={consentSheet} />");
+    expect(scan).toContain("{consentSheet}");
     expect(scan).not.toContain("<SafeAreaView");
+    expect(consent).toContain("contained={Boolean(renderSheet)}");
     expect(layout).toContain('presentation: "transparentModal"');
   });
 

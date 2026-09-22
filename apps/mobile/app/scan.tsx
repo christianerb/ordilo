@@ -60,7 +60,7 @@ import {
   cardRestShadow,
 } from "@/src/components/ui";
 import { ScanHeroIllustration } from "@/src/components/scan-hero-illustration";
-import { useAiConsent } from "@/src/lib/ai-consent-context";
+import { AiConsentProvider, useAiConsent } from "@/src/lib/ai-consent-context";
 import { useFamily } from "@/src/lib/family-context";
 import {
   describeScanFailure,
@@ -234,6 +234,19 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  * document to its existing OCR/analysis pipeline.
  */
 export default function ScanModal() {
+  // /scan is already a transparent native modal, and the intake form is a
+  // second RN Modal inside it. A consent sheet mounted at the root would
+  // open underneath both; this slot keeps the decision inside the form.
+  return (
+    <AiConsentProvider
+      renderSheet={(consentSheet) => (
+        <ScanModalContent consentSheet={consentSheet} />
+      )}
+    />
+  );
+}
+
+function ScanModalContent({ consentSheet }: { consentSheet: ReactNode }) {
   const router = useRouter();
   // `person` carries the family member a scan was started for; it is
   // forwarded to the review so their link can be prefilled there.
@@ -1278,6 +1291,7 @@ export default function ScanModal() {
           euch gelesen.
         </Text>
       </OrdiloFormBody>
+      {consentSheet}
     </OrdiloFormSheet>
   );
 }

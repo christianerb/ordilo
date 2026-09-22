@@ -33,7 +33,10 @@ describe("fetchAiDataSharingStatus", () => {
     mockApiJson.mockResolvedValue({ ai_data_sharing: "granted" });
 
     await expect(fetchAiDataSharingStatus()).resolves.toBe("granted");
-    expect(mockApiJson).toHaveBeenCalledWith("/api/me/ai-consent");
+    expect(mockApiJson).toHaveBeenCalledWith(
+      "/api/me/ai-consent",
+      expect.objectContaining({ signal: expect.anything() }),
+    );
   });
 
   it("maps a missing decision to null (never asked)", async () => {
@@ -46,6 +49,23 @@ describe("fetchAiDataSharingStatus", () => {
     mockApiJson.mockRejectedValue(new Error("offline"));
 
     await expect(fetchAiDataSharingStatus()).rejects.toThrow("offline");
+  });
+
+  it("stops waiting when the status read stalls", async () => {
+    jest.useFakeTimers();
+    try {
+      mockApiJson.mockReturnValue(new Promise(() => {}));
+      const result = fetchAiDataSharingStatus();
+      const expectation = expect(result).rejects.toThrow(
+        "AI consent status read timed out",
+      );
+
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      await expectation;
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

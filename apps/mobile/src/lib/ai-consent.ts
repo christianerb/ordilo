@@ -21,6 +21,26 @@ interface AiConsentResponse {
   ai_data_sharing?: unknown;
 }
 
+/** A slow consent read must never turn an AI action into a dead button. */
+const AI_CONSENT_READ_TIMEOUT_MS = 5_000;
+
+async function withReadTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("AI consent status read timed out")),
+          AI_CONSENT_READ_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Accept only the two recorded decisions; anything else is "not asked". */
 export function parseAiDataSharingStatus(raw: unknown): AiDataSharingStatus {
   return raw === "granted" || raw === "declined" ? raw : null;
@@ -28,7 +48,11 @@ export function parseAiDataSharingStatus(raw: unknown): AiDataSharingStatus {
 
 /** Read the current decision. Throws an ApiError on network failure. */
 export async function fetchAiDataSharingStatus(): Promise<AiDataSharingStatus> {
-  const response = await apiJson<AiConsentResponse>("/api/me/ai-consent");
+  const response = await withReadTimeout(
+    apiJson<AiConsentResponse>("/api/me/ai-consent", {
+      signal: AbortSignal.timeout(AI_CONSENT_READ_TIMEOUT_MS),
+    }),
+  );
   return parseAiDataSharingStatus(response?.ai_data_sharing);
 }
 

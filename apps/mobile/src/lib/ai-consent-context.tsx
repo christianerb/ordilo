@@ -69,7 +69,17 @@ const AiConsentContext = createContext<AiConsentContextValue>({
   refreshAiConsent: async () => {},
 });
 
-export function AiConsentProvider({ children }: { children: ReactNode }) {
+export function AiConsentProvider({
+  children,
+  renderSheet,
+}: {
+  children?: ReactNode;
+  /**
+   * Native-modal flows render the sheet inside their own hierarchy. Without
+   * this slot, iOS can present the root sheet underneath the visible modal.
+   */
+  renderSheet?: (sheet: ReactNode) => ReactNode;
+}) {
   const { session } = useSession();
   const userId = session?.user?.id ?? null;
   const [status, setStatusState] = useState<AiDataSharingStatus>(null);
@@ -202,74 +212,79 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
     [status, isLoading, ensureAiConsent, reviewAiConsent, refreshAiConsent],
   );
 
+  const sheet = (
+    <OrdiloNestedSheet
+      closeAccessibilityLabel="Einwilligung schließen"
+      contained={Boolean(renderSheet)}
+      dismissDisabled={saving}
+      onClose={dismiss}
+      visible={sheetOpen}
+    >
+      <View style={styles.content}>
+        <OrdiloSheetHeader title="Bevor Ordilo mitdenkt" />
+        <View style={styles.message}>
+          <View style={styles.iconCircle}>
+            <ShieldCheck color={colors.warmWhite} size={20} strokeWidth={2} />
+          </View>
+          <Text maxFontSizeMultiplier={1.4} style={styles.text}>
+            Ordilo liest deine Dokumente und beantwortet Fragen mit zwei
+            Diensten: OpenAI (Analyse, Antworten, Sprache) und Datalab
+            (Texterkennung). Dafür werden Inhalte an diese Dienste
+            übertragen. Sie dürfen sie nur für Ordilo verarbeiten, nicht
+            für ihr eigenes Training.
+          </Text>
+        </View>
+        <Text maxFontSizeMultiplier={1.4} style={styles.note}>
+          Du kannst deine Entscheidung jederzeit in den Einstellungen ändern.
+          Ohne Zustimmung bleiben Scannen, Fragen und Spracheingabe aus —
+          alles andere funktioniert.
+        </Text>
+        <Pressable
+          accessibilityLabel="Datenschutzerklärung lesen"
+          accessibilityRole="link"
+          hitSlop={8}
+          onPress={() => void openPrivacyPolicy()}
+          style={styles.link}
+        >
+          <Text maxFontSizeMultiplier={1.4} style={styles.linkText}>
+            Datenschutzerklärung lesen
+          </Text>
+        </Pressable>
+        <OrdiloFormFooter
+          error={saveError}
+          primary={
+            <OrdiloButton
+              accessibilityLabel="Der KI-Übertragung zustimmen"
+              disabled={saving}
+              icon={
+                saving ? (
+                  <ActivityIndicator color={colors.warmWhite} size="small" />
+                ) : undefined
+              }
+              onPress={() => void choose("granted")}
+              size="lg"
+              title={saving ? "Einen Moment …" : "Zustimmen"}
+            />
+          }
+          secondary={
+            <OrdiloButton
+              accessibilityLabel="Ablehnen"
+              disabled={saving}
+              onPress={() => void choose("declined")}
+              size="lg"
+              title="Ablehnen"
+              variant="outline"
+            />
+          }
+        />
+      </View>
+    </OrdiloNestedSheet>
+  );
+
   return (
     <AiConsentContext.Provider value={value}>
-      {children}
-      <OrdiloNestedSheet
-        closeAccessibilityLabel="Einwilligung schließen"
-        dismissDisabled={saving}
-        onClose={dismiss}
-        visible={sheetOpen}
-      >
-        <View style={styles.content}>
-          <OrdiloSheetHeader title="Bevor Ordilo mitdenkt" />
-          <View style={styles.message}>
-            <View style={styles.iconCircle}>
-              <ShieldCheck color={colors.warmWhite} size={20} strokeWidth={2} />
-            </View>
-            <Text maxFontSizeMultiplier={1.4} style={styles.text}>
-              Ordilo liest deine Dokumente und beantwortet Fragen mit zwei
-              Diensten: OpenAI (Analyse, Antworten, Sprache) und Datalab
-              (Texterkennung). Dafür werden Inhalte an diese Dienste
-              übertragen. Sie dürfen sie nur für Ordilo verarbeiten, nicht
-              für ihr eigenes Training.
-            </Text>
-          </View>
-          <Text maxFontSizeMultiplier={1.4} style={styles.note}>
-            Du kannst deine Entscheidung jederzeit in den Einstellungen
-            ändern. Ohne Zustimmung bleiben Scannen, Fragen und
-            Spracheingabe aus — alles andere funktioniert.
-          </Text>
-          <Pressable
-            accessibilityLabel="Datenschutzerklärung lesen"
-            accessibilityRole="link"
-            hitSlop={8}
-            onPress={() => void openPrivacyPolicy()}
-            style={styles.link}
-          >
-            <Text maxFontSizeMultiplier={1.4} style={styles.linkText}>
-              Datenschutzerklärung lesen
-            </Text>
-          </Pressable>
-          <OrdiloFormFooter
-            error={saveError}
-            primary={
-              <OrdiloButton
-                accessibilityLabel="Der KI-Übertragung zustimmen"
-                disabled={saving}
-                icon={
-                  saving ? (
-                    <ActivityIndicator color={colors.warmWhite} size="small" />
-                  ) : undefined
-                }
-                onPress={() => void choose("granted")}
-                size="lg"
-                title={saving ? "Einen Moment …" : "Zustimmen"}
-              />
-            }
-            secondary={
-              <OrdiloButton
-                accessibilityLabel="Ablehnen"
-                disabled={saving}
-                onPress={() => void choose("declined")}
-                size="lg"
-                title="Ablehnen"
-                variant="outline"
-              />
-            }
-          />
-        </View>
-      </OrdiloNestedSheet>
+      {renderSheet ? renderSheet(sheet) : children}
+      {renderSheet ? null : sheet}
     </AiConsentContext.Provider>
   );
 }
