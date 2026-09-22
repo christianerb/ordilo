@@ -14,7 +14,7 @@ import {
 const mockLimit = jest.fn();
 const mockOrder = jest.fn(() => ({ limit: mockLimit }));
 const mockEq = jest.fn(() => ({ order: mockOrder }));
-const mockSelect = jest.fn(() => ({ eq: mockEq }));
+const mockSelect = jest.fn((_columns: string) => ({ eq: mockEq }));
 const mockFrom = jest.fn(() => ({ select: mockSelect }));
 
 jest.mock("../lib/supabase", () => ({
@@ -99,6 +99,32 @@ describe("loadFamilyActivity", () => {
     await expect(loadFamilyActivity("fam-1")).rejects.toThrow(
       "Das hat gerade nicht geklappt. Bitte versuch es nochmal.",
     );
+  });
+
+  it("retries without document_id when the backend view predates the column", async () => {
+    mockLimit
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "column family_activity.document_id does not exist" },
+      })
+      .mockResolvedValueOnce({
+        data: [activityRow({ document_id: undefined })],
+        error: null,
+      });
+
+    const items = await loadFamilyActivity("fam-1");
+
+    expect(mockSelect).toHaveBeenCalledTimes(2);
+    expect(mockSelect.mock.calls[0][0]).toContain("document_id");
+    expect(mockSelect.mock.calls[1][0]).not.toContain("document_id");
+    expect(items[0].documentId).toBeNull();
+  });
+
+  it("does not retry on errors unrelated to the column", async () => {
+    mockLimit.mockResolvedValue({ data: null, error: { message: "rls" } });
+
+    await expect(loadFamilyActivity("fam-1")).rejects.toThrow();
+    expect(mockSelect).toHaveBeenCalledTimes(1);
   });
 });
 

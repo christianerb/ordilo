@@ -42,7 +42,8 @@ interface FamilyActivityRow {
   detail: string | null;
   occurred_at: string;
   ref_id: string | null;
-  document_id: string | null;
+  /** Absent entirely when the pre-0091 view answers the legacy query. */
+  document_id?: string | null;
 }
 
 const ACTIVITY_KINDS: readonly string[] = [
@@ -53,20 +54,32 @@ const ACTIVITY_KINDS: readonly string[] = [
   "member",
 ];
 
+const ACTIVITY_COLUMNS =
+  "activity_id, family_id, kind, title, detail, occurred_at, ref_id, document_id";
+/** Pre-0091 views have no document_id; the feed degrades to plan routing. */
+const ACTIVITY_COLUMNS_LEGACY =
+  "activity_id, family_id, kind, title, detail, occurred_at, ref_id";
+
 export async function loadFamilyActivity(
   familyId: string,
   limit = ACTIVITY_FEED_LIMIT,
 ): Promise<FamilyActivityItem[]> {
-  const { data, error } = await getSupabase()
-    .from("family_activity")
-    .select(
-      "activity_id, family_id, kind, title, detail, occurred_at, ref_id, document_id",
-    )
-    .eq("family_id", familyId)
-    .order("occurred_at", { ascending: false })
-    .limit(limit);
+  const query = (columns: string) =>
+    getSupabase()
+      .from("family_activity")
+      .select(columns)
+      .eq("family_id", familyId)
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+  // App releases and migrations are decoupled: a new build may meet the old
+  // view. A missing document_id column retries once without it instead of
+  // losing the whole feed.
+  let { data, error } = await query(ACTIVITY_COLUMNS);
+  if (error && /document_id/.test(error.message ?? "")) {
+    ({ data, error } = await query(ACTIVITY_COLUMNS_LEGACY));
+  }
   if (error) throw new Error(FRIENDLY_ERROR);
-  return ((data ?? []) as FamilyActivityRow[])
+  return ((data ?? []) as unknown as FamilyActivityRow[])
     .filter((row): row is FamilyActivityRow & { kind: FamilyActivityKind } =>
       ACTIVITY_KINDS.includes(row.kind),
     )
@@ -77,7 +90,7 @@ export async function loadFamilyActivity(
       detail: row.detail,
       occurredAt: row.occurred_at,
       refId: row.ref_id,
-      documentId: row.document_id,
+      documentId: row.document_id ?? null,
     }));
 }
 
