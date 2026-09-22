@@ -10,7 +10,7 @@ import {
   DrawerDescription,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { useIsDesktop } from "@/lib/hooks/use-media-query";
+import { useIsDesktop, useMediaQuery } from "@/lib/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 
 /**
@@ -36,6 +36,13 @@ import { cn } from "@/lib/utils";
  * a header that names the thing, a body that scrolls, an optional footer that
  * does not.
  */
+
+/**
+ * Devices whose primary pointer is a mouse or trackpad — the exact
+ * condition under which vaul bans text selection inside the drawer
+ * (see the globals.css block that lifts the ban again).
+ */
+const FINE_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
 
 type OrdiloDrawerVariant = "picker" | "form" | "detail";
 
@@ -128,6 +135,15 @@ export function OrdiloDrawer({
   ...props
 }: OrdiloDrawerProps) {
   const desktop = useIsDesktop();
+  // vaul bans text selection inside drawers on fine pointers so that
+  // mouse-dragging the sheet cannot highlight text. These drawers are
+  // reading surfaces — a login to copy, a note to quote — so globals.css
+  // lifts the ban again, and on exactly those devices dragging the sheet
+  // from its content is retired: the X, the overlay and Escape all close
+  // it, and a drag that might be a selection must stay a selection. On
+  // touch the drag-from-anywhere gesture stays; vaul already refuses to
+  // drag while text is highlighted.
+  const finePointer = useMediaQuery(FINE_POINTER_QUERY);
   // Only the detail variant leaves the bottom edge; pickers and forms stay
   // thumb-reachable at every width.
   const preferred = variant === "detail" && desktop ? "right" : "bottom";
@@ -153,6 +169,7 @@ export function OrdiloDrawer({
       onOpenChange={onOpenChange}
       direction={anchor}
       dismissible={dismissible}
+      handleOnly={finePointer}
     >
       <VariantContext.Provider value={variant}>
         <DrawerContent

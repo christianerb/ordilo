@@ -1213,6 +1213,21 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Text selection inside drawers
+   vaul injects `[data-vaul-drawer] { user-select: none }` under exactly this
+   media query so that mouse-dragging a sheet cannot highlight text. Ordilo
+   drawers are reading surfaces — a login to copy, a note to quote — so
+   selection wins. The doubled attribute selector outranks the injected rule
+   regardless of load order, and the drag gesture it protected is retired on
+   the same devices via `handleOnly` in ordilo-drawer.tsx.
+   --------------------------------------------------------------------------- */
+@media (hover: hover) and (pointer: fine) {
+  [data-vaul-drawer][data-vaul-drawer] {
+    user-select: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Reduced motion — disable non-essential animations
    --------------------------------------------------------------------------- */
 
