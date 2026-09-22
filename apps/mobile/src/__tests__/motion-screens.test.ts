@@ -109,11 +109,15 @@ describe("native motion wiring", () => {
     expect(scan).toMatch(
       /params:\s*\{[^}]*id: documentId,[^}]*source: "scan"/s,
     );
-    expect(scan).toContain("Im Hintergrund weiterlaufen");
+    // Leaving the processing screen is always safe, so the leave button
+    // carries one constant label; the info box owns the state nuance.
+    expect(scan).toContain('const leaveTitle = "Schließen"');
+    expect(scan).toContain("Du musst nicht warten");
+    expect(scan).not.toContain("Im Hintergrund weiterlaufen");
+    expect(scan).not.toContain("Später fortsetzen");
     expect(scan).toContain("flow.serverPipeline === true");
     expect(scan).toContain("item.serverPipeline ?? false");
     expect(scan).toContain("serverPipeline,");
-    expect(scan).toContain('\"Später fortsetzen\"');
     expect(scan).toContain("detachServerPipelineRef.current = keepRunning");
     expect(document).toContain('source === "scan"');
     expect(document).toContain("Alles sicher abgelegt");
@@ -262,9 +266,9 @@ describe("native motion wiring", () => {
   it("explains background processing without promising notifications", () => {
     const scan = source("app/scan.tsx");
 
-    expect(scan).toContain("Du kannst diese Ansicht verlassen oder die App schließen");
-    expect(scan).toContain("Wenn du später zurückkommst");
-    expect(scan).toContain("Lass diese Ansicht geöffnet");
+    expect(scan).toContain("Ordilo arbeitet im Hintergrund weiter");
+    expect(scan).toContain("wenn du zurückkommst");
+    expect(scan).toContain("pausiert dann einfach");
     expect(scan).toContain("{!failed ? (");
     expect(scan).not.toContain("Wir benachrichtigen dich");
   });
@@ -491,6 +495,7 @@ describe("native motion wiring", () => {
     const confirm = source("src/components/confirm-dialog.tsx");
     const task = source("src/components/task-form-sheet.tsx");
     const scan = source("app/scan.tsx");
+    const consent = source("src/lib/ai-consent-context.tsx");
     const layout = source("app/_layout.tsx");
 
     expect(sheet).toContain("export function OrdiloSheetHeader");
@@ -507,7 +512,11 @@ describe("native motion wiring", () => {
     expect(task).not.toContain("dateOverlay");
     expect(scan).toContain("<OrdiloFormSheet");
     expect(scan).toContain("<OrdiloFormBody");
+    expect(scan).toContain("renderSheet={(consentSheet) =>");
+    expect(scan).toContain("<ScanModalContent consentSheet={consentSheet} />");
+    expect(scan).toContain("{consentSheet}");
     expect(scan).not.toContain("<SafeAreaView");
+    expect(consent).toContain("contained={Boolean(renderSheet)}");
     expect(layout).toContain('presentation: "transparentModal"');
   });
 

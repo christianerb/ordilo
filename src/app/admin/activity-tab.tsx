@@ -10,7 +10,20 @@ const FAILURE_STAGE_LABELS: Record<string, string> = {
   upload: "Upload",
   ocr: "Texterkennung",
   analyze: "Analyse",
+  analysis: "Analyse",
   embed: "Suchindex",
+};
+
+/** Reason codes the app reports on `document_upload_failed`. */
+const SCAN_FAILURE_REASON_LABELS: Record<string, string> = {
+  network: "Netzwerk",
+  server: "Server",
+  consent: "KI-Zustimmung fehlt",
+  auth: "Anmeldung",
+  file_too_large: "Datei zu groß",
+  quota_limited: "Tageslimit",
+  access_denied: "Zugriff verweigert",
+  unknown: "Unbekannt",
 };
 
 export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
@@ -26,6 +39,17 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
     ["Suchanfragen abgeschlossen", beta.searches],
     ["Chatfragen gesendet", beta.questions],
   ];
+
+  // The upload leg's success rate: successful uploads against the upload
+  // failures the app reported (failures past the upload live in the
+  // documents table above).
+  const uploadLegFailures =
+    beta.scanFailures.stages.find((entry) => entry.stage === "upload")?.count ?? 0;
+  const uploadAttempts = beta.scanFailures.uploadsSucceeded + uploadLegFailures;
+  const uploadSuccessRate =
+    uploadAttempts > 0
+      ? `${Math.round((beta.scanFailures.uploadsSucceeded / uploadAttempts) * 100)} % (${beta.scanFailures.uploadsSucceeded} von ${uploadAttempts})`
+      : "noch keine Daten";
 
   return (
     <>
@@ -111,7 +135,11 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
         <p className="mt-4 text-sm text-muted-foreground">
           Verarbeitung: {beta.processing} in Arbeit · {beta.awaitingReview} zur Prüfung · {beta.failed} fehlgeschlagen
           ({beta.failureStages.map(({ stage, count }) => `${FAILURE_STAGE_LABELS[stage] ?? stage} ${count}`).join(" · ")}).
-          Noch nicht hochgeladene lokale Dateien sind hier nicht sichtbar.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {beta.scanFailures.total === 0
+            ? "Von der App gemeldete Scan-Fehler: keine im Zeitraum. Damit sind jetzt auch Uploads sichtbar, die nie den Server erreicht haben."
+            : `Von der App gemeldete Scan-Fehler: ${beta.scanFailures.total} (${beta.scanFailures.stages.map(({ stage, count }) => `${FAILURE_STAGE_LABELS[stage] ?? stage} ${count}`).join(" · ")}) — Gründe: ${beta.scanFailures.reasons.map(({ reason, count }) => `${SCAN_FAILURE_REASON_LABELS[reason] ?? reason} ${count}`).join(" · ")}. Upload-Erfolgsquote im Zeitraum: ${uploadSuccessRate}.`}
         </p>
         <details className="mt-5">
           <summary className="focus-ring cursor-pointer rounded-sm text-sm font-medium">Wo stehen die neuen Nutzer?</summary>

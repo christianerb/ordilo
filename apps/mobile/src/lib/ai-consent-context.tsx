@@ -22,7 +22,9 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { getApiUrl } from "./api";
 import {
   fetchAiDataSharingStatus,
+  publishAiConsentStatus,
   recordAiDataSharingDecision,
+  subscribeAiConsentStatus,
   type AiDataSharingStatus,
 } from "./ai-consent";
 import { useSession } from "./session";
@@ -43,6 +45,13 @@ import { useSession } from "./session";
  *
  * Declining (or dismissing the sheet) changes nothing else: family, plan,
  * documents and settings keep working — only the AI features wait.
+ *
+ * Several providers can be mounted at once — the app root and a
+ * native-modal flow like the scan sheet, which renders the sheet inside
+ * its own hierarchy. Every status change is broadcast to the other
+ * providers, so a decision made inside a modal also lands in the root
+ * provider: the next search, dictation, or live action after leaving the
+ * modal does not ask again.
  */
 
 interface AiConsentContextValue {
@@ -69,7 +78,17 @@ const AiConsentContext = createContext<AiConsentContextValue>({
   refreshAiConsent: async () => {},
 });
 
-export function AiConsentProvider({ children }: { children: ReactNode }) {
+export function AiConsentProvider({
+  children,
+  renderSheet,
+}: {
+  children?: ReactNode;
+  /**
+   * Native-modal flows render the sheet inside their own hierarchy. Without
+   * this slot, iOS can present the root sheet underneath the visible modal.
+   */
+  renderSheet?: (sheet: ReactNode) => ReactNode;
+}) {
   const { session } = useSession();
   const userId = session?.user?.id ?? null;
   const [status, setStatusState] = useState<AiDataSharingStatus>(null);
@@ -89,7 +108,20 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
   const setStatus = useCallback((next: AiDataSharingStatus) => {
     statusRef.current = next;
     setStatusState(next);
+    publishAiConsentStatus(next);
   }, []);
+
+  // A decision recorded by another mounted provider (e.g. the scan
+  // sheet's nested one) is adopted here, so this provider never serves a
+  // stale "not asked" while the server already holds the answer.
+  useEffect(
+    () =>
+      subscribeAiConsentStatus((next) => {
+        statusRef.current = next;
+        setStatusState(next);
+      }),
+    [],
+  );
 
   const refreshAiConsent = useCallback(() => {
     const read = (async () => {
@@ -202,74 +234,79 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
     [status, isLoading, ensureAiConsent, reviewAiConsent, refreshAiConsent],
   );
 
+  const sheet = (
+    <OrdiloNestedSheet
+      closeAccessibilityLabel="Einwilligung schließen"
+      contained={Boolean(renderSheet)}
+      dismissDisabled={saving}
+      onClose={dismiss}
+      visible={sheetOpen}
+    >
+      <View style={styles.content}>
+        <OrdiloSheetHeader title="Bevor Ordilo mitdenkt" />
+        <View style={styles.message}>
+          <View style={styles.iconCircle}>
+            <ShieldCheck color={colors.warmWhite} size={20} strokeWidth={2} />
+          </View>
+          <Text maxFontSizeMultiplier={1.4} style={styles.text}>
+            Ordilo liest deine Dokumente und beantwortet Fragen mit zwei
+            Diensten: OpenAI (Analyse, Antworten, Sprache) und Datalab
+            (Texterkennung). Dafür werden Inhalte an diese Dienste
+            übertragen. Sie dürfen sie nur für Ordilo verarbeiten, nicht
+            für ihr eigenes Training.
+          </Text>
+        </View>
+        <Text maxFontSizeMultiplier={1.4} style={styles.note}>
+          Du kannst deine Entscheidung jederzeit in den Einstellungen ändern.
+          Ohne Zustimmung bleiben Scannen, Fragen und Spracheingabe aus —
+          alles andere funktioniert.
+        </Text>
+        <Pressable
+          accessibilityLabel="Datenschutzerklärung lesen"
+          accessibilityRole="link"
+          hitSlop={8}
+          onPress={() => void openPrivacyPolicy()}
+          style={styles.link}
+        >
+          <Text maxFontSizeMultiplier={1.4} style={styles.linkText}>
+            Datenschutzerklärung lesen
+          </Text>
+        </Pressable>
+        <OrdiloFormFooter
+          error={saveError}
+          primary={
+            <OrdiloButton
+              accessibilityLabel="Der KI-Übertragung zustimmen"
+              disabled={saving}
+              icon={
+                saving ? (
+                  <ActivityIndicator color={colors.warmWhite} size="small" />
+                ) : undefined
+              }
+              onPress={() => void choose("granted")}
+              size="lg"
+              title={saving ? "Einen Moment …" : "Zustimmen"}
+            />
+          }
+          secondary={
+            <OrdiloButton
+              accessibilityLabel="Ablehnen"
+              disabled={saving}
+              onPress={() => void choose("declined")}
+              size="lg"
+              title="Ablehnen"
+              variant="outline"
+            />
+          }
+        />
+      </View>
+    </OrdiloNestedSheet>
+  );
+
   return (
     <AiConsentContext.Provider value={value}>
-      {children}
-      <OrdiloNestedSheet
-        closeAccessibilityLabel="Einwilligung schließen"
-        dismissDisabled={saving}
-        onClose={dismiss}
-        visible={sheetOpen}
-      >
-        <View style={styles.content}>
-          <OrdiloSheetHeader title="Bevor Ordilo mitdenkt" />
-          <View style={styles.message}>
-            <View style={styles.iconCircle}>
-              <ShieldCheck color={colors.warmWhite} size={20} strokeWidth={2} />
-            </View>
-            <Text maxFontSizeMultiplier={1.4} style={styles.text}>
-              Ordilo liest deine Dokumente und beantwortet Fragen mit zwei
-              Diensten: OpenAI (Analyse, Antworten, Sprache) und Datalab
-              (Texterkennung). Dafür werden Inhalte an diese Dienste
-              übertragen. Sie dürfen sie nur für Ordilo verarbeiten, nicht
-              für ihr eigenes Training.
-            </Text>
-          </View>
-          <Text maxFontSizeMultiplier={1.4} style={styles.note}>
-            Du kannst deine Entscheidung jederzeit in den Einstellungen
-            ändern. Ohne Zustimmung bleiben Scannen, Fragen und
-            Spracheingabe aus — alles andere funktioniert.
-          </Text>
-          <Pressable
-            accessibilityLabel="Datenschutzerklärung lesen"
-            accessibilityRole="link"
-            hitSlop={8}
-            onPress={() => void openPrivacyPolicy()}
-            style={styles.link}
-          >
-            <Text maxFontSizeMultiplier={1.4} style={styles.linkText}>
-              Datenschutzerklärung lesen
-            </Text>
-          </Pressable>
-          <OrdiloFormFooter
-            error={saveError}
-            primary={
-              <OrdiloButton
-                accessibilityLabel="Der KI-Übertragung zustimmen"
-                disabled={saving}
-                icon={
-                  saving ? (
-                    <ActivityIndicator color={colors.warmWhite} size="small" />
-                  ) : undefined
-                }
-                onPress={() => void choose("granted")}
-                size="lg"
-                title={saving ? "Einen Moment …" : "Zustimmen"}
-              />
-            }
-            secondary={
-              <OrdiloButton
-                accessibilityLabel="Ablehnen"
-                disabled={saving}
-                onPress={() => void choose("declined")}
-                size="lg"
-                title="Ablehnen"
-                variant="outline"
-              />
-            }
-          />
-        </View>
-      </OrdiloNestedSheet>
+      {renderSheet ? renderSheet(sheet) : children}
+      {renderSheet ? null : sheet}
     </AiConsentContext.Provider>
   );
 }

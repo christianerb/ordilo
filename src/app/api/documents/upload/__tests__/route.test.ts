@@ -428,9 +428,9 @@ describe("POST /api/documents/upload", () => {
     expect(body.code).toBe("FAMILY_NOT_FOUND");
   });
 
-  it("returns 403 on family query error", async () => {
+  it("returns a retryable 503 on family query error instead of claiming access loss", async () => {
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ family: null, familyError: new Error("RLS blocked") }),
+      mockServerClient({ family: null, familyError: new Error("postgrest unreachable") }),
     );
     (createAdminClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockAdminClient({}),
@@ -440,8 +440,9 @@ describe("POST /api/documents/upload", () => {
     const response = await POST(createUploadRequest(file, "550e8400-e29b-41d4-a716-446655440000"));
     const body = await response.json();
 
-    expect(response.status).toBe(403);
-    expect(body.code).toBe("FAMILY_NOT_FOUND");
+    expect(response.status).toBe(503);
+    expect(body.code).toBe("FAMILY_CHECK_FAILED");
+    expect(body.error).toContain("konnte gerade nicht geprüft werden");
   });
 
   // --- Storage upload failure (no orphaned rows) ---

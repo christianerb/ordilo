@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabase } from "./supabase";
 
 /**
  * First-party product events — same table and event names as the web app
@@ -14,6 +15,7 @@ export type ProductEventName =
   | "onboarding_completed"
   | "onboarding_scan_started"
   | "document_upload_succeeded"
+  | "document_upload_failed"
   | "document_confirmed"
   | "calendar_event_created"
   | "chat_question_sent"
@@ -41,6 +43,40 @@ export async function recordProductEvent(
       family_id: familyId,
       event_name: eventName,
       properties,
+    });
+  } catch {
+    // Analytics must never block a user-facing action.
+  }
+}
+
+/**
+ * Quality signal for the scan pipeline: a failure the documents table can
+ * never show, because a failed upload leaves no row. Stage, reason, and
+ * source are coarse codes (`upload`/`ocr`/`analysis`, `network`/`server`/...,
+ * `mobile_scan`) so the admin view can slice without a single byte of
+ * document content. The source matches the one on the success event, so
+ * the failure rate compares attempts from the same surface.
+ *
+ * Best effort; a retry or the failure screen never waits for analytics.
+ */
+export async function recordScanFailure({
+  familyId,
+  stage,
+  reason,
+}: {
+  familyId: string | null;
+  stage: string;
+  reason: string;
+}): Promise<void> {
+  try {
+    const client = getSupabase();
+    const { data } = await client.auth.getUser();
+    if (!data.user) return;
+    await recordProductEvent(client, {
+      userId: data.user.id,
+      familyId,
+      eventName: "document_upload_failed",
+      properties: { stage, reason, source: "mobile_scan" },
     });
   } catch {
     // Analytics must never block a user-facing action.

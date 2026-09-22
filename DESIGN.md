@@ -271,6 +271,8 @@ The primary surface of the app. Document cards, task cards, person cards — all
 
 Every overlay in the app is a drawer, and there is one component for them: `OrdiloDrawer`. It is built on shadcn's vaul-based Drawer, so dragging, scroll-locking and keyboard repositioning are the library's job rather than ours. A drawer is chosen by what it is for, never by assembling classes at the call site.
 
+**Drawers are reading surfaces.** Text inside a drawer — a login, a note, a reference number — must stay selectable and copyable. On touch, the drag-from-anywhere gesture stays and vaul already declines to drag while text is highlighted. On fine-pointer devices (mouse, trackpad) the content-drag is retired (`handleOnly`, and the globals.css override lifts vaul's desktop `user-select: none`): a drag that might be a selection must stay a selection, and the X, the overlay, and Escape close the drawer.
+
 - **Picker** — one decision, committed on tap ("Wer macht das?", "Wann ist das dran?"). Bottom-anchored, centred, max 28rem wide. **No close button:** choosing is the way out, and an X beside a list of answers suggests the choice needs confirming.
 - **Form** — something to fill in and submit. Bottom-anchored and centred so it stays thumb-reachable on a phone and does not sprawl on a desktop. Max height 85dvh.
 - **Detail** — a record to read and edit. The only variant that moves: bottom on a phone, right-hand panel from `lg` up. A full-height side panel on a phone is the worst of both, and a bottom sheet wastes a wide screen.

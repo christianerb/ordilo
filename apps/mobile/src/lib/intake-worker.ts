@@ -1,6 +1,8 @@
 import { ApiError } from "./api";
 import { AI_CONSENT_REQUIRED_CODE } from "./ai-consent";
+import { recordScanFailure } from "./analytics";
 import {
+  classifyScanFailureReason,
   loadPersistedScanQueue, mutateScanQueue, removeStagedScannedDocument,
   resumeScannedDocument, uploadScannedDocument,
   MAX_SCAN_FILE_SIZE_LABEL,
@@ -63,6 +65,19 @@ export function drainIntake(familyId: string, isCurrent: () => boolean): Promise
             state: retryable ? (current.documentId ? "processing" : "queued") : "failed",
             error: retryable ? "Wartet auf Verbindung. Ordilo versucht es automatisch erneut." : failureMessage(error),
           });
+          if (!retryable) {
+            // A background failure nobody is watching still belongs in the
+            // quality numbers — coarse codes only, never content.
+            void recordScanFailure({
+              familyId,
+              stage: !current.documentId
+                ? "upload"
+                : current.processingStep === "analysis"
+                  ? "analysis"
+                  : "ocr",
+              reason: classifyScanFailureReason(error),
+            });
+          }
         }
       }
     };

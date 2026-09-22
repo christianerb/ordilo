@@ -20,3 +20,9 @@ it("falls back to the generic onboarding label for unknown steps", () => {
 it("keeps unknown event names visible instead of hiding them", () => {
   expect(describeActivityEvent("brand_new_event")).toBe("brand_new_event");
 });
+
+it("names the failed pipeline leg on scan failures", () => {
+  expect(describeActivityEvent("document_upload_failed", { stage: "ocr", reason: "server" })).toBe("Scan fehlgeschlagen (Texterkennung)");
+  expect(describeActivityEvent("document_upload_failed", { stage: "upload", reason: "network" })).toBe("Scan fehlgeschlagen (Upload)");
+  expect(describeActivityEvent("document_upload_failed", null)).toBe("Scan fehlgeschlagen");
+});

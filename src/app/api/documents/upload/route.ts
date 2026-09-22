@@ -78,6 +78,8 @@ async function resumeExistingUpload(document: { id: string; status: string }, fa
  *   - Oversized files → 413 with FILE_TOO_LARGE (VAL-CAPTURE-009)
  *   - Unauthenticated → 401 with UNAUTHENTICATED (VAL-CAPTURE-014)
  *   - Family ownership failure → 403 (VAL-CAPTURE-013)
+ *   - Family lookup failure (transient) → 503, retryable — never reported
+ *     as an access loss
  *   - Daily upload limit exceeded → 429 (UPLOAD_LIMIT_EXCEEDED)
  *
  * The Storage upload uses the admin (service-role) client, which bypasses
@@ -178,7 +180,17 @@ export async function POST(request: Request): Promise<Response> {
     .eq("id", familyId)
     .maybeSingle();
 
-  if (familyError || !familyRow) {
+  // A failed lookup is not a verdict on access: a transient database or
+  // network error must not tell the user they lost the family. Report a
+  // retryable server problem so clients keep the file and try again.
+  if (familyError) {
+    return jsonError(
+      "Die Familie konnte gerade nicht geprüft werden. Bitte versuch es gleich erneut.",
+      "FAMILY_CHECK_FAILED",
+      503,
+    );
+  }
+  if (!familyRow) {
     return jsonError(
       "Kein Zugriff auf diese Familie.",
       "FAMILY_NOT_FOUND",
@@ -196,6 +208,16 @@ export async function POST(request: Request): Promise<Response> {
     if (error) return jsonError("Der Import konnte nicht geprüft werden.", "UPLOAD_LOOKUP_FAILED", 503);
     if (existing) return resumeExistingUpload(existing, familyId);
   }
+
+  // Which surface sent the upload. The success event carries it so the
+  // scan failure rate can compare against scan successes only — this
+  // route also serves the web uploader. Unknown values are dropped
+  // rather than trusted.
+  const clientField = formData.get("client");
+  const uploadSource =
+    clientField === "mobile_scan" || clientField === "web"
+      ? clientField
+      : null;
 
   // 4b. Check daily upload limit ------------------------------------------
   // Count documents created today for this family to prevent cost runaway
@@ -355,6 +377,7 @@ export async function POST(request: Request): Promise<Response> {
     userId: user.id,
     familyId,
     eventName: "document_upload_succeeded",
+    ...(uploadSource ? { properties: { source: uploadSource } } : {}),
   });
 
   // 7. Async pipeline: enqueue the OCR job and process it in-band ----------

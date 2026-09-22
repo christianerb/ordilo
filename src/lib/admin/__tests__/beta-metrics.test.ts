@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeBetaEvents } from "../beta-metrics";
+import { summarizeBetaEvents, summarizeScanFailures } from "../beta-metrics";
 
 describe("beta cohorts", () => {
   it("counts people once and excludes completions before entry", () => {
@@ -18,5 +18,81 @@ describe("beta cohorts", () => {
   });
   it("does not report an empty cohort as a zero percent conversion", () => {
     expect(summarizeBetaEvents([], "2026-09-01").completionRate).toBeNull();
+  });
+});
+
+describe("scan failure quality signal", () => {
+  const event = (
+    event_name: string,
+    properties?: Record<string, unknown>,
+  ) => ({
+    user_id: "a",
+    event_name,
+    occurred_at: "2026-09-02T10:00:00Z",
+    properties,
+  });
+
+  it("counts failed attempts with their stage and reason codes", () => {
+    const result = summarizeScanFailures([
+      event("document_upload_failed", { stage: "upload", reason: "network", source: "mobile_scan" }),
+      event("document_upload_failed", { stage: "upload", reason: "server", source: "mobile_scan" }),
+      event("document_upload_failed", { stage: "ocr", reason: "server", source: "mobile_scan" }),
+      event("document_upload_succeeded", { source: "mobile_scan" }),
+      event("document_upload_succeeded", { source: "mobile_scan" }),
+    ]);
+
+    expect(result.total).toBe(3);
+    expect(result.uploadsSucceeded).toBe(2);
+    expect(result.stages).toEqual([
+      { stage: "upload", count: 2 },
+      { stage: "ocr", count: 1 },
+    ]);
+    expect(result.reasons).toEqual([
+      { reason: "server", count: 2 },
+      { reason: "network", count: 1 },
+    ]);
+  });
+
+  it("scopes the rate to the mobile scan client on both sides", () => {
+    const result = summarizeScanFailures([
+      event("document_upload_succeeded", { source: "mobile_scan" }),
+      event("document_upload_succeeded", { source: "web" }),
+      event("document_upload_succeeded"),
+      event("document_upload_failed", { stage: "upload", reason: "network", source: "mobile_scan" }),
+      event("document_upload_failed", { stage: "upload", reason: "server", source: "web" }),
+    ]);
+
+    expect(result.total).toBe(1);
+    expect(result.uploadsSucceeded).toBe(1);
+    expect(result.stages).toEqual([{ stage: "upload", count: 1 }]);
+    expect(result.reasons).toEqual([{ reason: "network", count: 1 }]);
+  });
+
+  it("still counts legacy failures from before the source property", () => {
+    const result = summarizeScanFailures([
+      event("document_upload_failed", { stage: "upload", reason: "network" }),
+    ]);
+
+    expect(result.total).toBe(1);
+  });
+
+  it("labels events without properties as unknown instead of dropping them", () => {
+    const result = summarizeScanFailures([event("document_upload_failed")]);
+
+    expect(result.stages).toEqual([{ stage: "unbekannt", count: 1 }]);
+    expect(result.reasons).toEqual([{ reason: "unbekannt", count: 1 }]);
+  });
+
+  it("reports zeroes when nothing failed", () => {
+    expect(
+      summarizeScanFailures([
+        event("document_upload_succeeded", { source: "mobile_scan" }),
+      ]),
+    ).toEqual({
+      total: 0,
+      uploadsSucceeded: 1,
+      stages: [],
+      reasons: [],
+    });
   });
 });

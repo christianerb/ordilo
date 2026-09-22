@@ -2,7 +2,9 @@ import {
   AI_CONSENT_REQUIRED_CODE,
   fetchAiDataSharingStatus,
   parseAiDataSharingStatus,
+  publishAiConsentStatus,
   recordAiDataSharingDecision,
+  subscribeAiConsentStatus,
 } from "../lib/ai-consent";
 
 const mockApiJson = jest.fn();
@@ -33,7 +35,10 @@ describe("fetchAiDataSharingStatus", () => {
     mockApiJson.mockResolvedValue({ ai_data_sharing: "granted" });
 
     await expect(fetchAiDataSharingStatus()).resolves.toBe("granted");
-    expect(mockApiJson).toHaveBeenCalledWith("/api/me/ai-consent");
+    expect(mockApiJson).toHaveBeenCalledWith(
+      "/api/me/ai-consent",
+      expect.objectContaining({ signal: expect.anything() }),
+    );
   });
 
   it("maps a missing decision to null (never asked)", async () => {
@@ -46,6 +51,23 @@ describe("fetchAiDataSharingStatus", () => {
     mockApiJson.mockRejectedValue(new Error("offline"));
 
     await expect(fetchAiDataSharingStatus()).rejects.toThrow("offline");
+  });
+
+  it("stops waiting when the status read stalls", async () => {
+    jest.useFakeTimers();
+    try {
+      mockApiJson.mockReturnValue(new Promise(() => {}));
+      const result = fetchAiDataSharingStatus();
+      const expectation = expect(result).rejects.toThrow(
+        "AI consent status read timed out",
+      );
+
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      await expectation;
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 
@@ -70,6 +92,34 @@ describe("recordAiDataSharingDecision", () => {
     await expect(recordAiDataSharingDecision("granted")).resolves.toBe(
       "granted",
     );
+  });
+});
+
+describe("consent status sharing", () => {
+  it("delivers a recorded decision to every mounted provider", () => {
+    const root = jest.fn();
+    const scanSheet = jest.fn();
+    const unsubscribeRoot = subscribeAiConsentStatus(root);
+    const unsubscribeScan = subscribeAiConsentStatus(scanSheet);
+    try {
+      publishAiConsentStatus("granted");
+
+      expect(root).toHaveBeenCalledWith("granted");
+      expect(scanSheet).toHaveBeenCalledWith("granted");
+    } finally {
+      unsubscribeRoot();
+      unsubscribeScan();
+    }
+  });
+
+  it("stops delivering after a provider unmounts", () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeAiConsentStatus(listener);
+
+    unsubscribe();
+    publishAiConsentStatus("declined");
+
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

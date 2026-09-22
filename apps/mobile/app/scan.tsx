@@ -7,6 +7,7 @@ import {
   SaveFormat,
 } from "expo-image-manipulator";
 import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   DOCUMENT_PIPELINE_STEPS,
@@ -47,6 +48,7 @@ import {
   ScanProcessingHero,
   type ScanProcessingStage,
 } from "@/src/components/scan-processing-hero";
+import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import {
   OrdiloFormBody,
   OrdiloFormSheet,
@@ -58,24 +60,28 @@ import {
   cardRestShadow,
 } from "@/src/components/ui";
 import { ScanHeroIllustration } from "@/src/components/scan-hero-illustration";
-import { useAiConsent } from "@/src/lib/ai-consent-context";
+import { AiConsentProvider, useAiConsent } from "@/src/lib/ai-consent-context";
 import { useFamily } from "@/src/lib/family-context";
 import {
+  describeScanFailure,
   resumeScannedDocument,
   recoverLegacyScanQueue,
   getScanMimeType,
   loadPersistedScanQueue,
   reconcileScanQueue,
   removeStagedScannedDocument,
+  ScanStageError,
   stageScannedDocument,
   type ScannedDocument,
   type PersistedScanQueueItem,
+  type ScanFailureStage,
   type ScanQueueState,
   type ScanProcessingStep,
   uploadScannedDocument,
   validateScannedDocument,
   waitForScannedDocumentAnalysis,
 } from "@/src/lib/scan";
+import { recordScanFailure } from "@/src/lib/analytics";
 import {
   completionEntering,
   contentEntering,
@@ -103,6 +109,8 @@ type ScanFlow =
       status: "uploading" | DocumentPipelineStatus;
       serverPipeline?: boolean;
       error?: string;
+      /** The concrete cause under the stage line, when one is known. */
+      errorDetail?: string;
     }
   | {
       // Several documents went in at once: a calm success state instead of
@@ -226,6 +234,19 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  * document to its existing OCR/analysis pipeline.
  */
 export default function ScanModal() {
+  // /scan is already a transparent native modal, and the intake form is a
+  // second RN Modal inside it. A consent sheet mounted at the root would
+  // open underneath both; this slot keeps the decision inside the form.
+  return (
+    <AiConsentProvider
+      renderSheet={(consentSheet) => (
+        <ScanModalContent consentSheet={consentSheet} />
+      )}
+    />
+  );
+}
+
+function ScanModalContent({ consentSheet }: { consentSheet: ReactNode }) {
   const router = useRouter();
   // `person` carries the family member a scan was started for; it is
   // forwarded to the review so their link can be prefilled there.
@@ -242,6 +263,7 @@ export default function ScanModal() {
   const [scannerBusy, setScannerBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ uri: string; name: string } | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
   // A route that finishClose opens after the sheet has fully closed.
   // Navigating while the sheet's RN Modal is still open presents the new
@@ -527,29 +549,46 @@ export default function ScanModal() {
         const interrupted =
           caughtError instanceof Error && caughtError.name === "AbortError";
         if (interrupted && detachServerPipelineRef.current) return;
-        const errorMessage = caughtError instanceof Error
-          ? caughtError.message
-          : "Das Dokument konnte nicht verarbeitet werden.";
-        const itemError = interrupted
-          ? "Die Verarbeitung wurde unterbrochen. Du kannst sie fortsetzen."
-          : documentId
-          ? processingStep === "analysis"
-            ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
-            : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
-          : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.";
+        // Where did it actually stop? A server-recorded failure stage wins
+        // over the client's own bookkeeping, and no document ID means the
+        // upload never completed — no matter what step the wait was on.
+        const stage: ScanFailureStage =
+          caughtError instanceof ScanStageError && caughtError.stage
+            ? caughtError.stage
+            : documentId
+              ? processingStep === "analysis"
+                ? "analysis"
+                : "ocr"
+              : "upload";
+        const failure = interrupted
+          ? { message: "Die Verarbeitung wurde unterbrochen. Du kannst sie fortsetzen." }
+          : describeScanFailure(stage, caughtError);
         await markQueueFailed(item.id, {
           documentId,
           processingStep,
-          error: itemError,
+          error: failure.message,
         });
+        if (!interrupted) {
+          // The quality signal the documents table cannot carry: a failed
+          // upload leaves no row. Never awaited — analytics must not delay
+          // the failure screen.
+          void recordScanFailure({
+            familyId: family?.id ?? null,
+            stage,
+            reason: "reason" in failure ? failure.reason : "unknown",
+          });
+        }
         if (followFlowRef.current) {
           setFlow({
             phase: "processing",
             itemId: item.id,
             documentId,
             serverPipeline,
-            status: pipelineStatus,
-            error: errorMessage || itemError,
+            // Honest steps: a failed upload never marks the OCR step as
+            // the one that broke.
+            status: documentId ? pipelineStatus : "uploading",
+            error: failure.message,
+            errorDetail: "detail" in failure ? failure.detail : undefined,
           });
         }
         if (!interrupted || followFlowRef.current) void fail();
@@ -758,6 +797,45 @@ export default function ScanModal() {
     } catch { setError("Die Änderung konnte nicht gespeichert werden. Bitte erneut versuchen."); }
   }, [updateQueue]);
 
+  /**
+   * „Was ist das nochmal für eine Datei?" — the staged copy is still on the
+   * device, so a failed upload can show exactly what it was. Images open in
+   * the full-screen preview; PDFs hand over to the system viewer, the same
+   * path an offline copy takes.
+   */
+  const previewQueueItem = useCallback(async (item: QueueItem) => {
+    try {
+      const info = await FileSystem.getInfoAsync(item.uri);
+      if (!info.exists) {
+        Alert.alert(
+          "Datei nicht mehr da",
+          "Die Datei ist auf diesem Gerät nicht mehr vorhanden.",
+        );
+        return;
+      }
+      if (item.mimeType.startsWith("image/")) {
+        setPreviewImage({ uri: item.uri, name: item.name });
+        return;
+      }
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert(
+          "Vorschau nicht verfügbar",
+          "Auf diesem Gerät kann die Datei nicht geöffnet werden.",
+        );
+        return;
+      }
+      await Sharing.shareAsync(item.uri, {
+        mimeType: item.mimeType,
+        dialogTitle: item.name,
+      });
+    } catch {
+      Alert.alert(
+        "Vorschau nicht verfügbar",
+        "Die Datei konnte nicht geöffnet werden. Bitte versuch es später nochmal.",
+      );
+    }
+  }, []);
+
   const actionableCount = queue.filter(
     (item) => item.state === "queued" || item.state === "failed",
   ).length;
@@ -861,11 +939,9 @@ export default function ScanModal() {
     const processingStage = getProcessingStage(flow.status);
     const processingCopy = PROCESSING_COPY[processingStage];
     const canContinueInBackground = flow.serverPipeline === true && !failed;
-    const leaveTitle = canContinueInBackground
-      ? "Im Hintergrund weiterlaufen"
-      : failed
-        ? "Zur Ablage"
-        : "Später fortsetzen";
+    // One label for every state: leaving is always safe. What happens
+    // next is the info box's job, not the button's.
+    const leaveTitle = "Schließen";
 
     return (
       <Screen
@@ -930,28 +1006,36 @@ export default function ScanModal() {
                 <Text style={styles.processingCopy}>
                   {failed ? flow.error : processingCopy.description}
                 </Text>
+                {failed && flow.errorDetail ? (
+                  <Text style={styles.processingErrorDetail}>
+                    {flow.errorDetail}
+                  </Text>
+                ) : null}
               </Animated.View>
 
               {item ? (
-                <View style={styles.processingFile}>
+                <SpringPressable
+                  accessibilityHint="Zeigt die Datei, die Ordilo nicht verarbeiten konnte."
+                  accessibilityLabel={`${item.name} ansehen`}
+                  onPress={() => void previewQueueItem(item)}
+                  style={styles.processingFile}
+                >
                   <FilePlus2 color={colors.harborBlue} size={18} />
                   <Text numberOfLines={1} style={styles.processingFileName}>
                     {item.name}
                   </Text>
-                </View>
+                </SpringPressable>
               ) : null}
 
               {!failed ? (
                 <View style={styles.backgroundInfo}>
                   <Text style={styles.backgroundInfoTitle}>
-                    {canContinueInBackground
-                      ? "Du kannst ruhig weiter"
-                      : "Bitte noch kurz geöffnet lassen"}
+                    Du musst nicht warten
                   </Text>
                   <Text style={styles.backgroundInfoText}>
                     {canContinueInBackground
-                      ? "Du kannst diese Ansicht verlassen oder die App schließen. Ordilo arbeitet im Hintergrund weiter. Wenn du später zurückkommst, siehst du hier den Stand."
-                      : "Dieses Dokument wird gerade auf deinem Gerät vorbereitet. Lass diese Ansicht geöffnet, bis der nächste Schritt beginnt."}
+                      ? "Ordilo arbeitet im Hintergrund weiter. Schließ das Fenster ruhig — wenn du zurückkommst, siehst du hier den Stand."
+                      : "Schließ das Fenster ruhig. Die Verarbeitung pausiert dann einfach — nichts geht verloren, und du machst später hier weiter."}
                   </Text>
                 </View>
               ) : null}
@@ -1027,6 +1111,15 @@ export default function ScanModal() {
             variant={failed ? "ghost" : "outline"}
           />
         </View>
+
+        {previewImage ? (
+          <SwipeImagePreview
+            imageAccessibilityLabel={previewImage.name}
+            imageUrl={previewImage.uri}
+            onClose={() => setPreviewImage(null)}
+            title={previewImage.name}
+          />
+        ) : null}
       </Screen>
     );
   }
@@ -1096,7 +1189,9 @@ export default function ScanModal() {
                   <Text numberOfLines={1} style={[typography.title, styles.rowTitle]}>
                     {item.name}
                   </Text>
-                  <Text numberOfLines={2} style={[typography.timestamp, item.state === "failed" ? styles.queueStatusFailed : styles.queueStatus]}>
+                  {/* A failed row's message is the whole point of the row —
+                      never clamp away the guidance it ends with. */}
+                  <Text numberOfLines={item.state === "failed" ? undefined : 2} style={[typography.timestamp, item.state === "failed" ? styles.queueStatusFailed : styles.queueStatus]}>
                     {item.state === "done"
                       ? "Hochgeladen, wird vorbereitet"
                       : item.state === "uploading"
@@ -1196,6 +1291,7 @@ export default function ScanModal() {
           euch gelesen.
         </Text>
       </OrdiloFormBody>
+      {consentSheet}
     </OrdiloFormSheet>
   );
 }
@@ -1272,6 +1368,12 @@ const styles = StyleSheet.create({
     maxWidth: 340,
     textAlign: "center",
     ...typography.body,
+  },
+  processingErrorDetail: {
+    color: colors.mistDark,
+    maxWidth: 320,
+    textAlign: "center",
+    ...typography.timestamp,
   },
   processingFile: {
     alignItems: "center",

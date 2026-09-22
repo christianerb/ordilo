@@ -23,13 +23,15 @@ export type FamilyActivityKind =
   | "member";
 
 export interface FamilyActivityItem {
-  /** Stable row key from the view, e.g. "task:done:<uuid>". */
+  /** Stable row key from the view, e.g. "task:created:<uuid>". */
   id: string;
   kind: FamilyActivityKind;
   title: string;
   detail: string | null;
   occurredAt: string;
   refId: string | null;
+  /** The document a row is about — set for documents and document-born tasks. */
+  documentId: string | null;
 }
 
 interface FamilyActivityRow {
@@ -40,6 +42,8 @@ interface FamilyActivityRow {
   detail: string | null;
   occurred_at: string;
   ref_id: string | null;
+  /** Absent entirely when the pre-0091 view answers the legacy query. */
+  document_id?: string | null;
 }
 
 const ACTIVITY_KINDS: readonly string[] = [
@@ -50,18 +54,32 @@ const ACTIVITY_KINDS: readonly string[] = [
   "member",
 ];
 
+const ACTIVITY_COLUMNS =
+  "activity_id, family_id, kind, title, detail, occurred_at, ref_id, document_id";
+/** Pre-0091 views have no document_id; the feed degrades to plan routing. */
+const ACTIVITY_COLUMNS_LEGACY =
+  "activity_id, family_id, kind, title, detail, occurred_at, ref_id";
+
 export async function loadFamilyActivity(
   familyId: string,
   limit = ACTIVITY_FEED_LIMIT,
 ): Promise<FamilyActivityItem[]> {
-  const { data, error } = await getSupabase()
-    .from("family_activity")
-    .select("activity_id, family_id, kind, title, detail, occurred_at, ref_id")
-    .eq("family_id", familyId)
-    .order("occurred_at", { ascending: false })
-    .limit(limit);
+  const query = (columns: string) =>
+    getSupabase()
+      .from("family_activity")
+      .select(columns)
+      .eq("family_id", familyId)
+      .order("occurred_at", { ascending: false })
+      .limit(limit);
+  // App releases and migrations are decoupled: a new build may meet the old
+  // view. A missing document_id column retries once without it instead of
+  // losing the whole feed.
+  let { data, error } = await query(ACTIVITY_COLUMNS);
+  if (error && /document_id/.test(error.message ?? "")) {
+    ({ data, error } = await query(ACTIVITY_COLUMNS_LEGACY));
+  }
   if (error) throw new Error(FRIENDLY_ERROR);
-  return ((data ?? []) as FamilyActivityRow[])
+  return ((data ?? []) as unknown as FamilyActivityRow[])
     .filter((row): row is FamilyActivityRow & { kind: FamilyActivityKind } =>
       ACTIVITY_KINDS.includes(row.kind),
     )
@@ -72,6 +90,7 @@ export async function loadFamilyActivity(
       detail: row.detail,
       occurredAt: row.occurred_at,
       refId: row.ref_id,
+      documentId: row.document_id ?? null,
     }));
 }
 
@@ -83,12 +102,15 @@ export type ActivityDestination =
   | { pathname: "/familie" };
 
 /**
- * Where a Neuigkeiten row leads. A document, task, or event without a
- * ref_id stays read-only — a row that promises a place it cannot open is
- * worse than a row that opens nothing.
+ * Where a Neuigkeiten row leads. A row opens the thing the news is about:
+ * a task born from a document opens that document (which is also where a
+ * not-yet-confirmed document gets reviewed), not a management screen.
+ * A document, task, or event without a usable reference stays read-only —
+ * a row that promises a place it cannot open is worse than a row that
+ * opens nothing.
  */
 export function activityDestination(
-  item: Pick<FamilyActivityItem, "kind" | "refId">,
+  item: Pick<FamilyActivityItem, "kind" | "refId" | "documentId">,
 ): ActivityDestination | null {
   switch (item.kind) {
     case "document":
@@ -96,6 +118,9 @@ export function activityDestination(
         ? { pathname: "/document/[id]", params: { id: item.refId } }
         : null;
     case "task":
+      if (item.documentId) {
+        return { pathname: "/document/[id]", params: { id: item.documentId } };
+      }
       return item.refId
         ? { pathname: "/(tabs)/plan", params: { task: item.refId } }
         : null;
@@ -112,13 +137,15 @@ export function activityDestination(
 
 /**
  * The view stores a document's raw status as its detail; the feed speaks
- * plain German instead. Task "erledigt" arrives lowercase, everything
- * else (event dates, sender addresses, the member line) passes through.
+ * plain German instead — and a status the map does not know still never
+ * leaks as a raw enum value. Event dates, sender addresses, and the
+ * member line pass through untouched.
  */
 const DOCUMENT_STATUS_LABELS: Record<string, string> = {
   uploaded: "Hochgeladen",
-  processing: "Wird gelesen",
+  ocr_processing: "Wird gelesen",
   ocr_done: "Wird gelesen",
+  analyzing: "Wird einsortiert",
   analyzed: "Gelesen",
   confirmed: "Abgelegt",
   failed: "Nicht lesbar",
@@ -129,9 +156,8 @@ export function activityDetailLabel(
 ): string | null {
   if (!item.detail) return null;
   if (item.kind === "document") {
-    return DOCUMENT_STATUS_LABELS[item.detail] ?? item.detail;
+    return DOCUMENT_STATUS_LABELS[item.detail] ?? "In Arbeit";
   }
-  if (item.kind === "task" && item.detail === "erledigt") return "Erledigt";
   return item.detail;
 }
 

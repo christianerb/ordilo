@@ -9,6 +9,27 @@ import {
   OrdiloDrawerHeader,
 } from "@/components/ordilo/ordilo-drawer";
 
+/**
+ * Records the props OrdiloDrawer hands to the vaul root. The wrapper only
+ * observes and forwards, so every test below still exercises the real
+ * drawer.
+ */
+const rootProps = vi.hoisted(() => ({
+  current: undefined as Record<string, unknown> | undefined,
+}));
+
+vi.mock("@/components/ui/drawer", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/ui/drawer")>();
+  return {
+    ...actual,
+    Drawer: (props: React.ComponentProps<typeof actual.Drawer>) => {
+      rootProps.current = props as Record<string, unknown>;
+      return React.createElement(actual.Drawer, props);
+    },
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -36,7 +57,8 @@ const content = () => document.querySelector("[data-slot=drawer-content]");
 /**
  * The detail variant asks matchMedia whether it is on a desktop. The shared
  * test setup answers "no" to everything, so this replaces it for the cases
- * that need the wide layout.
+ * that need the wide layout. Every query gets the same answer — width and
+ * pointer type alike.
  */
 function stubDesktop(matches: boolean) {
   window.matchMedia = ((query: string) => ({
@@ -176,6 +198,23 @@ describe("OrdiloDrawer", () => {
     );
 
     expect(content()).toHaveAttribute("data-vaul-drawer-direction", "right");
+  });
+
+  it("keeps the whole sheet draggable on touch, where selection is a long-press", () => {
+    stubDesktop(false);
+    renderDrawer();
+
+    expect(rootProps.current?.handleOnly).toBe(false);
+  });
+
+  it("retires content-drag on fine pointers so selecting text never moves the sheet", () => {
+    // vaul bans text selection inside the drawer on fine pointers; the
+    // globals.css override lifts that ban, and handleOnly makes sure the
+    // drag gesture it protected cannot yank the sheet away mid-selection.
+    stubDesktop(true);
+    renderDrawer();
+
+    expect(rootProps.current?.handleOnly).toBe(true);
   });
 
   it("gives the body the scroll and leaves the footer pinned", () => {

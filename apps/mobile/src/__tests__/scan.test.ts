@@ -2,6 +2,7 @@ import { ApiError, apiFetch } from "../lib/api";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   continueScannedDocumentPipeline,
+  describeScanFailure,
   getScanMimeType,
   MAX_SCAN_FILE_SIZE,
   persistScanQueue,
@@ -167,7 +168,7 @@ describe("native scan helpers", () => {
 
     expect(FileSystem.uploadAsync).toHaveBeenCalledWith("https://ordilo.test/api/documents/upload", "file:///documents/ordilo-scan/scan-1.jpg", expect.objectContaining({
       sessionType: 0, uploadType: 1, fieldName: "file", mimeType: "image/jpeg",
-      parameters: { family_id: "family-1", upload_key: "scan-1" },
+      parameters: { family_id: "family-1", upload_key: "scan-1", client: "mobile_scan" },
       headers: { Authorization: "Bearer test-token" },
     }));
   });
@@ -341,4 +342,101 @@ it("keeps an unseen share arrival when another screen removes a completed import
   jest.mocked(FileSystem.readAsStringAsync).mockResolvedValue(JSON.stringify([arrival]));
   expect(await reconcileScanQueue([], "family-1", ["completed-import"])).toEqual([arrival]);
   expect(FileSystem.writeAsStringAsync).toHaveBeenLastCalledWith("file:///documents/ordilo-scan/family-1/queue.json", JSON.stringify([arrival]));
+});
+
+describe("describeScanFailure", () => {
+  it("names the upload leg without echoing the generic upload fallback", () => {
+    const failure = describeScanFailure(
+      "upload",
+      new ApiError("Der Upload konnte nicht abgeschlossen werden.", 500),
+    );
+    expect(failure.message).toBe("Der Upload hat nicht geklappt. Du kannst es erneut versuchen.");
+    expect(failure.detail).toBeUndefined();
+    expect(failure.reason).toBe("server");
+  });
+
+  it("explains a missing connection as the cause", () => {
+    const failure = describeScanFailure(
+      "upload",
+      new ApiError("Keine Verbindung. Dein Dokument bleibt gespeichert.", 0),
+    );
+    expect(failure.detail).toBe("Keine Verbindung. Dein Dokument bleibt auf diesem Gerät gespeichert.");
+    expect(failure.reason).toBe("network");
+  });
+
+  it("names the OCR leg and keeps a specific server message as the detail", () => {
+    const failure = describeScanFailure(
+      "ocr",
+      new Error("Der Dienst ist vorübergehend nicht erreichbar."),
+    );
+    expect(failure.message).toBe("Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten.");
+    expect(failure.detail).toBe("Der Dienst ist vorübergehend nicht erreichbar.");
+    expect(failure.reason).toBe("unknown");
+  });
+
+  it("names the analysis leg", () => {
+    expect(describeScanFailure("analysis", new Error("x")).message).toContain("Analyse");
+  });
+
+  it("points at the missing AI consent", () => {
+    const failure = describeScanFailure(
+      "ocr",
+      new ApiError("Das hat nicht geklappt. Bitte versuch's nochmal.", 403, "AI_CONSENT_REQUIRED"),
+    );
+    expect(failure.reason).toBe("consent");
+    expect(failure.detail).toContain("Zustimmung");
+  });
+
+  it("keeps size and quota refusals actionable", () => {
+    expect(describeScanFailure("upload", new ApiError("x", 413))).toMatchObject({
+      reason: "file_too_large",
+      detail: expect.stringContaining("4 MB"),
+    });
+    expect(describeScanFailure("upload", new ApiError("x", 429))).toMatchObject({
+      reason: "quota_limited",
+    });
+  });
+
+  it("suppresses generic fallback messages as detail", () => {
+    const failure = describeScanFailure(
+      "analysis",
+      new Error("Die Verarbeitung des Dokuments ist fehlgeschlagen."),
+    );
+    expect(failure.detail).toBeUndefined();
+  });
+});
+
+describe("ScanStageError from pipeline polling", () => {
+  it("carries the server-recorded failure stage through polling", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: { status: "failed", failure_stage: "analyze" },
+      error: null,
+    });
+
+    await expect(
+      waitForScannedDocumentAnalysis("document-1", undefined, 0),
+    ).rejects.toMatchObject({ name: "ScanStageError", stage: "analysis" });
+  });
+
+  it("maps an OCR failure to the OCR leg", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: { status: "failed", failure_stage: "ocr" },
+      error: null,
+    });
+
+    await expect(
+      waitForScannedDocumentAnalysis("document-1", undefined, 0),
+    ).rejects.toMatchObject({ stage: "ocr" });
+  });
+
+  it("leaves the stage open when the server recorded none", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: { status: "failed", failure_stage: null },
+      error: null,
+    });
+
+    await expect(
+      waitForScannedDocumentAnalysis("document-1", undefined, 0),
+    ).rejects.toMatchObject({ stage: undefined });
+  });
 });
