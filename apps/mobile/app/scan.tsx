@@ -926,11 +926,9 @@ export default function ScanModal() {
     const processingStage = getProcessingStage(flow.status);
     const processingCopy = PROCESSING_COPY[processingStage];
     const canContinueInBackground = flow.serverPipeline === true && !failed;
-    const leaveTitle = canContinueInBackground
-      ? "Im Hintergrund weiterlaufen"
-      : failed
-        ? "Zur Ablage"
-        : "Später fortsetzen";
+    // One label for every state: leaving is always safe. What happens
+    // next is the info box's job, not the button's.
+    const leaveTitle = "Schließen";
 
     return (
       <Screen
@@ -1019,14 +1017,12 @@ export default function ScanModal() {
               {!failed ? (
                 <View style={styles.backgroundInfo}>
                   <Text style={styles.backgroundInfoTitle}>
-                    {canContinueInBackground
-                      ? "Du kannst ruhig weiter"
-                      : "Bitte noch kurz geöffnet lassen"}
+                    Du musst nicht warten
                   </Text>
                   <Text style={styles.backgroundInfoText}>
                     {canContinueInBackground
-                      ? "Du kannst diese Ansicht verlassen oder die App schließen. Ordilo arbeitet im Hintergrund weiter. Wenn du später zurückkommst, siehst du hier den Stand."
-                      : "Dieses Dokument wird gerade auf deinem Gerät vorbereitet. Lass diese Ansicht geöffnet, bis der nächste Schritt beginnt."}
+                      ? "Ordilo arbeitet im Hintergrund weiter. Schließ das Fenster ruhig — wenn du zurückkommst, siehst du hier den Stand."
+                      : "Schließ das Fenster ruhig. Die Verarbeitung pausiert dann einfach — nichts geht verloren, und du machst später hier weiter."}
                   </Text>
                 </View>
               ) : null}
