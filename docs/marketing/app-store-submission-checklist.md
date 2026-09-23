@@ -28,12 +28,20 @@ die Klicks in App Store Connect.
 - [ ] **Build auswählen**: der Produktionsbuild vom 23.09.2026.
 - [ ] **In-App-Käufe**: nichts zuordnen. Die vorbereiteten Abo-Produkte
       bleiben unverknüpft und werden nicht zur Prüfung eingereicht.
-- [ ] **Inhaltsrechte** → Antwort: **„Nein“** (keine Drittinhalte). Geprüft:
-      Die App zeigt nur familieneigene hochgeladene Inhalte; Beispiel- und
-      Screenshot-Inhalte sind synthetisch selbst erstellt.
-- [ ] **Altersfreigabe**: 4+ beibehalten; seit der Berechnung kamen keine
-      öffentlichen Inhalte oder Kommunikationsfunktionen dazu (Begründung in
+- [ ] **Inhaltsrechte** → Antwort: **„Ja“** (die App greift auf Drittinhalte
+      zu), dann bestätigen, dass die nötigen Rechte vorliegen. Grund: Fragt
+      eine Familie nach aktuellen, öffentlichen Informationen, holt die
+      Websuche (`search_web`, über OpenAI) öffentliche Webseiten und zeigt
+      deren Titel, eine kurze Zusammenfassung und den Link als Quelle; der
+      Link öffnet die Originalseite in Safari. Ordilo übernimmt keine
+      fremden Inhalte in eigene Kataloge. Alles andere sind familieneigene
+      Uploads; Beispiel- und Screenshot-Inhalte sind synthetisch selbst
+      erstellt.
+- [ ] **Altersfreigabe**: 4+ beibehalten (Begründung in
       [app-store-listing.md](app-store-listing.md), „Age-rating rationale“).
+      „Uneingeschränkter Webzugang“ bleibt **Nein**: Die App hat keinen
+      eingebauten Browser; Links aus der Websuche öffnen Safari außerhalb
+      der App.
 - [ ] **Verschlüsselung**: Die Build-Deklaration steht auf
       `usesNonExemptEncryption: false` (nur befreite Verschlüsselung).
       Tatsächliche Nutzung: TLS, Apple Keychain, AES-GCM für Offline-Kopien
