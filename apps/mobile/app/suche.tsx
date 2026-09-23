@@ -1,5 +1,5 @@
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import {
   AudioModule,
@@ -147,23 +147,27 @@ export default function SucheScreen() {
   const { enabled: billingEnabled, isPlus } = useBilling();
   // Without billing, only a server-granted plan (e.g. founding beta
   // families) unlocks Live; the server stays the authority either way.
+  // Re-read on every focus: the plan can be granted or revoked by hand.
   const [serverLiveAccess, setServerLiveAccess] = useState(false);
-  useEffect(() => {
-    if (billingEnabled || !family?.id) {
-      setServerLiveAccess(false);
-      return;
-    }
-    let active = true;
-    void getSupabase()
-      .rpc("get_family_entitlement", { p_family_id: family.id })
-      .then(({ data }) => {
-        const plan = (data as { plan?: string } | null)?.plan;
-        if (active) setServerLiveAccess(Boolean(plan && plan !== "free"));
-      });
-    return () => {
-      active = false;
-    };
-  }, [billingEnabled, family?.id]);
+  const familyId = family?.id;
+  useFocusEffect(
+    useCallback(() => {
+      if (billingEnabled || !familyId) {
+        setServerLiveAccess(false);
+        return;
+      }
+      let active = true;
+      void getSupabase()
+        .rpc("get_family_entitlement", { p_family_id: familyId })
+        .then(({ data }) => {
+          const plan = (data as { plan?: string } | null)?.plan;
+          if (active) setServerLiveAccess(Boolean(plan && plan !== "free"));
+        });
+      return () => {
+        active = false;
+      };
+    }, [billingEnabled, familyId]),
+  );
   const liveAvailable = billingEnabled || serverLiveAccess;
   const { ensureAiConsent } = useAiConsent();
   const { q } = useLocalSearchParams<{ q?: string }>();

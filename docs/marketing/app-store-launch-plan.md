@@ -54,8 +54,10 @@ Die ergänzenden Motive **„Der richtige Brief. Wieder da.“** und
 **„Zusammen dran denken.“** sind bereits vorhanden. Vor dem Erst-Submit muss
 das Set trotzdem ersetzt werden: `06-gemeinsam.png` zeigt den entfernten
 Button „Ich übernehme das“ (siehe [app-store-screenshots.md](app-store-screenshots.md)).
-Das neue Achter-Set liegt unter `app-store-assets/1.0/` und wird vor der
-Einreichung in App Store Connect hochgeladen.
+Das neue Achter-Set (Konzept in
+[app-store-screenshots.md](app-store-screenshots.md)) ist noch in Arbeit und
+eine offene Voraussetzung: Erst wenn alle acht Dateien unter
+`app-store-assets/1.0/` im Repo liegen, kann eingereicht werden.
 
 Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto prüfen. Keine privaten Dokumente aus dem vorhandenen Simulator verwenden. Mehr Motive nur mit zusätzlichem Nutzen. Die Testvideos sind nicht automatisch App-Preview-fertig; Format, Länge und tatsächliches App-Footage separat prüfen.
 
