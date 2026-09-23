@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="28%" cy="22%" r="85%">
+      <stop offset="0" stop-color="#3A6573"/>
+      <stop offset="1" stop-color="#284955"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- trunk reaching forward and up -->
+  <path d="M600 540 C690 600 760 610 800 560 C825 530 815 490 790 470" fill="none" stroke="#FDFCFA" stroke-width="100" stroke-linecap="round"/>
+  <!-- head -->
+  <circle cx="440" cy="480" r="215" fill="#FDFCFA"/>
+  <!-- ear -->
+  <path d="M330 285 C230 272 160 355 165 485 C170 605 240 690 340 680 C428 672 465 588 455 485 C446 375 408 294 330 285 Z" fill="#B8CCC4"/>
+  <path d="M316 345 C258 344 226 405 230 485 C234 560 270 612 325 608" fill="none" stroke="#305460" stroke-width="15" stroke-linecap="round" opacity="0.45"/>
+  <circle cx="545" cy="430" r="28" fill="#193232"/>
+  <path d="M590 620 C635 624 648 660 618 694" fill="none" stroke="#E46018" stroke-width="28" stroke-linecap="round"/>
+  <!-- the letter, held by the trunk tip -->
+  <g transform="rotate(-12 780 380)">
+    <rect x="660" y="270" width="250" height="185" rx="22" fill="#FDFCFA" stroke="#193232" stroke-width="14"/>
+    <path d="M672 285 L785 375 L898 285" fill="none" stroke="#193232" stroke-width="14" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="785" cy="378" r="24" fill="#E46018"/>
+  </g>
+</svg>

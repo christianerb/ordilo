@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#305460"/>
+  <!-- hexagon home, rounded corners -->
+  <path d="M512 118 L853 315 L853 709 L512 906 L171 709 L171 315 Z" fill="#FDFCFA" stroke="#FDFCFA" stroke-width="56" stroke-linejoin="round"/>
+  <!-- elephant: head + trunk in harbor blue, inside the hexagon -->
+  <path d="M600 520 C665 570 690 650 670 705 C655 750 600 760 578 728" fill="none" stroke="#305460" stroke-width="84" stroke-linecap="round"/>
+  <circle cx="500" cy="480" r="175" fill="#305460"/>
+  <path d="M410 318 C330 308 275 375 280 480 C285 575 340 640 420 632 C490 625 520 560 512 480 C505 390 475 325 410 318 Z" fill="#DDEBE5" stroke="#193232" stroke-width="14" stroke-linejoin="round"/>
+  <path d="M398 368 C352 368 327 415 330 478 C333 535 362 575 405 572" fill="none" stroke="#305460" stroke-width="12" stroke-linecap="round" opacity="0.5"/>
+  <circle cx="585" cy="440" r="24" fill="#FDFCFA"/>
+  <circle cx="589" cy="440" r="13" fill="#193232"/>
+  <path d="M612 578 C650 580 662 610 636 640" fill="none" stroke="#E46018" stroke-width="24" stroke-linecap="round"/>
+</svg>

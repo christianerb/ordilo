@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="28%" cy="22%" r="85%">
+      <stop offset="0" stop-color="#3A6573"/>
+      <stop offset="1" stop-color="#284955"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- trunk -->
+  <path d="M650 520 C735 585 760 690 735 765 C715 830 640 845 610 800" fill="none" stroke="#FDFCFA" stroke-width="118" stroke-linecap="round"/>
+  <!-- head -->
+  <circle cx="520" cy="470" r="235" fill="#FDFCFA"/>
+  <!-- ear -->
+  <path d="M400 255 C290 240 215 330 220 470 C225 600 300 690 410 680 C505 670 545 580 535 470 C525 350 485 265 400 255 Z" fill="#B8CCC4"/>
+  <path d="M385 320 C320 318 285 385 290 470 C295 550 335 605 395 600" fill="none" stroke="#305460" stroke-width="16" stroke-linecap="round" opacity="0.45"/>
+  <!-- eye -->
+  <circle cx="630" cy="420" r="30" fill="#193232"/>
+  <!-- tusk -->
+  <path d="M668 600 C720 604 735 645 700 684" fill="none" stroke="#E46018" stroke-width="30" stroke-linecap="round"/>
+</svg>
