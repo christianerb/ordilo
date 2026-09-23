@@ -198,7 +198,8 @@ describe("native motion wiring", () => {
     const bar = source("src/components/live-conversation-bar.tsx");
 
     expect(suche).toContain("<LiveConversationBar");
-    expect(suche).toContain("onLiveStart={billingEnabled ? () => {");
+    expect(suche).toContain("onLiveStart={liveAvailable ? () => {");
+    expect(suche).toContain("const liveAvailable = billingEnabled || serverLiveAccess;");
     expect(suche).not.toContain("styles.liveStart");
     expect(chat).toContain('"Live mit Ordilo sprechen, Premium"');
     expect(chat).toContain("<AudioLines");

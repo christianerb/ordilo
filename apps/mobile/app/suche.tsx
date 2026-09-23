@@ -145,6 +145,26 @@ export default function SucheScreen() {
   // `isPlus` stays true while the billing rollout flag is off, so the
   // button only opens the paywall once RevenueCat actually enforces Plus.
   const { enabled: billingEnabled, isPlus } = useBilling();
+  // Without billing, only a server-granted plan (e.g. founding beta
+  // families) unlocks Live; the server stays the authority either way.
+  const [serverLiveAccess, setServerLiveAccess] = useState(false);
+  useEffect(() => {
+    if (billingEnabled || !family?.id) {
+      setServerLiveAccess(false);
+      return;
+    }
+    let active = true;
+    void getSupabase()
+      .rpc("get_family_entitlement", { p_family_id: family.id })
+      .then(({ data }) => {
+        const plan = (data as { plan?: string } | null)?.plan;
+        if (active) setServerLiveAccess(Boolean(plan && plan !== "free"));
+      });
+    return () => {
+      active = false;
+    };
+  }, [billingEnabled, family?.id]);
+  const liveAvailable = billingEnabled || serverLiveAccess;
   const { ensureAiConsent } = useAiConsent();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1085,11 +1105,10 @@ export default function SucheScreen() {
                     busy={busy}
                     inputRef={inputRef}
                     onChange={setInput}
-                    // Without billing there is no plan that unlocks Live, and
-                    // starting it would ask for AI consent and the microphone
-                    // only to be refused by the server. Hide the action until
-                    // Plus can actually be bought; dictation stays available.
-                    onLiveStart={billingEnabled ? () => {
+                    // Starting Live asks for AI consent and the microphone, so
+                    // a family the server would refuse never sees the action;
+                    // dictation stays available.
+                    onLiveStart={liveAvailable ? () => {
                       setVoiceError(null);
                       // Live streams speech to OpenAI in real time — the
                       // consent sheet comes before the paywall.

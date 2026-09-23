@@ -26,6 +26,9 @@ die Klicks in App Store Connect.
 ## 2. App Store Connect: Version 1.0 — Klickliste mit fertigen Antworten
 
 - [ ] **Build auswählen**: der Produktionsbuild vom 23.09.2026.
+- [ ] **Screenshots ersetzen**: das alte Sechser-Set löschen und das neue
+      Achter-Set aus `app-store-assets/1.0/` hochladen (6,9 Zoll). Das alte
+      `06-gemeinsam.png` zeigt den entfernten Button „Ich übernehme das“.
 - [ ] **In-App-Käufe**: nichts zuordnen. Die vorbereiteten Abo-Produkte
       bleiben unverknüpft und werden nicht zur Prüfung eingereicht.
 - [ ] **Inhaltsrechte** → Antwort: **„Ja“** (die App greift auf Drittinhalte

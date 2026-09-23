@@ -94,13 +94,13 @@ Nach dem Beschluss „Erstlaunch ohne Abo“
 vom 23.09.2026 ist von den früheren Blockern übrig:
 
 - **Klicks in App Store Connect**: Build auswählen, keine IAPs zuordnen,
-  Inhaltsrechte „Nein“, englische Lokalisierung entfernen, Veröffentlichung
+  Inhaltsrechte „Ja“ (Websuche zeigt öffentliche Webseiten), englische Lokalisierung entfernen, Veröffentlichung
   auf manuell, Review Notes einfügen (alles mit fertigen Antworten in der
   Checkliste).
 - **Review-Zugang** mit dem finalen Build einmal neu anmelden.
 
-Erledigt oder entfallen: Inhaltsrechte-Erklärung (entschieden: keine
-Drittinhalte), Händlerstatus (entschieden: Händler), Produktionsbuild
+Erledigt oder entfallen: Inhaltsrechte-Erklärung (entschieden: „Ja“,
+wegen der Websuche), Händlerstatus (entschieden: Händler), Produktionsbuild
 (erstellt 23.09.2026), Geräteabnahme (23.09.2026), Datenschutzerklärung
 final (DPAs geschlossen, Transfergrundlagen eingetragen, Prüf-Hinweise
 entfernt, 23.09.2026), Sentry (auf das erste Update verschoben),

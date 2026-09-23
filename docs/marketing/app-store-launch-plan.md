@@ -51,8 +51,11 @@ Store-Dateien liegen unter `app-store-assets/`.
 Gestalterisch sind Kontrast, Typografie und die wiedererkennbare Farbwelt schlüssig. Inhaltlich zeigen zwei Bilder den vorbereiteten Beispielbrief. Für einen stärkeren vollständigen Produktbeweis sind als nächste Motive sinnvoll:
 
 Die ergänzenden Motive **„Der richtige Brief. Wieder da.“** und
-**„Zusammen dran denken.“** sind bereits vorhanden. Für den Erst-Submit fehlt
-kein weiteres Promo-Bild.
+**„Zusammen dran denken.“** sind bereits vorhanden. Vor dem Erst-Submit muss
+das Set trotzdem ersetzt werden: `06-gemeinsam.png` zeigt den entfernten
+Button „Ich übernehme das“ (siehe [app-store-screenshots.md](app-store-screenshots.md)).
+Das neue Achter-Set liegt unter `app-store-assets/1.0/` und wird vor der
+Einreichung in App Store Connect hochgeladen.
 
 Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto prüfen. Keine privaten Dokumente aus dem vorhandenen Simulator verwenden. Mehr Motive nur mit zusätzlichem Nutzen. Die Testvideos sind nicht automatisch App-Preview-fertig; Format, Länge und tatsächliches App-Footage separat prüfen.
 
@@ -63,7 +66,7 @@ Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto pr�
 | App-Informationen: Name, Untertitel, Sprache | Deutsche ASO-Fassung gespeichert; Deutsch primär | Englische Lokalisierung übersetzen oder bewusst entfernen |
 | Kategorie | Produktivität gespeichert | Sekundärkategorie optional; aktuell nicht nötig |
 | Altersfreigabe | 4+ berechnet, nicht Kids Category | Bei Änderungen an öffentlichen Inhalten/Funktionen erneut prüfen |
-| Inhaltsrechte | Entschieden (23.09.2026): „keine Drittinhalte“. Grundlage: Die App zeigt ausschließlich familieneigene hochgeladene Inhalte; Beispiel- und Screenshot-Inhalte sind synthetisch selbst erstellt | Antwort bei der Einreichung so übernehmen; bei künftigen Drittinhalten neu prüfen |
+| Inhaltsrechte | Entschieden (23.09.2026): **„Ja“, die App greift auf Drittinhalte zu**, und die Rechte bestätigen. Grundlage: Die Websuche im Chat zeigt Titel, kurze Zusammenfassung und Link öffentlicher Webseiten; alles andere sind familieneigene Uploads, Beispiel- und Screenshot-Inhalte sind synthetisch selbst erstellt | Antwort bei der Einreichung so übernehmen (Details in der Einreichungs-Checkliste) |
 | Lizenzvertrag | Apple-Standardvertrag; öffentliche Nutzungsbedingungen ergänzt | Rechtliche Prüfung der Bedingungen; bei einem späteren Abo Preis-, Laufzeit- und Kündigungstexte ergänzen |
 | iOS-Version: Beschreibung, Keywords, Werbetext | Überarbeitet und gespeichert | Nach echtem Gerätetest auf Feature-Parität prüfen |
 | Screenshots | Sechs Motive gespeichert; Scan → Frage → Beleg steht zuerst | Kein weiteres Bild für den Erst-Submit nötig; App Preview optional |
