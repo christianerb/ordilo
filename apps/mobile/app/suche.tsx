@@ -773,12 +773,15 @@ export default function SucheScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       void AccessibilityInfo.announceForAccessibility(message);
     },
-    onPremiumRequired: (message) => {
-      // While the rollout flag is off the paywall has no offering to sell;
-      // show the server's message instead of an unusable screen.
+    onPremiumRequired: (_message) => {
+      // While the rollout flag is off there is no Plus to buy, so the
+      // server's "in Premium enthalten" would point at a store that does
+      // not exist. Say it plainly; the free dictation mic stays available.
       if (!billingEnabled) {
-        setVoiceError(message);
-        void AccessibilityInfo.announceForAccessibility(message);
+        const unavailable =
+          "Live sprechen gibt es noch nicht. Sprich deine Frage über das Mikrofon ein oder schreib sie.";
+        setVoiceError(unavailable);
+        void AccessibilityInfo.announceForAccessibility(unavailable);
         return;
       }
       router.push("/paywall");
