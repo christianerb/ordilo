@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readDocumentEvidence, selectEvidenceWindow, verifyDocumentAnswer, type DocumentEvidence } from "../document-evidence";
+import { readableQuote, readDocumentEvidence, selectEvidenceWindow, verifyDocumentAnswer, type DocumentEvidence } from "../document-evidence";
 
 const id = "10000000-0000-4000-8000-000000000001";
 const quote = "Hannahs Deutschlandticket: gültig bis 31.08.2027. Kündigungsfrist: 10.08.2027.";
@@ -31,6 +31,19 @@ describe("document answer evidence", () => {
       text: "Die Verlängerung nennt den 30.09.2027.", document_id: id, page_number: 3, quote: second.text,
     }], gap: "Die Unterlagen nennen unterschiedliche Enddaten." }, [...pages, second]);
     expect(result).toMatchObject({ state: "conflict", sources: [{ page_number: 2 }, { page_number: 3 }] });
+  });
+  it("shows an OCR Markdown quote as the plain letter text", () => {
+    const ocr = "## Kündigung\nSie möchten nicht verlängern? Dann kündigen Sie bis spätestens **30. November 2026** – online unter [funkwelle.example/kuendigen](http://funkwelle.example/kuendigen) oder per Brief.";
+    const letter = [{ documentId: id, title: "Handyvertrag", page: 1, text: ocr }];
+    const result = verifyDocumentAnswer({ claims: [{ text: "Du kannst bis zum 30. November 2026 kündigen.", document_id: id, page_number: 1,
+      quote: ocr, highlight: "30. November 2026" }], state: "answered" }, letter);
+    const shown = "Kündigung\nSie möchten nicht verlängern? Dann kündigen Sie bis spätestens 30. November 2026 – online unter funkwelle.example/kuendigen oder per Brief.";
+    expect(result).toMatchObject({ sources: [{ quote: shown, excerpt: shown, highlight: "30. November 2026" }] });
+  });
+  it("leaves plain text, IBANs and lone asterisks untouched", () => {
+    const plain = "IBAN DE12 5005 0000 0123 4567 89, Preis 3 * 12 Euro, Verwendungszweck Klasse_3b.";
+    expect(readableQuote(plain)).toBe(plain);
+    expect(readableQuote("Termin am *Montag* um __9 Uhr__<br>bitte pünktlich")).toBe("Termin am Montag um 9 Uhr bitte pünktlich");
   });
   it("finds a relevant later paragraph beyond the old 500-character cutoff", () => {
     const text = "Allgemeine Bedingungen. ".repeat(600) + "\n\n" + quote;

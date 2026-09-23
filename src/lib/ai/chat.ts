@@ -1,6 +1,6 @@
 import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
-import { normalizeEvidence } from "./document-evidence";
+import { normalizeEvidence, readableQuote } from "./document-evidence";
 import { documentPrefetchQuery } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
@@ -236,7 +236,7 @@ export function combineSearchResults(
       document_id: best.document_id,
       title: best.title,
       // Prefer document content or a typed fact over graph metadata.
-      excerpt: content ? content.chunk_text : best.chunk_text,
+      excerpt: readableQuote(content ? content.chunk_text : best.chunk_text),
       score: best.score,
       // Mark the origin: 'semantic' when a content result exists for the
       // document (the excerpt is document content susceptible to

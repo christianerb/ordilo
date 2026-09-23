@@ -19,6 +19,23 @@ export function normalizeEvidence(text: string): string {
     .replace(/\u00ad/g, "").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * OCR returns page text as Markdown, and verified quotes are copied from it
+ * verbatim. Families read the quote as a passage of their letter, so the
+ * markup (bold, links, headings, line-break tags) is removed for display.
+ */
+export function readableQuote(text: string): string {
+  return text
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/!?\[([^\]]*)\]\([^)\s]*\)/g, "$1")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/(^|[^\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])/g, "$1$2")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 /** Keep passages, not one representative fact per document. */
 export function selectEvidenceWindow(text: string, query: string, limit = 8_000): string {
   if (text.length <= limit) return text;
@@ -156,9 +173,10 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
       || !normalizeFactText(claim.text).includes(normalizeFactText(claim.highlight)))) {
       return { error: "Die Hervorhebung muss sowohl in der Antwort als auch im Beleg stehen." };
     }
-    sources.push({ document_id: page.documentId, title: page.title, excerpt: claim.quote,
+    const shownQuote = readableQuote(claim.quote);
+    sources.push({ document_id: page.documentId, title: page.title, excerpt: shownQuote,
       score: 1, origin: "semantic", page_number: page.page ?? undefined,
-      quote: claim.quote, highlight: claim.highlight, cited: true, has_original: page.hasOriginal });
+      quote: shownQuote, highlight: claim.highlight && readableQuote(claim.highlight), cited: true, has_original: page.hasOriginal });
   }
   const gap = parsed.data.gap;
   if (gap && /\d/.test(gap)) return { error: "In gap nur die fehlende Information benennen. Konkrete Zahlen gehören in belegte claims." };
