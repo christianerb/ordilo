@@ -199,7 +199,7 @@ describe("native motion wiring", () => {
 
     expect(suche).toContain("<LiveConversationBar");
     expect(suche).toContain("onLiveStart={liveAvailable ? () => {");
-    expect(suche).toContain("const liveAvailable = billingEnabled || serverLiveAccess;");
+    expect(suche).toContain("const liveAvailable = billingEnabled || serverLiveAccess || livePreview;");
     expect(suche).not.toContain("styles.liveStart");
     expect(chat).toContain('"Live mit Ordilo sprechen, Premium"');
     expect(chat).toContain("<AudioLines");

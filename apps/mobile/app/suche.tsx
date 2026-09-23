@@ -168,7 +168,10 @@ export default function SucheScreen() {
       };
     }, [billingEnabled, familyId]),
   );
-  const liveAvailable = billingEnabled || serverLiveAccess;
+  // Mirrors the server's LIVE_CONVERSATION_PREVIEW for local device tests;
+  // it only shows the action, the server still grants or refuses Live.
+  const livePreview = process.env.EXPO_PUBLIC_LIVE_CONVERSATION_PREVIEW === "1";
+  const liveAvailable = billingEnabled || serverLiveAccess || livePreview;
   const { ensureAiConsent } = useAiConsent();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
