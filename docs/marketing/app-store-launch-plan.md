@@ -55,9 +55,8 @@ Die ergänzenden Motive **„Der richtige Brief. Wieder da.“** und
 das Set trotzdem ersetzt werden: `06-gemeinsam.png` zeigt den entfernten
 Button „Ich übernehme das“ (siehe [app-store-screenshots.md](app-store-screenshots.md)).
 Das neue Achter-Set (Konzept in
-[app-store-screenshots.md](app-store-screenshots.md)) ist noch in Arbeit und
-eine offene Voraussetzung: Erst wenn alle acht Dateien unter
-`app-store-assets/1.0/` im Repo liegen, kann eingereicht werden.
+[app-store-screenshots.md](app-store-screenshots.md)) ist fertig (23.09.2026)
+und liegt unter `app-store-assets/1.0/`; es muss nur noch hochgeladen werden.
 
 Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto prüfen. Keine privaten Dokumente aus dem vorhandenen Simulator verwenden. Mehr Motive nur mit zusätzlichem Nutzen. Die Testvideos sind nicht automatisch App-Preview-fertig; Format, Länge und tatsächliches App-Footage separat prüfen.
 
@@ -71,7 +70,7 @@ Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto pr�
 | Inhaltsrechte | Entschieden (23.09.2026): **„Ja“, die App greift auf Drittinhalte zu**, und die Rechte bestätigen. Grundlage: Die Websuche im Chat zeigt Titel, kurze Zusammenfassung und Link öffentlicher Webseiten; alles andere sind familieneigene Uploads, Beispiel- und Screenshot-Inhalte sind synthetisch selbst erstellt | Antwort bei der Einreichung so übernehmen (Details in der Einreichungs-Checkliste) |
 | Lizenzvertrag | Apple-Standardvertrag; öffentliche Nutzungsbedingungen ergänzt | Rechtliche Prüfung der Bedingungen; bei einem späteren Abo Preis-, Laufzeit- und Kündigungstexte ergänzen |
 | iOS-Version: Beschreibung, Keywords, Werbetext | Überarbeitet und gespeichert | Nach echtem Gerätetest auf Feature-Parität prüfen |
-| Screenshots | Sechs Motive gespeichert; Scan → Frage → Beleg steht zuerst | Kein weiteres Bild für den Erst-Submit nötig; App Preview optional |
+| Screenshots | Altes Sechser-Set gespeichert; neues Achter-Set fertig unter `app-store-assets/1.0/` (Frage → Scan → Mitlesen → Fundstelle zuerst) | Altes Set löschen, acht neue Bilder hochladen; App Preview optional |
 | Support-/Marketing-URL, Copyright | Gespeichert; Impressum unter ordilo.de/impressum ist vollständig (§ 5 DDG, § 18 MStV, geprüft 23.09.2026) | USt-IdNr. nachtragen, sobald zugeteilt; eigene Supportseite bleibt eine spätere Verbesserung |
 | Datenschutz-URL | Gespeichert | URL ersetzt keine Datenerklärung |
 | App-Datenschutz | Fragebogen ausgefüllt und veröffentlicht (11 Datentypen, kein Tracking) | Antworten bei Änderungen an der Datenerhebung aktualisieren und erneut veröffentlichen |
