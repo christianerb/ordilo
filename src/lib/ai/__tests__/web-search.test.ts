@@ -3,7 +3,8 @@ import {
   extractWebCitations,
   sanitizeWebSearchQuery,
 } from "@/lib/ai/web-search";
-import { copiesPrivateExcerpt } from "@/lib/ai/tools";
+import { copiesPrivateExcerpt, copiesPrivateLink } from "@/lib/ai/tools";
+import { readableQuote } from "@/lib/ai/document-evidence";
 
 describe("sanitizeWebSearchQuery", () => {
   it("keeps an ordinary public query", () => {
@@ -150,6 +151,59 @@ describe("copiesPrivateExcerpt", () => {
         "Das vorläufige Deutschlandticket für Schülerinnen ist gültig bis zum Schuljahresende.",
       ]),
     ).toBe(false);
+  });
+});
+
+describe("copiesPrivateLink", () => {
+  const page =
+    "Anmeldung unter [hier](https://bit.ly/X7Ab9) oder www.x.de/invite/abc123. Mehr auf https://stadtwerke-sonnenfeld.de.";
+
+  it("blocks short private link destinations, with or without scheme", () => {
+    expect(copiesPrivateLink("was ist https://bit.ly/X7Ab9", [page])).toBe(true);
+    expect(copiesPrivateLink("bit.ly/x7ab9 Einladung", [page])).toBe(true);
+    expect(copiesPrivateLink("x.de/invite/abc123", [page])).toBe(true);
+  });
+
+  it("blocks private links whose secret sits in the query or fragment", () => {
+    const letter = "Zusagen: https://example.de?invite=X7Ab9 oder https://example.org#t=QZ81.";
+    expect(copiesPrivateLink("example.de?invite=X7Ab9", [letter])).toBe(true);
+    expect(copiesPrivateLink("https://example.org#t=QZ81", [letter])).toBe(true);
+  });
+
+  it("blocks a private link with its parameters dropped, or just its code", () => {
+    const letter = "Einladung: https://schule.example/invite/X7Ab9?utm_source=brief";
+    expect(copiesPrivateLink("schule.example/invite/X7Ab9", [letter])).toBe(true);
+    expect(copiesPrivateLink("Einladung X7Ab9 Schule", [letter])).toBe(true);
+    expect(copiesPrivateLink("Schule Einladung Elternabend Regeln", [letter])).toBe(false);
+  });
+
+  it("treats numeric and random-looking link codes as private, plain path words not", () => {
+    const letter = "Zusage: https://schule.example/invite/839271, Infos: https://bahn.de/deutschlandticket und https://kurz.example/XkQpzR";
+    expect(copiesPrivateLink("Einladung 839271 Schule", [letter])).toBe(true);
+    expect(copiesPrivateLink("xkqpzr Link", [letter])).toBe(true);
+    expect(copiesPrivateLink("Deutschlandticket Regeln aktuell", [letter])).toBe(false);
+    expect(copiesPrivateLink("Termine 2026 aktuell", ["Siehe https://stadt.de/termine/2026"])).toBe(false);
+  });
+
+  it("never sends a deep link to public search", () => {
+    expect(copiesPrivateLink("was steht auf https://irgendwo.example/seite?id=5", [])).toBe(true);
+    expect(copiesPrivateLink("Deutschlandticket Regeln 2026", [])).toBe(false);
+  });
+
+  it("still blocks a link from a cleaned excerpt saved in an earlier turn", () => {
+    const saved = readableQuote("Zusagen [hier](https://schule.example/r/K7f3) bis Freitag.");
+    expect(copiesPrivateLink("schule.example/r/K7f3 Zusage", [saved])).toBe(true);
+  });
+
+  it("recognizes printed links without a scheme", () => {
+    const letter = "Rückmeldung bitte unter schule.example/r/K7f3 oder kurz.li?c=88Z.";
+    expect(copiesPrivateLink("schule.example/r/K7f3", [letter])).toBe(true);
+    expect(copiesPrivateLink("kurz.li?c=88Z", [letter])).toBe(true);
+    expect(copiesPrivateLink("schule.example Elternabend", [letter])).toBe(false);
+  });
+
+  it("allows the sender's bare domain", () => {
+    expect(copiesPrivateLink("stadtwerke-sonnenfeld.de Abschlag ändern", [page])).toBe(false);
   });
 });
 

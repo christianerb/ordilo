@@ -49,7 +49,7 @@ import {
 import { eventOccursOn, type EventOccurrenceSource } from "@/lib/calendar";
 import { contactInputSchema } from "@/lib/contacts";
 import { searchPublicWeb } from "@/lib/ai/web-search";
-import { readDocumentEvidence, verifyDocumentAnswer, type DocumentEvidence } from "./document-evidence";
+import { readableQuote, readDocumentEvidence, verifyDocumentAnswer, type DocumentEvidence } from "./document-evidence";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,6 +94,10 @@ export interface ToolContext {
   }>;
   preloadedFamilyMembersPrivacyReady?: boolean;
   documentEvidence?: DocumentEvidence[];
+  /** Raw page text the model has read. Source excerpts are cleaned for
+   * display and drop link destinations, so the web-search privacy guard
+   * compares against this instead. Not bounded like documentEvidence. */
+  readPageTexts?: string[];
   documentQuestion?: string;
   documentSearchCount?: number;
   documentAnswer?: { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found" };
@@ -1347,6 +1351,51 @@ export function copiesPrivateExcerpt(
   });
 }
 
+const LINK_PATTERN =
+  /(?:\bhttps?:\/\/|\bwww\.|\b[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.[a-z]{2,}(?=[/?#]))[^\s()<>[\]"']+/giu;
+
+function linkKey(link: string): string {
+  return link
+    .toLocaleLowerCase("de-DE")
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[.,;:!?]+$/, "")
+    .replace(/\/+$/, "");
+}
+
+/**
+ * Path, query and fragment pieces that look like codes: anything with a
+ * digit (839271, K7f3) or with inner capitals (XkQpzR). Plain words such as
+ * "deutschlandticket" in a public page's address stay searchable.
+ */
+function linkSecrets(link: string): string[] {
+  const start = link.replace(/^https?:\/\//i, "").search(/[/?#]/);
+  if (start < 0) return [];
+  const rest = link.replace(/^https?:\/\//i, "").slice(start + 1);
+  return rest
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((part) => (part.length >= 4 && /\p{N}/u.test(part) && !/^(?:19|20)\d{2}$/u.test(part))
+      || (part.length >= 5 && /\p{Ll}/u.test(part) && /\p{Lu}/u.test(part.slice(1))))
+    .map((part) => part.toLocaleLowerCase("de-DE"));
+}
+
+/**
+ * Invitation, tracking and account links are short, so they slip under the
+ * six-word passage check. A public query never needs a deep link: any link
+ * with a path, query or fragment is refused, and so is a code taken from a
+ * private link even without the rest of the address. A bare domain (the
+ * sender's website) stays allowed.
+ */
+export function copiesPrivateLink(query: string, texts: string[]): boolean {
+  const queryLinks = (query.match(LINK_PATTERN) ?? []).map(linkKey);
+  if (queryLinks.some((key) => /[/?#]/.test(key))) return true;
+  const queryWords = new Set(normalizedWords(query));
+  return texts.some((text) =>
+    (text.match(LINK_PATTERN) ?? [])
+      .some((link) => linkSecrets(link).some((secret) => queryWords.has(secret))),
+  );
+}
+
 async function executeSearchWeb(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -1358,12 +1407,19 @@ async function executeSearchWeb(
     ...ctx.sources
       .filter((source) => source.origin !== "web")
       .map((source) => source.excerpt),
+    ...(ctx.readPageTexts ?? []),
     ...(ctx.historyExcerpts ?? []),
   ];
   if (copiesPrivateExcerpt(query, privateExcerpts)) {
     return JSON.stringify({
       error:
         "Die Web-Suchanfrage enthält zu viel Text aus einer privaten Unterlage. Formuliere sie allgemein und ohne private Angaben.",
+    });
+  }
+  if (copiesPrivateLink(query, privateExcerpts)) {
+    return JSON.stringify({
+      error:
+        "Die Web-Suchanfrage enthält einen Link oder Code aus einer privaten Unterlage. Formuliere sie allgemein, ohne Links und private Angaben.",
     });
   }
 
@@ -1530,12 +1586,14 @@ async function executeSearchDocuments(
 
 function rememberEvidence(ctx: ToolContext, pages: DocumentEvidence[]): void {
   ctx.documentEvidence ??= [];
+  ctx.readPageTexts ??= [];
   for (const page of pages) {
+    if (!ctx.readPageTexts.includes(page.text)) ctx.readPageTexts.push(page.text);
     const existing = ctx.documentEvidence.findIndex((item) => item.documentId === page.documentId && item.page === page.page && item.text === page.text);
     if (existing < 0) ctx.documentEvidence.push(page);
     if (!ctx.sources.some((source) => source.document_id === page.documentId)) {
       ctx.sources.push({ document_id: page.documentId, title: page.title,
-        excerpt: page.text.slice(0, 2_000), score: 0.8, origin: "semantic", has_original: page.hasOriginal, page_number: page.page ?? undefined });
+        excerpt: readableQuote(page.text.slice(0, 2_000)), score: 0.8, origin: "semantic", has_original: page.hasOriginal, page_number: page.page ?? undefined });
     }
   }
   // Bound tool context; newest reads take priority for corrections.

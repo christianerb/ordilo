@@ -19,6 +19,76 @@ export function normalizeEvidence(text: string): string {
     .replace(/\u00ad/g, "").replace(/\s+/g, " ").trim();
 }
 
+function comparableLink(value: string): string {
+  return value.trim().toLocaleLowerCase("de-DE")
+    .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+}
+
+/** `[label](destination "title")` with balanced parentheses in the
+ * destination. Returns the index after the closing parenthesis. */
+function parseMarkdownLink(text: string, start: number): { label: string; destination: string; end: number } | null {
+  const labelEnd = text.indexOf("](", start);
+  if (labelEnd < 0 || /[\n[]/.test(text.slice(start + 1, labelEnd))) return null;
+  let index = labelEnd + 2;
+  let depth = 0;
+  const destinationStart = index;
+  while (index < text.length && !/\s/.test(text[index])) {
+    if (text[index] === "(") depth += 1;
+    else if (text[index] === ")") {
+      if (depth === 0) break;
+      depth -= 1;
+    }
+    index += 1;
+  }
+  const destination = text.slice(destinationStart, index);
+  const title = /^\s+(?:"[^"\n]*"|'[^'\n]*')\s*/.exec(text.slice(index));
+  if (title) index += title[0].length;
+  if (text[index] !== ")" || !destination) return null;
+  return { label: text.slice(start + 1, labelEnd), destination, end: index + 1 };
+}
+
+/** The link text stays; the destination too, unless the label already is
+ * the printed address. Private destinations must remain in the stored
+ * excerpt, which later turns use to keep them out of public web search. */
+function readableLinks(text: string): string {
+  let result = "";
+  let index = 0;
+  while (index < text.length) {
+    const open = text.indexOf("[", index);
+    if (open < 0) break;
+    const link = parseMarkdownLink(text, open);
+    if (!link) {
+      result += text.slice(index, open + 1);
+      index = open + 1;
+      continue;
+    }
+    const image = open > index && text[open - 1] === "!";
+    result += text.slice(index, image ? open - 1 : open);
+    const label = link.label.trim();
+    result += !label || comparableLink(label) === comparableLink(link.destination)
+      ? label || link.destination
+      : `${label} (${link.destination})`;
+    index = link.end;
+  }
+  return result + text.slice(index);
+}
+
+/**
+ * OCR returns page text as Markdown, and verified quotes are copied from it
+ * verbatim. Families read the quote as a passage of their letter, so the
+ * markup (bold, links, headings, line-break tags) is removed for display.
+ */
+export function readableQuote(text: string): string {
+  return readableLinks(text.replace(/<br\s*\/?>/gi, " "))
+    .replace(/(^|[^*\p{L}\p{N}])\*\*(?=[^\s*])(.+?)(?<=[^\s*])\*\*(?![*\p{L}\p{N}])/gu, "$1$2")
+    .replace(/(^|[^\p{L}\p{N}_])__(?!\s)(.+?)__(?![\p{L}\p{N}_])/gu, "$1$2")
+    .replace(/(^|[^\p{L}\p{N}_])_(?=[^\s_])([^_\n]+?)(?<=[^\s_])_(?![\p{L}\p{N}_])/gu, "$1$2")
+    .replace(/(^|[^\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])/g, "$1$2")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 /** Keep passages, not one representative fact per document. */
 export function selectEvidenceWindow(text: string, query: string, limit = 8_000): string {
   if (text.length <= limit) return text;
@@ -156,9 +226,10 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
       || !normalizeFactText(claim.text).includes(normalizeFactText(claim.highlight)))) {
       return { error: "Die Hervorhebung muss sowohl in der Antwort als auch im Beleg stehen." };
     }
-    sources.push({ document_id: page.documentId, title: page.title, excerpt: claim.quote,
+    const shownQuote = readableQuote(claim.quote);
+    sources.push({ document_id: page.documentId, title: page.title, excerpt: shownQuote,
       score: 1, origin: "semantic", page_number: page.page ?? undefined,
-      quote: claim.quote, highlight: claim.highlight, cited: true, has_original: page.hasOriginal });
+      quote: shownQuote, highlight: claim.highlight && readableQuote(claim.highlight), cited: true, has_original: page.hasOriginal });
   }
   const gap = parsed.data.gap;
   if (gap && /\d/.test(gap)) return { error: "In gap nur die fehlende Information benennen. Konkrete Zahlen gehören in belegte claims." };
