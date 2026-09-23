@@ -10,10 +10,9 @@ shadow_port = 54320
 major_version = 15
 
 [auth]
-site_url = "https://app.ordilo.de"
+site_url = "https://ordilo.de"
 additional_redirect_urls = [
   "http://localhost:3100/**",
-  "https://app.ordilo.de/auth/callback",
   "https://ordilo-six.vercel.app/auth/callback",
   "https://*.vercel.app/auth/callback",
   "https://ordilo-ordilo.vercel.app/",
@@ -33,6 +32,12 @@ otp_expiry = 3600
 [auth.email.template.magic_link]
 subject = "Ordilo - Dein Anmelde-Code"
 content_path = "./supabase/templates/magic_link.html"
+
+# A first-time address gets the signup confirmation instead of the magic
+# link, so it must carry the same six-digit code the apps ask for.
+[auth.email.template.confirmation]
+subject = "Ordilo - Dein Anmelde-Code"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.mfa.totp]
 enroll_enabled = true
