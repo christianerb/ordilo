@@ -45,7 +45,19 @@ describe("public legal pages", () => {
     expect(html).toContain("Produkt- und Transaktionskennungen");
     expect(html).toContain("keine Dokumenttexte, Chat-Inhalte oder Familiennamen");
     expect(html).toContain("aber keine Sitzungsaufzeichnung");
-    expect(html).toContain("rechtlich und anhand der Vertragsunterlagen geprüft");
+  });
+
+  it("states concluded DPAs and the third-country transfer grounds", () => {
+    const html = renderToStaticMarkup(<DatenschutzPage />);
+
+    // No unresolved review caveats may ship in the public notice.
+    expect(html).not.toContain("geprüft werden");
+    expect(html).not.toContain("noch nicht behauptet");
+    expect(html).toContain("Auftragsverarbeitung (Art. 28 DSGVO)");
+    expect(html).toContain("Data Privacy Framework");
+    expect(html).toContain("Standardvertragsklauseln");
+    expect(html).toContain("Art. 45 DSGVO");
+    expect(html).toContain("Art. 46 Abs. 2 lit. c DSGVO");
   });
 
   it("describes the explicit AI consent, its withdrawal and its effect", () => {

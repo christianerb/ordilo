@@ -93,10 +93,6 @@ Nach dem Beschluss „Erstlaunch ohne Abo“
 ([app-store-launch-plan.md](app-store-launch-plan.md)) und der Geräteabnahme
 vom 23.09.2026 ist von den früheren Blockern übrig:
 
-- **Vertragsmappe Datenschutz**: Rollen, Auftragsverarbeitung und
-  Drittland-Grundlage pro Dienstleister anhand der Vertragsunterlagen
-  bestätigen (konkrete Liste in der
-  [Submission-Checkliste](app-store-submission-checklist.md), Abschnitt 3).
 - **Klicks in App Store Connect**: Build auswählen, keine IAPs zuordnen,
   Inhaltsrechte „Nein“, englische Lokalisierung entfernen, Veröffentlichung
   auf manuell, Review Notes einfügen (alles mit fertigen Antworten in der
@@ -105,9 +101,11 @@ vom 23.09.2026 ist von den früheren Blockern übrig:
 
 Erledigt oder entfallen: Inhaltsrechte-Erklärung (entschieden: keine
 Drittinhalte), Händlerstatus (entschieden: Händler), Produktionsbuild
-(erstellt 23.09.2026), Geräteabnahme (23.09.2026), Sentry (auf das erste
-Update verschoben), Sandbox-Kaufnachweise und englische Store-Texte
-(entfallen für 1.0, weil kein Abo und keine englische Lokalisierung).
+(erstellt 23.09.2026), Geräteabnahme (23.09.2026), Datenschutzerklärung
+final (DPAs geschlossen, Transfergrundlagen eingetragen, Prüf-Hinweise
+entfernt, 23.09.2026), Sentry (auf das erste Update verschoben),
+Sandbox-Kaufnachweise und englische Store-Texte (entfallen für 1.0, weil
+kein Abo und keine englische Lokalisierung).
 
 Die App-Privacy-Antworten (11 Datentypen, kein Tracking) sind veröffentlicht
 und decken sich mit dem Code-Stand; der Abgleich steht in der Checkliste,

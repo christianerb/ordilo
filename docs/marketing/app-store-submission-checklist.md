@@ -1,9 +1,10 @@
 # App Store: Einreichung Version 1.0 (ohne Abo)
 
 Stand 23.09.2026. Entscheidung und Begründung: [app-store-launch-plan.md](app-store-launch-plan.md),
-Abschnitt „Beschluss: Erstlaunch ohne Abo“. Geräteabnahme ist erfolgt, alle
-fachlichen Antworten sind vorbereitet — was bleibt, sind die Klicks in App
-Store Connect und die Vertragsmappe für den Datenschutz.
+Abschnitt „Beschluss: Erstlaunch ohne Abo“. Geräteabnahme ist erfolgt, die
+Datenschutzerklärung ist final (DPAs überall geschlossen, Transfergrundlagen
+eingetragen), alle fachlichen Antworten sind vorbereitet — was bleibt, sind
+die Klicks in App Store Connect.
 
 ## 1. Vor der Einreichung: Nachweise
 
@@ -68,14 +69,14 @@ Geprüft gegen den Code, keine Rechtsberatung:
       Vercel; RevenueCat, Apple IAP und Sentry sind als bedingte Punkte
       formuliert und werden erst mit der jeweiligen Aktivierung relevant).
       Kein Tracking- oder Analytics-SDK in der Codebasis.
-- [ ] **Vertragsmappe Datenschutz** (der einzige echte Außer-Haus-Punkt):
-      Pro Anbieter Auftragsverarbeitung und Drittland-Grundlage anhand der
-      Vertragsunterlagen bestätigen und in den Abschnitten 5 und 7 der
-      Datenschutzerklärung eintragen; danach die beiden Prüf-Hinweise dort
-      entfernen. Konkret einzusammeln: Supabase DPA, OpenAI DPA inklusive
-      DPF-/SCC-Grundlage und Bestätigung „kein Training auf API-Daten“,
-      Datalab DPA, Resend DPA, Vercel DPA. Das ist Vertragslektüre, keine
-      Code-Arbeit — idealerweise juristisch begleitet.
+- [x] **Vertragsmappe Datenschutz**: erledigt (23.09.2026) — DPAs sind mit
+      allen Dienstleistern geschlossen. Die Datenschutzerklärung nennt die
+      Auftragsverarbeitung (Art. 28 DSGVO) in Abschnitt 5 und die
+      Transfergrundlagen in Abschnitt 7: Vercel und Sentry über das EU-US
+      Data Privacy Framework (Art. 45 DSGVO), OpenAI, Datalab, Resend und
+      RevenueCat über Standardvertragsklauseln (Art. 46 Abs. 2 lit. c
+      DSGVO), Supabase mit Datenhaltung in der EU. Alle Prüf-Hinweise sind
+      aus dem öffentlichen Text entfernt.
 - [ ] **KI-Einwilligung (5.1.2(i))** auf dem finalen Build einmal
       durchspielen: Dialog erscheint vor der ersten Übertragung, Widerruf in
       den Einstellungen sperrt nur KI-Funktionen. In den Review Notes ist
