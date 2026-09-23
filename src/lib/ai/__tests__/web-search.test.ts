@@ -170,6 +170,18 @@ describe("copiesPrivateLink", () => {
     expect(copiesPrivateLink("https://example.org#t=QZ81", [letter])).toBe(true);
   });
 
+  it("blocks a private link with its parameters dropped, or just its code", () => {
+    const letter = "Einladung: https://schule.example/invite/X7Ab9?utm_source=brief";
+    expect(copiesPrivateLink("schule.example/invite/X7Ab9", [letter])).toBe(true);
+    expect(copiesPrivateLink("Einladung X7Ab9 Schule", [letter])).toBe(true);
+    expect(copiesPrivateLink("Schule Einladung Elternabend Regeln", [letter])).toBe(false);
+  });
+
+  it("never sends a deep link to public search", () => {
+    expect(copiesPrivateLink("was steht auf https://irgendwo.example/seite?id=5", [])).toBe(true);
+    expect(copiesPrivateLink("Deutschlandticket Regeln 2026", [])).toBe(false);
+  });
+
   it("still blocks a link from a cleaned excerpt saved in an earlier turn", () => {
     const saved = readableQuote("Zusagen [hier](https://schule.example/r/K7f3) bis Freitag.");
     expect(copiesPrivateLink("schule.example/r/K7f3 Zusage", [saved])).toBe(true);

@@ -1363,18 +1363,30 @@ function linkKey(link: string): string {
     .replace(/\/+$/, "");
 }
 
+/** Path, query and fragment pieces that look like codes (K7f3, X7Ab9). */
+function linkSecrets(key: string): string[] {
+  const rest = key.slice(key.search(/[/?#]/) + 1);
+  return rest
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((part) => (part.length >= 4 && /\p{L}/u.test(part) && /\p{N}/u.test(part)) || part.length >= 12);
+}
+
 /**
  * Invitation, tracking and account links are short, so they slip under the
- * six-word passage check. A link with a path, query or fragment from a
- * private document must never reach public search; a bare domain (the
- * sender's website) may.
+ * six-word passage check. A public query never needs a deep link: any link
+ * with a path, query or fragment is refused, and so is a code taken from a
+ * private link even without the rest of the address. A bare domain (the
+ * sender's website) stays allowed.
  */
 export function copiesPrivateLink(query: string, texts: string[]): boolean {
-  const normalizedQuery = query.toLocaleLowerCase("de-DE");
+  const queryLinks = (query.match(LINK_PATTERN) ?? []).map(linkKey);
+  if (queryLinks.some((key) => /[/?#]/.test(key))) return true;
+  const queryWords = new Set(normalizedWords(query));
   return texts.some((text) =>
     (text.match(LINK_PATTERN) ?? [])
       .map(linkKey)
-      .some((key) => /[/?#]/.test(key) && normalizedQuery.includes(key)),
+      .filter((key) => /[/?#]/.test(key))
+      .some((key) => linkSecrets(key).some((secret) => queryWords.has(secret))),
   );
 }
 
@@ -1392,10 +1404,16 @@ async function executeSearchWeb(
     ...(ctx.readPageTexts ?? []),
     ...(ctx.historyExcerpts ?? []),
   ];
-  if (copiesPrivateExcerpt(query, privateExcerpts) || copiesPrivateLink(query, privateExcerpts)) {
+  if (copiesPrivateExcerpt(query, privateExcerpts)) {
     return JSON.stringify({
       error:
         "Die Web-Suchanfrage enthält zu viel Text aus einer privaten Unterlage. Formuliere sie allgemein und ohne private Angaben.",
+    });
+  }
+  if (copiesPrivateLink(query, privateExcerpts)) {
+    return JSON.stringify({
+      error:
+        "Die Web-Suchanfrage enthält einen Link oder Code aus einer privaten Unterlage. Formuliere sie allgemein, ohne Links und private Angaben.",
     });
   }
 
