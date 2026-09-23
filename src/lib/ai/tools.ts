@@ -1351,7 +1351,8 @@ export function copiesPrivateExcerpt(
   });
 }
 
-const LINK_PATTERN = /\b(?:https?:\/\/|www\.)[^\s()<>[\]"']+/giu;
+const LINK_PATTERN =
+  /(?:\bhttps?:\/\/|\bwww\.|\b[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.[a-z]{2,}(?=[/?#]))[^\s()<>[\]"']+/giu;
 
 function linkKey(link: string): string {
   return link
@@ -1364,15 +1365,16 @@ function linkKey(link: string): string {
 
 /**
  * Invitation, tracking and account links are short, so they slip under the
- * six-word passage check. A link with a path from a private document must
- * never reach public search; a bare domain (the sender's website) may.
+ * six-word passage check. A link with a path, query or fragment from a
+ * private document must never reach public search; a bare domain (the
+ * sender's website) may.
  */
 export function copiesPrivateLink(query: string, texts: string[]): boolean {
   const normalizedQuery = query.toLocaleLowerCase("de-DE");
   return texts.some((text) =>
     (text.match(LINK_PATTERN) ?? [])
       .map(linkKey)
-      .some((key) => key.includes("/") && normalizedQuery.includes(key)),
+      .some((key) => /[/?#]/.test(key) && normalizedQuery.includes(key)),
   );
 }
 

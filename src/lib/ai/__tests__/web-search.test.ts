@@ -163,6 +163,19 @@ describe("copiesPrivateLink", () => {
     expect(copiesPrivateLink("x.de/invite/abc123", [page])).toBe(true);
   });
 
+  it("blocks private links whose secret sits in the query or fragment", () => {
+    const letter = "Zusagen: https://example.de?invite=X7Ab9 oder https://example.org#t=QZ81.";
+    expect(copiesPrivateLink("example.de?invite=X7Ab9", [letter])).toBe(true);
+    expect(copiesPrivateLink("https://example.org#t=QZ81", [letter])).toBe(true);
+  });
+
+  it("recognizes printed links without a scheme", () => {
+    const letter = "Rückmeldung bitte unter schule.example/r/K7f3 oder kurz.li?c=88Z.";
+    expect(copiesPrivateLink("schule.example/r/K7f3", [letter])).toBe(true);
+    expect(copiesPrivateLink("kurz.li?c=88Z", [letter])).toBe(true);
+    expect(copiesPrivateLink("schule.example Elternabend", [letter])).toBe(false);
+  });
+
   it("allows the sender's bare domain", () => {
     expect(copiesPrivateLink("stadtwerke-sonnenfeld.de Abschlag ändern", [page])).toBe(false);
   });
