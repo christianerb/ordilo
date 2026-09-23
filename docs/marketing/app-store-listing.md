@@ -77,47 +77,40 @@ video, which is optional.
   iOS 1.0 App Review fields. They are intentionally not recorded in this
   repository or in release logs.
 - The existing TestFlight note says the account contains only synthetic sample
-  data. Review notes for iOS 1.0 must mention that no email code is required,
-  explain the scan → question → source flow, identify Live conversation as the
-  subscription feature, explain how to restore purchases, and point out the
-  one-time AI consent dialog that appears before the first scan, question, or
-  dictation (guideline 5.1.2(i), changeable in settings).
+  data. The final review notes text for iOS 1.0 lives in
+  [app-store-submission-checklist.md](app-store-submission-checklist.md),
+  section 4: password sign-in without email code, the scan → question →
+  source path, the one-time AI consent dialog (guideline 5.1.2(i),
+  changeable in settings), and the fact that version 1.0 contains no
+  in-app purchases.
 - The earlier local fixture file
   `/tmp/ordilo-chat-acceptance-state.json` is not the source of the permanent
   review credentials and is currently absent.
 
-## Pending blockers
+## Pending blockers — Stand 23.09.2026
 
-- Content-rights declaration: user clarification requested about supplied third-party content. No ownership/licensing attestation was guessed.
-- App Privacy questionnaire is filled in and published: 11 data types.
-  Linked to the user — email address (login),
-  photos/videos, audio data, other user content, search history (all app
-  functionality), user ID and purchase history (app functionality), product
-  interaction (analytics + app functionality). Not linked — crash data,
-  performance data, other diagnostics (analytics only, Sentry with
-  sendDefaultPii off). Tracking: no for every type. Audio is declared because
-  dictation/live voice is transmitted to OpenAI even though Ordilo never
-  stores it. The answers match the public privacy notice and the
-  server-enforced AI consent (`user_consents`, 5.1.2(i)).
-- Build 27 is selected nowhere for release and predates RevenueCat. A fresh EAS
-  production build from current `main` is required, followed by TestFlight
-  installation and purchase acceptance before it can be selected for iOS 1.0.
-- Native Sentry crash reporting and a production-bundle CI gate are prepared.
-  Production EAS secrets, a fresh native build, source maps and a synthetic
-  test event still need verification.
-- Release build selection and device acceptance, subscription sandbox
-  acceptance, content-rights declaration, pricing/countries and EU trader
-  status remain release tasks. Contact details, the published App Privacy
-  label and manual release are already saved.
-- RevenueCat products, entitlement, offering, webhook and purchase UI are
-  implemented. Entitlement enforcement remains disabled until purchase,
-  restore, cancellation, expiry, refund and family-switch behavior pass.
-- Public privacy and terms pages now describe login, JSON export, account
-  deletion, Ordilo Plus prices and renewal/cancellation behavior. Processor roles,
-  contracts and the exact third-country transfer basis still require legal and
-  contract review before release; the page does not claim those unresolved
-  facts.
-- Existing English localization still needs coherent English metadata or a
-  deliberate removal decision before submission.
+Nach dem Beschluss „Erstlaunch ohne Abo“
+([app-store-launch-plan.md](app-store-launch-plan.md)) und der Geräteabnahme
+vom 23.09.2026 ist von den früheren Blockern übrig:
+
+- **Vertragsmappe Datenschutz**: Rollen, Auftragsverarbeitung und
+  Drittland-Grundlage pro Dienstleister anhand der Vertragsunterlagen
+  bestätigen (konkrete Liste in der
+  [Submission-Checkliste](app-store-submission-checklist.md), Abschnitt 3).
+- **Klicks in App Store Connect**: Build auswählen, keine IAPs zuordnen,
+  Inhaltsrechte „Nein“, englische Lokalisierung entfernen, Veröffentlichung
+  auf manuell, Review Notes einfügen (alles mit fertigen Antworten in der
+  Checkliste).
+- **Review-Zugang** mit dem finalen Build einmal neu anmelden.
+
+Erledigt oder entfallen: Inhaltsrechte-Erklärung (entschieden: keine
+Drittinhalte), Händlerstatus (entschieden: Händler), Produktionsbuild
+(erstellt 23.09.2026), Geräteabnahme (23.09.2026), Sentry (auf das erste
+Update verschoben), Sandbox-Kaufnachweise und englische Store-Texte
+(entfallen für 1.0, weil kein Abo und keine englische Lokalisierung).
+
+Die App-Privacy-Antworten (11 Datentypen, kein Tracking) sind veröffentlicht
+und decken sich mit dem Code-Stand; der Abgleich steht in der Checkliste,
+Abschnitt 3.
 
 No app was submitted for review or released.

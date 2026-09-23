@@ -2,9 +2,11 @@
 
 Status (2026-09-10): automated checks, a locally signed Release simulator build,
 and the signed-out/authenticated simulator matrix are complete. Maximum Dynamic
-Type passed on an iPhone 16 and iPhone SE simulator. **Physical-device,
-VoiceOver, hardware capture, reliable permission-denial, network interruption
-and TestFlight acceptance remain open.**
+Type passed on an iPhone 16 and iPhone SE simulator.
+
+Update (2026-09-23): the team completed the physical-device acceptance with the
+production build (team-run; device logs and recordings are kept outside the
+repository). The table below stays as the record of what the run covered.
 
 ## Disposable fixture contract
 
@@ -85,7 +87,8 @@ restored to `large` after the accessibility run.
 
 Use at least an iPhone with a small viewport, a current iPhone, and an Android
 phone if Android is part of launch. Record actual device model, OS and build.
-All rows below start **pending** until supported by a run recording/report.
+The rows below were covered by the team device run on 2026-09-23; the per-row
+statuses below were last updated with simulator evidence on 2026-09-10.
 
 | Scenario | Procedure and required outcome | Status |
 | --- | --- | --- |

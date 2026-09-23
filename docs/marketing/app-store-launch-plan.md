@@ -63,11 +63,11 @@ Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto pr�
 | App-Informationen: Name, Untertitel, Sprache | Deutsche ASO-Fassung gespeichert; Deutsch primär | Englische Lokalisierung übersetzen oder bewusst entfernen |
 | Kategorie | Produktivität gespeichert | Sekundärkategorie optional; aktuell nicht nötig |
 | Altersfreigabe | 4+ berechnet, nicht Kids Category | Bei Änderungen an öffentlichen Inhalten/Funktionen erneut prüfen |
-| Inhaltsrechte | Noch offen | Tatsächliche Drittinhalte und Nutzungsrechte bestätigen; keine Lizenzbehauptung erfinden |
+| Inhaltsrechte | Entschieden (23.09.2026): „keine Drittinhalte“. Grundlage: Die App zeigt ausschließlich familieneigene hochgeladene Inhalte; Beispiel- und Screenshot-Inhalte sind synthetisch selbst erstellt | Antwort bei der Einreichung so übernehmen; bei künftigen Drittinhalten neu prüfen |
 | Lizenzvertrag | Apple-Standardvertrag; öffentliche Nutzungsbedingungen ergänzt | Rechtliche Prüfung der Bedingungen; bei einem späteren Abo Preis-, Laufzeit- und Kündigungstexte ergänzen |
 | iOS-Version: Beschreibung, Keywords, Werbetext | Überarbeitet und gespeichert | Nach echtem Gerätetest auf Feature-Parität prüfen |
 | Screenshots | Sechs Motive gespeichert; Scan → Frage → Beleg steht zuerst | Kein weiteres Bild für den Erst-Submit nötig; App Preview optional |
-| Support-/Marketing-URL, Copyright | Gespeichert | Eigene Supportseite verbessert Hilfe; Impressum enthält derzeit Kontakt |
+| Support-/Marketing-URL, Copyright | Gespeichert; Impressum unter ordilo.de/impressum ist vollständig (§ 5 DDG, § 18 MStV, geprüft 23.09.2026) | USt-IdNr. nachtragen, sobald zugeteilt; eigene Supportseite bleibt eine spätere Verbesserung |
 | Datenschutz-URL | Gespeichert | URL ersetzt keine Datenerklärung |
 | App-Datenschutz | Fragebogen ausgefüllt und veröffentlicht (11 Datentypen, kein Tracking) | Antworten bei Änderungen an der Datenerhebung aktualisieren und erneut veröffentlichen |
 | KI-Einwilligung (Richtlinie 5.1.2(i)) | Ausdrückliche Einwilligung vor der ersten Übertragung an OpenAI/Datalab umgesetzt: einmaliger Dialog in App und Web, serverseitig erzwungen (`user_consents`, 403 `AI_CONSENT_REQUIRED`), in den Einstellungen änder- und widerrufbar, Ablehnung sperrt nur KI-Funktionen | Dialog und Widerruf auf dem finalen Build prüfen; in den Review Notes und den App-Privacy-Antworten erwähnen |
@@ -79,7 +79,7 @@ Vor neuen Aufnahmen aktuelle Release-Funktionen auf einem sauberen Testkonto pr�
 | App-Prüfung | Kontakt vorhanden; bestehender TestFlight-Review-Zugang in iOS 1.0 übernommen | Sichern und Review Notes aktualisieren; erst nach finalem Build absenden |
 | TestFlight-Testinformationen | Beständiger Review-Zugang und Kontakt vorhanden; Anmeldung am 16.09.2026 geprüft | Zugang mit finalem TestFlight-Build erneut prüfen |
 | Preise und Verfügbarkeit | Entwurf | Kostenloser Download als Freemium-Hypothese; Startländer bewusst wählen |
-| Geschäftliches / Händlerstatus | Noch offen | Unternehmenseigenschaft und erforderliche Kontaktdaten verifizieren; Händlerstatus ist unabhängig vom Preismodell |
+| Geschäftliches / Händlerstatus | Entschieden (23.09.2026): **Händler**. Die Erb Invest UG (haftungsbeschränkt), HRB 142639, tritt gewerblich auf — das gilt auch bei kostenlosem Download | In App Store Connect als Händler angeben und Adresse/Telefon/E-Mail für die DSA-Anzeige verifizieren (Angaben wie im Impressum) |
 | Pläne und Kontingente | Migration `0081_family_entitlements.sql` ist im verknüpften Projekt angewendet; serverseitige Entitlements und atomare Monatskontingente für Dokumente und KI-Antworten sind umgesetzt, die Durchsetzung bleibt standardmäßig aus | **Für 1.0 bleibt die Durchsetzung aus.** Vor einem späteren Bezahlstart Bestandsfamilien bewusst zuordnen, den Kauflebenszyklus nachweisen und erst dann `BILLING_ENTITLEMENTS_ENABLED=1` setzen |
 | In-App-Käufe / Abonnements | RevenueCat, Paywall, Wiederherstellen, Webhook und Entitlement-Sync sind auf `main`; Store-Produkte sind vorbereitet | **Nicht Teil von Version 1.0.** Produkte der Version nicht zuordnen und nicht miteinreichen; für das Abo-Update Sandbox-Kauf, Wiederherstellung, Kündigung, Ablauf, Refund, Retry und Familienwechsel nachweisen und die Produkte dann der neuen Version zuordnen |
 | Verschlüsselung | Release-Prüfpunkt | Tatsächliche Nutzung und Build-Deklaration abgleichen; keine pauschale Ausnahme behaupten |
