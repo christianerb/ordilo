@@ -46,6 +46,7 @@ describe("document answer evidence", () => {
     expect(readableQuote("Termin am *Montag* um __9 Uhr__<br>bitte pünktlich")).toBe("Termin am Montag um 9 Uhr bitte pünktlich");
     expect(readableQuote("Aktenzeichen ABC__123__DEF und file__name__v2")).toBe("Aktenzeichen ABC__123__DEF und file__name__v2");
     expect(readableQuote("Kartennummer **** **** **** 1234, Formel 2**3**4")).toBe("Kartennummer **** **** **** 1234, Formel 2**3**4");
+    expect(readableQuote("_Wichtig_: Klasse_3b und user_name_2 bleiben")).toBe("Wichtig: Klasse_3b und user_name_2 bleiben");
   });
   it("keeps a link destination the label does not already show", () => {
     expect(readableQuote("Zusagen [hier](https://schule.example/r/K7f3) bis Freitag")).toBe("Zusagen hier (https://schule.example/r/K7f3) bis Freitag");

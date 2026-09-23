@@ -82,6 +82,7 @@ export function readableQuote(text: string): string {
   return readableLinks(text.replace(/<br\s*\/?>/gi, " "))
     .replace(/(^|[^*\p{L}\p{N}])\*\*(?=[^\s*])(.+?)(?<=[^\s*])\*\*(?![*\p{L}\p{N}])/gu, "$1$2")
     .replace(/(^|[^\p{L}\p{N}_])__(?!\s)(.+?)__(?![\p{L}\p{N}_])/gu, "$1$2")
+    .replace(/(^|[^\p{L}\p{N}_])_(?=[^\s_])([^_\n]+?)(?<=[^\s_])_(?![\p{L}\p{N}_])/gu, "$1$2")
     .replace(/(^|[^\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])/g, "$1$2")
     .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
     .replace(/[ \t]{2,}/g, " ")

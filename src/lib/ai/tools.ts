@@ -1374,7 +1374,7 @@ function linkSecrets(link: string): string[] {
   const rest = link.replace(/^https?:\/\//i, "").slice(start + 1);
   return rest
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((part) => (part.length >= 4 && /\p{N}/u.test(part))
+    .filter((part) => (part.length >= 4 && /\p{N}/u.test(part) && !/^(?:19|20)\d{2}$/u.test(part))
       || (part.length >= 5 && /\p{Ll}/u.test(part) && /\p{Lu}/u.test(part.slice(1))))
     .map((part) => part.toLocaleLowerCase("de-DE"));
 }

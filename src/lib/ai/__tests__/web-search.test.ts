@@ -182,6 +182,7 @@ describe("copiesPrivateLink", () => {
     expect(copiesPrivateLink("Einladung 839271 Schule", [letter])).toBe(true);
     expect(copiesPrivateLink("xkqpzr Link", [letter])).toBe(true);
     expect(copiesPrivateLink("Deutschlandticket Regeln aktuell", [letter])).toBe(false);
+    expect(copiesPrivateLink("Termine 2026 aktuell", ["Siehe https://stadt.de/termine/2026"])).toBe(false);
   });
 
   it("never sends a deep link to public search", () => {
