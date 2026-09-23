@@ -45,6 +45,14 @@ describe("document answer evidence", () => {
     expect(readableQuote(plain)).toBe(plain);
     expect(readableQuote("Termin am *Montag* um __9 Uhr__<br>bitte pünktlich")).toBe("Termin am Montag um 9 Uhr bitte pünktlich");
     expect(readableQuote("Aktenzeichen ABC__123__DEF und file__name__v2")).toBe("Aktenzeichen ABC__123__DEF und file__name__v2");
+    expect(readableQuote("Kartennummer **** **** **** 1234, Formel 2**3**4")).toBe("Kartennummer **** **** **** 1234, Formel 2**3**4");
+  });
+  it("keeps a link destination the label does not already show", () => {
+    expect(readableQuote("Zusagen [hier](https://schule.example/r/K7f3) bis Freitag")).toBe("Zusagen hier (https://schule.example/r/K7f3) bis Freitag");
+    expect(readableQuote("Siehe [Info](https://example.de/wiki/Foo_(Bar)).")).toBe("Siehe Info (https://example.de/wiki/Foo_(Bar)).");
+    expect(readableQuote("Portal: [Info](https://example.de \"Portal\")")).toBe("Portal: Info (https://example.de)");
+    expect(readableQuote("unter [www.example.de/a](https://www.example.de/a/) und ![Logo](logo.png)")).toBe("unter www.example.de/a und Logo (logo.png)");
+    expect(readableQuote("Liste [1] und [x](")).toBe("Liste [1] und [x](");
   });
   it("finds a relevant later paragraph beyond the old 500-character cutoff", () => {
     const text = "Allgemeine Bedingungen. ".repeat(600) + "\n\n" + quote;

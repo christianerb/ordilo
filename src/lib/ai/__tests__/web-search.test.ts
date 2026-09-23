@@ -4,6 +4,7 @@ import {
   sanitizeWebSearchQuery,
 } from "@/lib/ai/web-search";
 import { copiesPrivateExcerpt, copiesPrivateLink } from "@/lib/ai/tools";
+import { readableQuote } from "@/lib/ai/document-evidence";
 
 describe("sanitizeWebSearchQuery", () => {
   it("keeps an ordinary public query", () => {
@@ -167,6 +168,11 @@ describe("copiesPrivateLink", () => {
     const letter = "Zusagen: https://example.de?invite=X7Ab9 oder https://example.org#t=QZ81.";
     expect(copiesPrivateLink("example.de?invite=X7Ab9", [letter])).toBe(true);
     expect(copiesPrivateLink("https://example.org#t=QZ81", [letter])).toBe(true);
+  });
+
+  it("still blocks a link from a cleaned excerpt saved in an earlier turn", () => {
+    const saved = readableQuote("Zusagen [hier](https://schule.example/r/K7f3) bis Freitag.");
+    expect(copiesPrivateLink("schule.example/r/K7f3 Zusage", [saved])).toBe(true);
   });
 
   it("recognizes printed links without a scheme", () => {
