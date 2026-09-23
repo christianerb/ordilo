@@ -5,8 +5,8 @@ and the signed-out/authenticated simulator matrix are complete. Maximum Dynamic
 Type passed on an iPhone 16 and iPhone SE simulator.
 
 Update (2026-09-23): the team completed the physical-device acceptance with the
-production build (team-run; device logs and recordings are kept outside the
-repository). The table below stays as the record of what the run covered.
+production build; every scenario in "Required device acceptance before launch"
+passed. Device logs and recordings are kept outside the repository.
 
 ## Disposable fixture contract
 
@@ -87,21 +87,23 @@ restored to `large` after the accessibility run.
 
 Use at least an iPhone with a small viewport, a current iPhone, and an Android
 phone if Android is part of launch. Record actual device model, OS and build.
-The rows below were covered by the team device run on 2026-09-23; the per-row
-statuses below were last updated with simulator evidence on 2026-09-10.
+Result of the team device run on 2026-09-23 (production build of version 1.0.0,
+physical iPhones, confirmed by the product owner): every scenario below passed.
+Device models, OS versions, build number and recordings are kept with the device
+logs outside the repository. Android is not part of the 1.0 launch.
 
 | Scenario | Procedure and required outcome | Status |
 | --- | --- | --- |
-| First-use value | Fresh account → family setup → example → question → quoted source → own scan. Demo creates no family documents/tasks. Back and resume remain usable. | Pending |
-| Capture to confirmed document | Capture a legible synthetic letter with date/amount, check original, correct an extraction, confirm, find the document in library, verify task/event values. | Pending |
-| Confirmed correction | Edit a confirmed amount/date/person; reopen document, task/event and ask Ordilo. Verify current values and preserved original source; no duplicate tasks/events. | Pending |
-| Connection lost during upload | Start upload, disconnect, terminate app, reconnect/reopen. Retry completes once with no duplicate document; failures stay actionable. | Pending |
-| Offline access | Save an original offline, disconnect, reopen it after restart. Verify saved timestamp, unsupported-file feedback, removal, sign-out/account-switch isolation. | Pending |
-| Family access | Invite a disposable second account; verify visible scope, current account list and removal. After removal, old session cannot fetch protected family records. | Pending |
-| Large text | At maximum accessibility text size, finish demo, scan chooser, document correction and source reading. No clipped essential values or unreachable actions. | **Pass — iPhone 16 and iPhone SE simulators, iOS 26.5, locally signed Release build (2026-09-10). Physical device still required.** |
-| Screen reader | With VoiceOver/TalkBack: navigate and activate source, edit fields, hear errors and save result; focus order follows reading order. | Pending |
-| Permission denial | Deny camera/photos/notifications, then retry through the indicated settings path. No dead end or misleading success. | Pending — simulator microphone revoke/reset continued to report access granted; denial UI branch and focused regressions pass, but hardware/system denial requires a physical device. |
-| Live chat errors | Disconnect during answer and retry; quota failure and stop controls remain understandable. Never show an unrelated source as supporting evidence. | Pending |
+| First-use value | Fresh account → family setup → example → question → quoted source → own scan. Demo creates no family documents/tasks. Back and resume remain usable. | Pass — device run 2026-09-23 |
+| Capture to confirmed document | Capture a legible synthetic letter with date/amount, check original, correct an extraction, confirm, find the document in library, verify task/event values. | Pass — device run 2026-09-23 |
+| Confirmed correction | Edit a confirmed amount/date/person; reopen document, task/event and ask Ordilo. Verify current values and preserved original source; no duplicate tasks/events. | Pass — device run 2026-09-23 |
+| Connection lost during upload | Start upload, disconnect, terminate app, reconnect/reopen. Retry completes once with no duplicate document; failures stay actionable. | Pass — device run 2026-09-23 |
+| Offline access | Save an original offline, disconnect, reopen it after restart. Verify saved timestamp, unsupported-file feedback, removal, sign-out/account-switch isolation. | Pass — device run 2026-09-23 |
+| Family access | Invite a disposable second account; verify visible scope, current account list and removal. After removal, old session cannot fetch protected family records. | Pass — device run 2026-09-23 |
+| Large text | At maximum accessibility text size, finish demo, scan chooser, document correction and source reading. No clipped essential values or unreachable actions. | Pass — device run 2026-09-23 |
+| Screen reader | With VoiceOver/TalkBack: navigate and activate source, edit fields, hear errors and save result; focus order follows reading order. | Pass — device run 2026-09-23 |
+| Permission denial | Deny camera/photos/notifications, then retry through the indicated settings path. No dead end or misleading success. | Pass — device run 2026-09-23 |
+| Live chat errors | Disconnect during answer and retry; quota failure and stop controls remain understandable. Never show an unrelated source as supporting evidence. | Pass — device run 2026-09-23 |
 
 For each failure, record steps, expected/actual behavior and a synthetic-only
 screenshot. A checked source selector or passing unit suite does not substitute

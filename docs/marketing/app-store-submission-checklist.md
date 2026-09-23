@@ -18,7 +18,10 @@ die Klicks in App Store Connect.
       `EXPO_PUBLIC_BILLING_ENTITLEMENTS_ENABLED` und die
       `EXPO_PUBLIC_REVENUECAT_*`-Schlüssel **nicht** gesetzt; auf dem Server
       (Vercel) ist `BILLING_ENTITLEMENTS_ENABLED` **nicht** gesetzt. Nur so
-      bleiben Paywall unsichtbar und Limits unerzwungen.
+      bleiben Paywall unsichtbar und Limits unerzwungen. Ebenso sind
+      `NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_DSN` (Vercel) und der Sentry-DSN der
+      App **nicht** gesetzt, sonst stimmt der Sentry-Satz in der
+      Datenschutzerklärung (Abschnitt 5) nicht mehr.
 
 ## 2. App Store Connect: Version 1.0 — Klickliste mit fertigen Antworten
 
@@ -115,11 +118,13 @@ wird.
 >
 > Sign-in: use the review account provided in the App Review Information
 > fields (password flow, no email code needed). The account contains only
-> synthetic sample data. "Mit Beispiel ausprobieren" in Settings loads a
-> demo family.
+> synthetic sample data. "Ordilo mit Beispiel ausprobieren" in Settings
+> shows a short walkthrough with one sample letter; it does not create any
+> documents or tasks.
 >
-> Suggested review path: open the demo, ask a question about the sample
-> letter, and tap a cited source to see the quoted passage.
+> Suggested review path: open "Dokumente" and pick a sample letter, tap the
+> Ordilo button in the bottom bar and ask a question about it, then tap the
+> cited source under the answer to see the quoted passage.
 >
 > AI consent (Guideline 5.1.2(i)): before any user content is sent to our
 > AI providers (OpenAI for answers/transcription, Datalab for OCR), the app
@@ -134,18 +139,22 @@ wird.
 > requires it.
 >
 > This version contains no in-app purchases and no subscriptions. All
-> features are free; daily anti-abuse limits apply. A "Live voice" entry
-> point is visible but answers with an honest "not available yet" message in
-> this version.
+> features in this version are free; daily anti-abuse limits apply. Live
+> voice conversation is not part of this version and has no entry point;
+> dictating a question with the microphone button is available.
 >
-> Encryption: standard HTTPS/TLS and Apple Keychain only; exempt
-> (ITSAppUsesNonExemptEncryption = false).
+> Encryption: standard HTTPS/TLS, the Apple Keychain, and AES-GCM (via the
+> operating system's standard implementation) for offline copies of
+> documents that the user explicitly saves on the device; the key is kept in
+> the Keychain. This is exempt encryption (ITSAppUsesNonExemptEncryption =
+> false).
 
 ## 5. Nach der Freigabe
 
 - [ ] Manuell veröffentlichen, wenn Website und Support bereitstehen.
 - [ ] Suchimpressionen und Download-Conversion beobachten (ASO-Hypothesen
       einzeln auswerten).
-- [ ] Erstes Update: Sentry-DSN setzen und synthetischen Testfehler prüfen,
+- [ ] Erstes Update: Sentry-DSN setzen, den Sentry-Satz in der
+      Datenschutzerklärung anpassen und synthetischen Testfehler prüfen,
       danach Abo-Nachweise (Sandbox-Matrix) und
       `BILLING_ENTITLEMENTS_ENABLED=1`.

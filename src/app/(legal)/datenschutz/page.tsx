@@ -199,9 +199,10 @@ export default function DatenschutzPage() {
           </li>
         </ul>
         <p className="text-muted-foreground">
-          Sentry und RevenueCat werden erst aktiv, wenn die jeweilige
-          Funktion eingeschaltet ist (Fehlerdiagnose beim ersten Update nach
-          dem Start, Abo-Verwaltung beim Start von Ordilo Plus). Bis dahin
+          Sentry und RevenueCat sind derzeit ausgeschaltet, in der App und
+          auf der Website. Wir schalten sie erst ein, wenn die jeweilige
+          Funktion startet: die Fehlerdiagnose mit dem ersten Update nach dem
+          Start, die Abo-Verwaltung mit dem Start von Ordilo Plus. Bis dahin
           fließen an sie keine Daten.
         </p>
       </Section>

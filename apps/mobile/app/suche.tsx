@@ -1085,7 +1085,11 @@ export default function SucheScreen() {
                     busy={busy}
                     inputRef={inputRef}
                     onChange={setInput}
-                    onLiveStart={() => {
+                    // Without billing there is no plan that unlocks Live, and
+                    // starting it would ask for AI consent and the microphone
+                    // only to be refused by the server. Hide the action until
+                    // Plus can actually be bought; dictation stays available.
+                    onLiveStart={billingEnabled ? () => {
                       setVoiceError(null);
                       // Live streams speech to OpenAI in real time — the
                       // consent sheet comes before the paywall.
@@ -1097,7 +1101,7 @@ export default function SucheScreen() {
                         }
                         void live.start();
                       })();
-                    }}
+                    } : undefined}
                     onSend={() => void send(input)}
                     onStop={() => chatAbortRef.current?.abort()}
                     onVoiceStart={() => void startVoice()}
