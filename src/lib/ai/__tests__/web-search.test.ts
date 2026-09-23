@@ -3,7 +3,7 @@ import {
   extractWebCitations,
   sanitizeWebSearchQuery,
 } from "@/lib/ai/web-search";
-import { copiesPrivateExcerpt } from "@/lib/ai/tools";
+import { copiesPrivateExcerpt, copiesPrivateLink } from "@/lib/ai/tools";
 
 describe("sanitizeWebSearchQuery", () => {
   it("keeps an ordinary public query", () => {
@@ -150,6 +150,21 @@ describe("copiesPrivateExcerpt", () => {
         "Das vorläufige Deutschlandticket für Schülerinnen ist gültig bis zum Schuljahresende.",
       ]),
     ).toBe(false);
+  });
+});
+
+describe("copiesPrivateLink", () => {
+  const page =
+    "Anmeldung unter [hier](https://bit.ly/X7Ab9) oder www.x.de/invite/abc123. Mehr auf https://stadtwerke-sonnenfeld.de.";
+
+  it("blocks short private link destinations, with or without scheme", () => {
+    expect(copiesPrivateLink("was ist https://bit.ly/X7Ab9", [page])).toBe(true);
+    expect(copiesPrivateLink("bit.ly/x7ab9 Einladung", [page])).toBe(true);
+    expect(copiesPrivateLink("x.de/invite/abc123", [page])).toBe(true);
+  });
+
+  it("allows the sender's bare domain", () => {
+    expect(copiesPrivateLink("stadtwerke-sonnenfeld.de Abschlag ändern", [page])).toBe(false);
   });
 });
 

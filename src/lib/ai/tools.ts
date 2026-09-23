@@ -1351,6 +1351,31 @@ export function copiesPrivateExcerpt(
   });
 }
 
+const LINK_PATTERN = /\b(?:https?:\/\/|www\.)[^\s()<>[\]"']+/giu;
+
+function linkKey(link: string): string {
+  return link
+    .toLocaleLowerCase("de-DE")
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[.,;:!?]+$/, "")
+    .replace(/\/+$/, "");
+}
+
+/**
+ * Invitation, tracking and account links are short, so they slip under the
+ * six-word passage check. A link with a path from a private document must
+ * never reach public search; a bare domain (the sender's website) may.
+ */
+export function copiesPrivateLink(query: string, texts: string[]): boolean {
+  const normalizedQuery = query.toLocaleLowerCase("de-DE");
+  return texts.some((text) =>
+    (text.match(LINK_PATTERN) ?? [])
+      .map(linkKey)
+      .some((key) => key.includes("/") && normalizedQuery.includes(key)),
+  );
+}
+
 async function executeSearchWeb(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -1365,7 +1390,7 @@ async function executeSearchWeb(
     ...(ctx.readPageTexts ?? []),
     ...(ctx.historyExcerpts ?? []),
   ];
-  if (copiesPrivateExcerpt(query, privateExcerpts)) {
+  if (copiesPrivateExcerpt(query, privateExcerpts) || copiesPrivateLink(query, privateExcerpts)) {
     return JSON.stringify({
       error:
         "Die Web-Suchanfrage enthält zu viel Text aus einer privaten Unterlage. Formuliere sie allgemein und ohne private Angaben.",
