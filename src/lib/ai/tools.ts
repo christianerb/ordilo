@@ -1363,12 +1363,20 @@ function linkKey(link: string): string {
     .replace(/\/+$/, "");
 }
 
-/** Path, query and fragment pieces that look like codes (K7f3, X7Ab9). */
-function linkSecrets(key: string): string[] {
-  const rest = key.slice(key.search(/[/?#]/) + 1);
+/**
+ * Path, query and fragment pieces that look like codes: anything with a
+ * digit (839271, K7f3) or with inner capitals (XkQpzR). Plain words such as
+ * "deutschlandticket" in a public page's address stay searchable.
+ */
+function linkSecrets(link: string): string[] {
+  const start = link.replace(/^https?:\/\//i, "").search(/[/?#]/);
+  if (start < 0) return [];
+  const rest = link.replace(/^https?:\/\//i, "").slice(start + 1);
   return rest
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((part) => (part.length >= 4 && /\p{L}/u.test(part) && /\p{N}/u.test(part)) || part.length >= 12);
+    .filter((part) => (part.length >= 4 && /\p{N}/u.test(part))
+      || (part.length >= 5 && /\p{Ll}/u.test(part) && /\p{Lu}/u.test(part.slice(1))))
+    .map((part) => part.toLocaleLowerCase("de-DE"));
 }
 
 /**
@@ -1384,9 +1392,7 @@ export function copiesPrivateLink(query: string, texts: string[]): boolean {
   const queryWords = new Set(normalizedWords(query));
   return texts.some((text) =>
     (text.match(LINK_PATTERN) ?? [])
-      .map(linkKey)
-      .filter((key) => /[/?#]/.test(key))
-      .some((key) => linkSecrets(key).some((secret) => queryWords.has(secret))),
+      .some((link) => linkSecrets(link).some((secret) => queryWords.has(secret))),
   );
 }
 

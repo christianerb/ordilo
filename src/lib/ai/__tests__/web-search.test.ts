@@ -177,6 +177,13 @@ describe("copiesPrivateLink", () => {
     expect(copiesPrivateLink("Schule Einladung Elternabend Regeln", [letter])).toBe(false);
   });
 
+  it("treats numeric and random-looking link codes as private, plain path words not", () => {
+    const letter = "Zusage: https://schule.example/invite/839271, Infos: https://bahn.de/deutschlandticket und https://kurz.example/XkQpzR";
+    expect(copiesPrivateLink("Einladung 839271 Schule", [letter])).toBe(true);
+    expect(copiesPrivateLink("xkqpzr Link", [letter])).toBe(true);
+    expect(copiesPrivateLink("Deutschlandticket Regeln aktuell", [letter])).toBe(false);
+  });
+
   it("never sends a deep link to public search", () => {
     expect(copiesPrivateLink("was steht auf https://irgendwo.example/seite?id=5", [])).toBe(true);
     expect(copiesPrivateLink("Deutschlandticket Regeln 2026", [])).toBe(false);
