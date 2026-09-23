@@ -29,7 +29,7 @@ export function readableQuote(text: string): string {
     .replace(/<br\s*\/?>/gi, " ")
     .replace(/!?\[([^\]]*)\]\([^)\s]*\)/g, "$1")
     .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/__(.+?)__/g, "$1")
+    .replace(/(^|[^\p{L}\p{N}_])__(?!\s)(.+?)__(?![\p{L}\p{N}_])/gu, "$1$2")
     .replace(/(^|[^\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])/g, "$1$2")
     .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
     .replace(/[ \t]{2,}/g, " ")

@@ -94,6 +94,10 @@ export interface ToolContext {
   }>;
   preloadedFamilyMembersPrivacyReady?: boolean;
   documentEvidence?: DocumentEvidence[];
+  /** Raw page text the model has read. Source excerpts are cleaned for
+   * display and drop link destinations, so the web-search privacy guard
+   * compares against this instead. Not bounded like documentEvidence. */
+  readPageTexts?: string[];
   documentQuestion?: string;
   documentSearchCount?: number;
   documentAnswer?: { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found" };
@@ -1358,6 +1362,7 @@ async function executeSearchWeb(
     ...ctx.sources
       .filter((source) => source.origin !== "web")
       .map((source) => source.excerpt),
+    ...(ctx.readPageTexts ?? []),
     ...(ctx.historyExcerpts ?? []),
   ];
   if (copiesPrivateExcerpt(query, privateExcerpts)) {
@@ -1530,7 +1535,9 @@ async function executeSearchDocuments(
 
 function rememberEvidence(ctx: ToolContext, pages: DocumentEvidence[]): void {
   ctx.documentEvidence ??= [];
+  ctx.readPageTexts ??= [];
   for (const page of pages) {
+    if (!ctx.readPageTexts.includes(page.text)) ctx.readPageTexts.push(page.text);
     const existing = ctx.documentEvidence.findIndex((item) => item.documentId === page.documentId && item.page === page.page && item.text === page.text);
     if (existing < 0) ctx.documentEvidence.push(page);
     if (!ctx.sources.some((source) => source.document_id === page.documentId)) {

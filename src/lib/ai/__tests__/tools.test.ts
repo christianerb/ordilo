@@ -2795,6 +2795,29 @@ describe("answer metadata tools", () => {
     expect(searchPublicWeb).not.toHaveBeenCalled();
   });
 
+  it("checks link destinations of read pages before a Web search", async () => {
+    // Displayed excerpts keep only the link label; the model still read the
+    // raw destination, so the guard compares against the raw page text.
+    const ctx = makeCtx({
+      webPrivacyReady: true,
+      readPageTexts: [
+        "Zur Anmeldung [hier klicken](https://schule.example/einladung/k7f3/elternabend/anna-berger/2026).",
+      ],
+      sources: [{ document_id: "doc-1", title: "Einladung", excerpt: "Zur Anmeldung hier klicken.", score: 0.8, origin: "semantic" }],
+    });
+
+    const result = JSON.parse(
+      await executeTool(
+        "search_web",
+        { query: "https://schule.example/einladung/k7f3/elternabend/anna-berger/2026 Anmeldung" },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toMatch(/privaten Unterlage/);
+    expect(searchPublicWeb).not.toHaveBeenCalled();
+  });
+
   it("reuses preloaded family names for Web anonymization", async () => {
     vi.mocked(searchPublicWeb).mockResolvedValueOnce({
       query: "Deutschlandticket Regeln",

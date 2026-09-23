@@ -44,6 +44,7 @@ describe("document answer evidence", () => {
     const plain = "IBAN DE12 5005 0000 0123 4567 89, Preis 3 * 12 Euro, Verwendungszweck Klasse_3b.";
     expect(readableQuote(plain)).toBe(plain);
     expect(readableQuote("Termin am *Montag* um __9 Uhr__<br>bitte pünktlich")).toBe("Termin am Montag um 9 Uhr bitte pünktlich");
+    expect(readableQuote("Aktenzeichen ABC__123__DEF und file__name__v2")).toBe("Aktenzeichen ABC__123__DEF und file__name__v2");
   });
   it("finds a relevant later paragraph beyond the old 500-character cutoff", () => {
     const text = "Allgemeine Bedingungen. ".repeat(600) + "\n\n" + quote;
