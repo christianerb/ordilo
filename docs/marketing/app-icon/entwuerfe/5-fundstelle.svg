@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="28%" cy="22%" r="85%">
+      <stop offset="0" stop-color="#3A6573"/>
+      <stop offset="1" stop-color="#284955"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- elephant peeking from behind the page -->
+  <circle cx="690" cy="330" r="165" fill="#FDFCFA"/>
+  <path d="M600 190 C530 180 480 240 484 330 C488 415 540 470 610 462 C672 455 700 395 693 330 C686 250 655 196 600 190 Z" fill="#B8CCC4"/>
+  <circle cx="770" cy="300" r="22" fill="#193232"/>
+  <path d="M820 380 C880 420 900 480 880 520" fill="none" stroke="#FDFCFA" stroke-width="80" stroke-linecap="round"/>
+  <!-- the document -->
+  <g transform="rotate(-6 450 600)">
+    <path d="M230 360 H560 L660 460 V860 H230 Z" fill="#FDFCFA" stroke="#193232" stroke-width="16" stroke-linejoin="round"/>
+    <path d="M560 360 V460 H660" fill="#EFE8DC" stroke="#193232" stroke-width="16" stroke-linejoin="round"/>
+    <rect x="290" y="500" width="300" height="26" rx="13" fill="#9C978C"/>
+    <rect x="290" y="560" width="250" height="26" rx="13" fill="#9C978C"/>
+    <rect x="276" y="608" width="330" height="66" rx="18" fill="#F0B4A0"/>
+    <rect x="290" y="628" width="300" height="26" rx="13" fill="#305460"/>
+    <rect x="290" y="710" width="280" height="26" rx="13" fill="#9C978C"/>
+    <rect x="290" y="770" width="200" height="26" rx="13" fill="#9C978C"/>
+  </g>
+</svg>

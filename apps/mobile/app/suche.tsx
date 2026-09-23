@@ -1,5 +1,5 @@
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import {
   AudioModule,
@@ -145,6 +145,33 @@ export default function SucheScreen() {
   // `isPlus` stays true while the billing rollout flag is off, so the
   // button only opens the paywall once RevenueCat actually enforces Plus.
   const { enabled: billingEnabled, isPlus } = useBilling();
+  // Without billing, only a server-granted plan (e.g. founding beta
+  // families) unlocks Live; the server stays the authority either way.
+  // Re-read on every focus: the plan can be granted or revoked by hand.
+  const [serverLiveAccess, setServerLiveAccess] = useState(false);
+  const familyId = family?.id;
+  useFocusEffect(
+    useCallback(() => {
+      if (billingEnabled || !familyId) {
+        setServerLiveAccess(false);
+        return;
+      }
+      let active = true;
+      void getSupabase()
+        .rpc("get_family_entitlement", { p_family_id: familyId })
+        .then(({ data }) => {
+          const plan = (data as { plan?: string } | null)?.plan;
+          if (active) setServerLiveAccess(Boolean(plan && plan !== "free"));
+        });
+      return () => {
+        active = false;
+      };
+    }, [billingEnabled, familyId]),
+  );
+  // Mirrors the server's LIVE_CONVERSATION_PREVIEW for local device tests;
+  // it only shows the action, the server still grants or refuses Live.
+  const livePreview = process.env.EXPO_PUBLIC_LIVE_CONVERSATION_PREVIEW === "1";
+  const liveAvailable = billingEnabled || serverLiveAccess || livePreview;
   const { ensureAiConsent } = useAiConsent();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -773,12 +800,15 @@ export default function SucheScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       void AccessibilityInfo.announceForAccessibility(message);
     },
-    onPremiumRequired: (message) => {
-      // While the rollout flag is off the paywall has no offering to sell;
-      // show the server's message instead of an unusable screen.
+    onPremiumRequired: (_message) => {
+      // While the rollout flag is off there is no Plus to buy, so the
+      // server's "in Premium enthalten" would point at a store that does
+      // not exist. Say it plainly; the free dictation mic stays available.
       if (!billingEnabled) {
-        setVoiceError(message);
-        void AccessibilityInfo.announceForAccessibility(message);
+        const unavailable =
+          "Live sprechen gibt es noch nicht. Sprich deine Frage über das Mikrofon ein oder schreib sie.";
+        setVoiceError(unavailable);
+        void AccessibilityInfo.announceForAccessibility(unavailable);
         return;
       }
       router.push("/paywall");
@@ -1082,7 +1112,10 @@ export default function SucheScreen() {
                     busy={busy}
                     inputRef={inputRef}
                     onChange={setInput}
-                    onLiveStart={() => {
+                    // Starting Live asks for AI consent and the microphone, so
+                    // a family the server would refuse never sees the action;
+                    // dictation stays available.
+                    onLiveStart={liveAvailable ? () => {
                       setVoiceError(null);
                       // Live streams speech to OpenAI in real time — the
                       // consent sheet comes before the paywall.
@@ -1094,7 +1127,7 @@ export default function SucheScreen() {
                         }
                         void live.start();
                       })();
-                    }}
+                    } : undefined}
                     onSend={() => void send(input)}
                     onStop={() => chatAbortRef.current?.abort()}
                     onVoiceStart={() => void startVoice()}

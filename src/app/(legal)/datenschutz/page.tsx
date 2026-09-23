@@ -20,8 +20,10 @@ function Section({
 }
 
 /**
- * Product processing notice. Provider contracts, retention settings and
- * transfer grounds still require legal verification before release.
+ * Product processing notice. DPAs are in place with every processor and
+ * the third-country transfer grounds in section 7 match those contracts
+ * (DPF: Vercel, Sentry; SCCs: OpenAI, Datalab, Resend, RevenueCat).
+ * Sentry and RevenueCat stay conditional until their features switch on.
  */
 export default function DatenschutzPage() {
   return (
@@ -144,7 +146,11 @@ export default function DatenschutzPage() {
       </Section>
 
       <Section title="5. Dienstleister und Empfänger">
-        <p>Wir setzen folgende Dienstleister ein:</p>
+        <p>
+          Wir setzen folgende Dienstleister ein. Mit allen Dienstleistern,
+          die personenbezogene Daten in unserem Auftrag verarbeiten, besteht
+          ein Vertrag zur Auftragsverarbeitung (Art. 28 DSGVO):
+        </p>
         <ul className="list-disc space-y-1 pl-5">
           <li>
             <strong>Supabase</strong> (Datenbank, Authentifizierung,
@@ -193,11 +199,11 @@ export default function DatenschutzPage() {
           </li>
         </ul>
         <p className="text-muted-foreground">
-          Soweit ein Anbieter Auftragsverarbeiter ist, ist ein Vertrag nach
-          Art. 28 DSGVO erforderlich. Ob die aktuell gebuchten Verträge und
-          Einstellungen dies für jeden genannten Anbieter vollständig
-          abdecken, muss vor der Veröffentlichung rechtlich und anhand der
-          Vertragsunterlagen geprüft werden.
+          Sentry und RevenueCat sind derzeit ausgeschaltet, in der App und
+          auf der Website. Wir schalten sie erst ein, wenn die jeweilige
+          Funktion startet: die Fehlerdiagnose mit dem ersten Update nach dem
+          Start, die Abo-Verwaltung mit dem Start von Ordilo Plus. Bis dahin
+          fließen an sie keine Daten.
         </p>
       </Section>
 
@@ -228,14 +234,30 @@ export default function DatenschutzPage() {
       <Section title="7. Übermittlung in Drittländer">
         <p>
           Einige unserer Dienstleister sitzen in den USA (OpenAI, Datalab,
-          Resend, Vercel, Sentry, RevenueCat). Dabei können personenbezogene Daten in die
-          USA übermittelt werden. Welche Übermittlungsgrundlage im Einzelfall
-          gilt — etwa ein Angemessenheitsbeschluss einschließlich EU-US Data
-          Privacy Framework oder Standardvertragsklauseln — hängt vom
-          jeweiligen Anbieter und Vertrag ab. Diese Zuordnung muss vor der
-          Veröffentlichung für jeden Dienst geprüft werden; eine bestimmte
-          Grundlage wird hier noch nicht behauptet.
+          Resend, Vercel, Sentry, RevenueCat). Dabei können personenbezogene
+          Daten in die USA übermittelt werden. Die Übermittlung ist dafür
+          jeweils abgesichert:
         </p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            <strong>Vercel und Sentry</strong> sind unter dem EU-US Data
+            Privacy Framework zertifiziert. Die Übermittlung stützt sich auf
+            den Angemessenheitsbeschluss der Europäischen Kommission
+            (Art. 45 DSGVO).
+          </li>
+          <li>
+            <strong>OpenAI, Datalab, Resend und RevenueCat</strong> erhalten
+            Daten auf Grundlage der Standardvertragsklauseln der
+            Europäischen Kommission (Art. 46 Abs. 2 lit. c DSGVO), jeweils
+            als Teil des Vertrags zur Auftragsverarbeitung.
+          </li>
+          <li>
+            <strong>Supabase</strong> speichert deine Daten in der
+            Europäischen Union. Für den Fall, dass Supabase Inc. (USA)
+            etwa im Rahmen des Supports Zugriff nimmt, gelten ebenfalls
+            Standardvertragsklauseln.
+          </li>
+        </ul>
       </Section>
 
       <Section title="8. Rechtsgrundlagen">
