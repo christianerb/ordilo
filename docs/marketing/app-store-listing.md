@@ -74,11 +74,12 @@ the removed "Ich übernehme das" button. Concept and rules:
 [app-store-screenshots.md](app-store-screenshots.md).
 
 **App Preview (ready, optional):** `app-store-assets/1.0/app-preview.mp4`,
-28.9 s, 886 × 1920, H.264 High 30 fps, silent stereo AAC track. Real screen
-recording of the 1.0 app: Start → ask the Handyvertrag question → Ordilo
-works through the documents (sped up 2×) → answer with quote → "Die
-Fundstelle" → Plan, assign a task → Dokumente. No overlays or captions. Upload
-under 6.9-inch as the first preview; pick a poster frame showing the answer.
+27.2 s, 886 × 1920, H.264 High 30 fps, silent stereo AAC track. Real screen
+recordings of the 1.0 app, cut with Remotion: ask the Handyvertrag question →
+Ordilo works through the documents (sped up 2×) → answer with quote → "Die
+Fundstelle" → Plan, assign a task → Dokumente → app icon. Short German
+captions above the screen match the screenshot headlines. Upload under 6.9-inch
+as the first preview; pick a poster frame showing the answer.
 
 **Still saved in App Store Connect (to be replaced):** six 1260 × 2736 images
 (`01-papierkram` … `06-gemeinsam`), copies in `docs/marketing/app-store-assets/`.
