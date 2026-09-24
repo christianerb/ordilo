@@ -31,6 +31,8 @@ die Klicks in App Store Connect.
       Sechser-Set löschen und die acht Bilder in Dateireihenfolge hochladen
       (6,9 Zoll). Das alte `06-gemeinsam.png` zeigt den entfernten Button
       „Ich übernehme das“ und darf nicht eingereicht werden.
+- [ ] **App-Vorschau** (optional): `app-store-assets/1.0/app-preview.mp4`
+      bei 6,9 Zoll hochladen, Posterbild mit der Antwort wählen.
 - [ ] **In-App-Käufe**: nichts zuordnen. Die vorbereiteten Abo-Produkte
       bleiben unverknüpft und werden nicht zur Prüfung eingereicht.
 - [ ] **Inhaltsrechte** → Antwort: **„Ja“** (die App greift auf Drittinhalte

@@ -131,10 +131,11 @@ und ein späteres Abo würde die Bilder sonst sofort falsch machen.
 
 ## Später, nach dem Launch
 
-- **App-Vorschauvideo (15 bis 30 Sekunden):** Brief scannen, Frage stellen,
-  Antwort mit Fundstelle. Ein Video ersetzt in der Suche das erste Bild und
-  startet von selbst. Nur machen, wenn es wirklich gut wird; ein
-  mittelmäßiges Video schadet mehr als es hilft.
+- **App-Vorschauvideo (15 bis 30 Sekunden):** Ein Video ersetzt in der Suche
+  das erste Bild und startet von selbst. Eine erste Fassung liegt als
+  `app-store-assets/1.0/app-preview.mp4` bereit (Frage → Antwort →
+  Fundstelle → Plan → Dokumente, 28,9 s). Scannen fehlt, weil der Simulator
+  keine Kamera hat; eine Fassung mit echtem Scan braucht ein Gerät.
 - **Produktseiten-Test:** In App Store Connect zwei Reihenfolgen gegeneinander
   testen, zum Beispiel „Fragen zuerst“ gegen „Scannen zuerst“. Erst sinnvoll,
   wenn genug Besucher kommen.
