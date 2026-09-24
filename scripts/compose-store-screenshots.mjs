@@ -64,6 +64,7 @@ h1{margin:0;font-weight:600;font-size:100px;line-height:1.06;letter-spacing:-0.0
 p{margin:34px 0 0;font-weight:400;font-size:50px;line-height:1.3;color:#625D54}
 .phone{position:absolute;left:50%;transform:translateX(-50%);bottom:190px;width:980px;padding:20px;border-radius:132px;background:#1F2A2E;box-shadow:0 24px 60px rgba(25,50,50,.18)}
 .phone img{display:block;width:100%;border-radius:112px}
+.copy,.phone,.note{z-index:1}
 .note{position:absolute;bottom:78px;left:0;right:0;text-align:center;font-size:30px;color:#625D54}
 </style></head><body>${shapes}
 <div class="copy"><h1>${slide.title}</h1><p>${slide.sub}</p></div>
