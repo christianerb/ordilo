@@ -141,6 +141,34 @@ describe("Live conversation motion", () => {
     expect(StyleSheet.flatten(ending.root.findByProps({ testID: "live-state-halo" }).props.style).opacity).toBe(0);
   });
 
+  it("shows the question and what Ordilo is doing while it searches", async () => {
+    const tree = await render({
+      status: "thinking",
+      lastTranscript: "Wann endet der Handyvertrag?",
+      previousTranscript: "Hallo Ordilo",
+      progress: "Gefunden in: Handyvertrag",
+    });
+    expect(tree.root.findByProps({ testID: "live-previous-transcript" }).props.children)
+      .toBe("„Wann endet der Handyvertrag?“");
+    expect(tree.root.findByProps({ testID: "live-helper" }).props.children)
+      .toBe("Gefunden in: Handyvertrag");
+    expect(tree.root.findByProps({ accessibilityLiveRegion: "polite" }).props.accessibilityLabel)
+      .toBe("Ordilo schaut nach … Gefunden in: Handyvertrag");
+  });
+
+  it("keeps the last two turns once Ordilo answers", async () => {
+    const tree = await render({
+      status: "speaking",
+      lastTranscript: "Wann endet der Handyvertrag?",
+      previousTranscript: "Hallo Ordilo",
+      progress: "Gefunden in: Handyvertrag",
+    });
+    expect(tree.root.findByProps({ testID: "live-previous-transcript" }).props.children)
+      .toBe("„Hallo Ordilo“");
+    expect(tree.root.findByProps({ testID: "live-helper" }).props.children)
+      .toBe("„Wann endet der Handyvertrag?“");
+  });
+
   it("renders no live indicator when idle", async () => {
     const tree = await render({ status: "idle" });
     expect(tree.toJSON()).toBeNull();

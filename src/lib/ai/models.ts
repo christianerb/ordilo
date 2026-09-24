@@ -37,6 +37,13 @@ export const SEARCH_AUGMENTATION_MODEL = GENERAL_MODEL;
  */
 export const CHAT_REASONING_EFFORT = "low" as const;
 
+/**
+ * Reasoning effort for chat turns delegated by the Live conversation. The
+ * user is waiting in silence, and the evidence, citation and confirmation
+ * guards run in code, not in the model's reasoning.
+ */
+export const CHAT_VOICE_REASONING_EFFORT = "none" as const;
+
 /** Reasoning effort for structured document analysis. */
 export const EXTRACTION_REASONING_EFFORT = "medium" as const;
 

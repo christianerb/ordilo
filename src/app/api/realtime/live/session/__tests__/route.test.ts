@@ -189,6 +189,14 @@ describe("POST /api/realtime/live/session", () => {
     const openAiRequest = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(openAiRequest.session.model).toBe("gpt-live-1");
     expect(openAiRequest.session.delegation).toEqual({ type: "client" });
+    // The wait for the backend is bridged out loud: GPT Live restates the
+    // request before delegating and relays interim progress.
+    expect(openAiRequest.session.instructions).toContain(
+      "der die Frage in deinen Worten wiederholt",
+    );
+    expect(openAiRequest.session.instructions).toContain(
+      "Bleib nie stumm, während das Backend arbeitet.",
+    );
     expect(openAiRequest.transport).toEqual({
       type: "webrtc",
       sdp: "v=0\r\n",

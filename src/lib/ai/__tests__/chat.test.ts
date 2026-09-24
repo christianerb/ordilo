@@ -240,7 +240,7 @@ function makeToolContext(
   };
 }
 
-function makeNamedMemberDocumentContext(): ToolContext {
+function makeNamedMemberDocumentContext(extraTitles: string[] = []): ToolContext {
   const documents = [
     {
       id: "doc-emma-1",
@@ -258,6 +258,14 @@ function makeNamedMemberDocumentContext(): ToolContext {
       created_at: "2026-07-01T10:00:00Z",
       confirmed_at: "2026-07-02T10:00:00Z",
     },
+    ...extraTitles.map((title, index) => ({
+      id: `doc-emma-extra-${index + 1}`,
+      title,
+      document_type: "letter",
+      category: "Schule",
+      created_at: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00Z`,
+      confirmed_at: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00Z`,
+    })),
   ];
 
   const builder = (result: { data: unknown; error: null; count?: number }) => {
@@ -725,6 +733,20 @@ describe("streamAgenticAnswer — named member document listings", () => {
   beforeEach(() => {
     setApiKey();
     mockCreate.mockReset();
+  });
+
+  it("names at most three documents when the list is spoken in Live", async () => {
+    const stream = await streamAgenticAnswer("Dokumente zu Emma", [], {
+      ...makeNamedMemberDocumentContext(["Impfpass", "Zahnarztbrief", "Sportverein"]),
+      responseMode: "voice",
+    });
+    const lines = await readNdjsonStream(stream);
+    const text = lines.find((line) => line.type === "text");
+
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(text?.content).toMatch(
+      /^Ich habe 5 bestätigte Dokumente zu Emma gefunden: „[^“]+“, „[^“]+“ und „[^“]+“\. Alle weiteren stehen auf dem Bildschirm\.$/,
+    );
   });
 
   it("lists Emma's documents without relying on model tool selection", async () => {
@@ -1704,6 +1726,100 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
       }),
       { signal: undefined },
     );
+  });
+
+  it("keeps text turns on the full prompt, low reasoning and every tool", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([{ content: "Hallo!" }]),
+    );
+
+    const stream = await streamAgenticAnswer("Hi", [], makeToolContext());
+    await readNdjsonStream(stream);
+
+    const request = mockCreate.mock.calls[0][0];
+    expect(request.instructions).not.toContain("SPRACHMODUS");
+    expect(request.tools.map((tool: { name: string }) => tool.name)).toContain(
+      "present_answer_card",
+    );
+  });
+
+  it("answers Live voice turns briefly, without reasoning time, and keeps answer cards", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([{ content: "Hallo!" }]),
+    );
+
+    const stream = await streamAgenticAnswer("Hi", [], {
+      ...makeToolContext(),
+      responseMode: "voice",
+    });
+    await readNdjsonStream(stream);
+
+    const request = mockCreate.mock.calls[0][0];
+    expect(request.reasoning).toEqual({ effort: "none" });
+    expect(request.store).toBe(false);
+    expect(request.instructions).toContain("SPRACHMODUS");
+    expect(request.instructions).toContain("ein bis drei kurzen");
+    // The evidence rules stay part of the prompt in voice mode.
+    expect(request.instructions).toContain("answer_from_documents");
+    const toolNames = request.tools.map((tool: { name: string }) => tool.name);
+    // Credentials and contacts only reach the screen through a card.
+    expect(toolNames).toContain("present_answer_card");
+    expect(request.instructions).toContain("Lies Benutzernamen, Passwörter und Geheimnisse nie vor");
+    expect(toolNames).toContain("read_document");
+  });
+
+  it("names the opened family document on voice read steps only", async () => {
+    const documentId = "11111111-2222-4333-8444-555555555555";
+    const readCall = () =>
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_read",
+            name: "read_document",
+            argumentsChunk: JSON.stringify({
+              document_id: documentId,
+              question: "Wann ist das Fest?",
+            }),
+          },
+        },
+      ]);
+    const source: ChatSource = {
+      document_id: documentId,
+      title: "Kita-Brief",
+      excerpt: "Sommerfest",
+      score: 0.9,
+      origin: "semantic",
+    };
+
+    mockCreate
+      .mockResolvedValueOnce(readCall())
+      .mockResolvedValue(mockResponse("Das steht im Kita-Brief."));
+    const voiceLines = await readNdjsonStream(
+      await streamAgenticAnswer("Wann ist das Fest?", [], {
+        ...makeToolContext([source]),
+        responseMode: "voice",
+      }),
+    );
+    expect(voiceLines).toContainEqual({
+      type: "tool",
+      tool: "read_document",
+      state: "start",
+      title: "Kita-Brief",
+    });
+
+    mockCreate.mockReset();
+    mockCreate
+      .mockResolvedValueOnce(readCall())
+      .mockResolvedValue(mockResponse("Das steht im Kita-Brief."));
+    const textLines = await readNdjsonStream(
+      await streamAgenticAnswer("Wann ist das Fest?", [], makeToolContext([source])),
+    );
+    expect(textLines).toContainEqual({
+      type: "tool",
+      tool: "read_document",
+      state: "start",
+    });
   });
 
   it("requires the public source when family and Web evidence are mixed", async () => {

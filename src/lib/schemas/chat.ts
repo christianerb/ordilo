@@ -131,6 +131,12 @@ export const chatRequestSchema = z.object({
         .optional(),
     })
     .optional(),
+  /**
+   * "voice" marks a turn delegated by the Live conversation: the answer is
+   * read aloud, so it is kept short and the model spends less time
+   * reasoning. Evidence and confirmation rules are unchanged.
+   */
+  mode: z.enum(["text", "voice"]).optional().default("text"),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;

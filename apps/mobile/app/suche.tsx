@@ -90,6 +90,7 @@ import {
   type ChatAction,
   type ChatFeedbackReason,
   type ChatMessage,
+  type ChatStreamEvent,
 } from "@/src/lib/chat";
 import {
   deleteConversation,
@@ -437,6 +438,9 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
         originalMessage: ChatMessage;
       },
       retryOperationId?: string,
+      // A Live turn: short spoken answer, and every stream event is
+      // mirrored to the Live hook for its progress line.
+      voice?: { onEvent: (event: ChatStreamEvent) => void },
     ) => {
       if (!family) return null;
       const operationId = retryOperationId ?? randomUUID();
@@ -481,8 +485,10 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
                   comment: repair.comment,
                 }
               : undefined,
+            mode: voice ? "voice" : undefined,
           },
           (event) => {
+            voice?.onEvent(event);
             if (event.type === "text") {
               accumulatedText += event.content;
               pendingText += event.content;
@@ -576,7 +582,10 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
   );
 
   const send = useCallback(
-    async (question: string) => {
+    async (
+      question: string,
+      voice?: { onEvent: (event: ChatStreamEvent) => void },
+    ) => {
       const trimmed = question.trim();
       if (!trimmed || busy || !family) return null;
       // Apple 5.1.2(i): the question and its document context go to
@@ -603,7 +612,14 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
       const history = buildChatHistory(messages);
       setMessages((current) => [...current, userMessage, assistantMessage]);
       setInput("");
-      return runStream(trimmed, assistantMessage, history);
+      return runStream(
+        trimmed,
+        assistantMessage,
+        history,
+        undefined,
+        undefined,
+        voice,
+      );
     },
     [busy, createAssistantMessage, ensureAiConsent, family, messages, nextId, runStream],
   );
@@ -840,7 +856,7 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
 
   const live = useNativeLiveConversation({
     familyId: family?.id ?? "",
-    onTurn: send,
+    onTurn: (transcript, onEvent) => send(transcript, { onEvent }),
     onError: (message) => {
       setVoiceError(message);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -1129,6 +1145,7 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
                     live.toggleMute();
                   }}
                   previousTranscript={live.previousTranscript}
+                  progress={live.progress}
                   status={live.status}
                 />
               ) : (

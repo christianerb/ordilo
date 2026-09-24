@@ -40,6 +40,7 @@ export function LiveConversationBar({
   onStop,
   onToggleMute,
   previousTranscript,
+  progress = "",
   status,
 }: {
   lastTranscript: string;
@@ -47,6 +48,8 @@ export function LiveConversationBar({
   onStop: () => void;
   onToggleMute: () => void;
   previousTranscript: string;
+  /** What Ordilo is doing for the current question ("Gefunden in: …"). */
+  progress?: string;
   status: LiveConversationStatus;
 }) {
   const reduced = useReducedMotion();
@@ -57,15 +60,23 @@ export function LiveConversationBar({
 
   if (!current) return null;
 
-  const helper = status === "connecting"
-    ? "Einen Moment, gleich geht’s los."
-    : status === "ending"
-      ? "Das Gespräch wird beendet."
-      : muted
-        ? "Mikrofon aus. Tippe auf das Mikrofon, um weiterzusprechen."
-        : lastTranscript
-          ? `„${lastTranscript}“`
-          : "Du kannst jederzeit sprechen.";
+  // While Ordilo searches, the question moves up and the line below says
+  // what is happening right now, so the wait is never a blank spinner.
+  const searching = status === "thinking" && Boolean(progress) && !muted;
+  const upperLine = searching
+    ? lastTranscript ? `„${lastTranscript}“` : ""
+    : previousTranscript ? `„${previousTranscript}“` : "";
+  const helper = searching
+    ? progress
+    : status === "connecting"
+      ? "Einen Moment, gleich geht’s los."
+      : status === "ending"
+        ? "Das Gespräch wird beendet."
+        : muted
+          ? "Mikrofon aus. Tippe auf das Mikrofon, um weiterzusprechen."
+          : lastTranscript
+            ? `„${lastTranscript}“`
+            : "Du kannst jederzeit sprechen.";
 
   return (
     <Animated.View
@@ -109,7 +120,7 @@ export function LiveConversationBar({
       <View style={[styles.copy, largeText && styles.largeCopy]}>
         <View
           accessible
-          accessibilityLabel={current.label}
+          accessibilityLabel={searching ? `${current.label} ${progress}` : current.label}
           accessibilityLiveRegion="polite"
           style={styles.status}
         >
@@ -143,19 +154,21 @@ export function LiveConversationBar({
             </Animated.Text>
           ))}
         </View>
-        {/* The finished turn above the live one — quieter, never animated. */}
-        {previousTranscript ? (
+        {/* The finished turn above the live one — quieter, never animated.
+            While searching, it holds the question being looked up. */}
+        {upperLine ? (
           <Text
             numberOfLines={1}
             style={styles.previous}
             testID="live-previous-transcript"
           >
-            {`„${previousTranscript}“`}
+            {upperLine}
           </Text>
         ) : null}
         <Text
           numberOfLines={1}
-          style={styles.transcript}
+          style={searching ? styles.progress : styles.transcript}
+          testID="live-helper"
         >
           {helper}
         </Text>
@@ -260,6 +273,7 @@ const styles = StyleSheet.create({
     transform: [{ translateY: "-50%" }],
   },
   transcript: { color: colors.mistDark, ...typography.label },
+  progress: { color: colors.harborBlue, ...typography.label },
   previous: { color: colors.mistDark, ...typography.timestamp },
   stop: {
     alignItems: "center",

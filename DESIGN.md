@@ -373,9 +373,14 @@ vocabulary, with three deliberate differences that come from the phone:
   paid mode, never a replacement for the free dictation microphone. While
   active, one calm status surface replaces the composer and always shows
   whether Ordilo is listening, checking, or answering, plus a 44pt stop
-  action. Spoken turns still appear in the normal conversation with sources
-  and confirmation cards. Live never performs a write without the visible
-  confirmation path.
+  action. While checking, the upper line keeps the family's question and a
+  Harbor Blue helper line names the current step ("Ich suche: …",
+  "Gefunden in: …"). Ordilo says out loud that it is looking before it
+  goes quiet, and a long search gets a short spoken progress note that
+  never contains a result. Live audio plays through the loudspeaker unless
+  headphones or Bluetooth are connected. Spoken turns still appear in the
+  normal conversation with sources and confirmation cards. Live never
+  performs a write without the visible confirmation path.
 
 - **Answer first:** A cited source's factual highlight, when supplied, leads the native answer in Harbor Blue, Figtree 600 at 34/41pt. Supporting prose uses the regular body style with 25pt line height; headings, emphasis, lists, and horizontally scrollable tables retain Figtree. Do not invent a prominent fact when no cited highlight exists.
 - **Evidence as paper:** Show the best source first and reveal additional sources on demand. A cited document quotation sits in a Sand panel with a 12px radius, document title, and page reference when available. Warm Apricot Light marks only the matching factual phrase within the quotation. This is a local evidence annotation, an exception to the general apricot scarcity guidance; it does not become another action color.
