@@ -119,7 +119,12 @@ export interface ToolCallProgress {
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
-  | { type: "tool"; toolName: string; state: ToolCallState }
+  | {
+      type: "tool";
+      toolName: string;
+      state: ToolCallState;
+      documentTitle?: string;
+    }
   | { type: "text"; content: string }
   | { type: "replace"; content: string }
   | { type: "card"; card: AnswerCard }
@@ -484,6 +489,8 @@ export interface ChatRequestInput {
     reasons: ChatFeedbackReason[];
     comment?: string;
   };
+  /** "voice": a Live turn — the server answers short and spoken. */
+  mode?: "voice";
 }
 
 /**
@@ -534,6 +541,7 @@ async function streamChatRequest(
       operation_id: input.operationId,
       history: input.history,
       capabilities: ["web_source_urls"],
+      ...(input.mode ? { mode: input.mode } : {}),
       ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
       ...(input.repair
         ? {

@@ -9,6 +9,18 @@ import {
 } from "react-native-webrtc";
 
 import { getApiUrl } from "./api";
+import type { ChatStreamEvent } from "./chat";
+import {
+  restoreLiveAudioRoute,
+  routeLiveAudioToSpeaker,
+} from "./live-audio-route";
+import {
+  createLiveTurnCollector,
+  LIVE_PROGRESS_START,
+  LIVE_SPOKEN_PROGRESS_DELAYS_MS,
+  splitForCommentary,
+  spokenProgress,
+} from "./live-progress";
 import { getSupabase } from "./supabase";
 
 export type LiveConversationStatus =
@@ -42,6 +54,10 @@ interface PendingTurn {
 
 const FALLBACK_MAX_DURATION_MS = 5 * 60 * 1_000;
 const CLOSE_TIMEOUT_MS = 3_000;
+// GPT Live has no "finished speaking" event. While the backend is still
+// working, a pause this long after Ordilo's last spoken fragment means the
+// acknowledgement is over and the bar goes back to showing the search.
+const SPEECH_SETTLE_MS = 1_200;
 
 async function waitForIceGathering(peer: RTCPeerConnection): Promise<void> {
   if (peer.iceGatheringState === "complete") return;
@@ -73,7 +89,15 @@ export function useNativeLiveConversation({
   onPremiumRequired,
 }: {
   familyId: string;
-  onTurn: (transcript: string) => Promise<string | null>;
+  /**
+   * Runs one delegated question through the chat route. `onEvent` receives
+   * the chat stream so the hook can show progress and hand the answer to
+   * GPT Live the moment it is ready.
+   */
+  onTurn: (
+    transcript: string,
+    onEvent: (event: ChatStreamEvent) => void,
+  ) => Promise<string | null>;
   onError: (message: string) => void;
   // The server refused the session with 402 PREMIUM_REQUIRED: the family
   // has no active Plus entitlement. The screen receives the server's
@@ -84,6 +108,8 @@ export function useNativeLiveConversation({
   const [status, setStatus] = useState<LiveConversationStatus>("idle");
   const [lastTranscript, setLastTranscript] = useState("");
   const [previousTranscript, setPreviousTranscript] = useState("");
+  // Plain status of the running backend turn ("Gefunden in: …").
+  const [progress, setProgress] = useState("");
   const [muted, setMuted] = useState(false);
   // True when the microphone is denied and iOS will not ask again — the
   // only way forward is the system settings, so the screen can offer that.
@@ -99,6 +125,12 @@ export function useNativeLiveConversation({
   const limitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const delegationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const speechSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  // True while a delegated question waits for its answer.
+  const awaitingAnswerRef = useRef(false);
   const setupAbortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const turnRunningRef = useRef(false);
@@ -160,9 +192,16 @@ export function useNativeLiveConversation({
     if (limitTimerRef.current) clearTimeout(limitTimerRef.current);
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     if (delegationTimerRef.current) clearTimeout(delegationTimerRef.current);
+    if (speechSettleTimerRef.current) {
+      clearTimeout(speechSettleTimerRef.current);
+    }
+    for (const timer of progressTimersRef.current) clearTimeout(timer);
+    progressTimersRef.current = [];
     limitTimerRef.current = null;
     closeTimerRef.current = null;
     delegationTimerRef.current = null;
+    speechSettleTimerRef.current = null;
+    awaitingAnswerRef.current = false;
     setupAbortRef.current?.abort();
     setupAbortRef.current = null;
     dataChannelRef.current?.close();
@@ -174,11 +213,13 @@ export function useNativeLiveConversation({
     microphoneRef.current = null;
     remoteStreamRef.current?.release();
     remoteStreamRef.current = null;
+    restoreLiveAudioRoute();
     void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
     lastTranscriptRef.current = "";
     mutedRef.current = false;
     setLastTranscript("");
     setPreviousTranscript("");
+    setProgress("");
     setMuted(false);
     setStatus("idle");
   }, [familyId]);
@@ -224,18 +265,29 @@ export function useNativeLiveConversation({
     [stopSession],
   );
 
-  const sendResult = useCallback((delegationId: string, content: string) => {
-    const channel = dataChannelRef.current;
-    if (!channel || channel.readyState !== "open") return;
-    channel.send(
-      JSON.stringify({
-        type: "session.commentary.append",
-        event_id: randomUUID(),
-        delegation_id: delegationId,
-        content,
-      }),
-    );
-  }, []);
+  /** Content GPT Live says aloud, in parts that fit its append limit. */
+  const sendCommentary = useCallback(
+    (delegationId: string, content: string) => {
+      const channel = dataChannelRef.current;
+      if (!channel || channel.readyState !== "open") return;
+      for (const part of splitForCommentary(content)) {
+        channel.send(
+          JSON.stringify({
+            type: "session.commentary.append",
+            event_id: randomUUID(),
+            delegation_id: delegationId,
+            content: part,
+          }),
+        );
+      }
+    },
+    [],
+  );
+
+  function clearProgressTimers() {
+    for (const timer of progressTimersRef.current) clearTimeout(timer);
+    progressTimersRef.current = [];
+  }
 
   async function runTurn(turn: PendingTurn, generation: number) {
     if (generation !== generationRef.current) return;
@@ -244,26 +296,57 @@ export function useNativeLiveConversation({
       return;
     }
     turnRunningRef.current = true;
+    awaitingAnswerRef.current = true;
     lastTranscriptRef.current = turn.transcript;
     setLastTranscript(turn.transcript);
+    setProgress(LIVE_PROGRESS_START);
     setStatus("thinking");
+
+    const collector = createLiveTurnCollector();
+    let delivered = false;
+    const deliver = (content: string) => {
+      if (delivered || generation !== generationRef.current) return;
+      delivered = true;
+      awaitingAnswerRef.current = false;
+      clearProgressTimers();
+      sendCommentary(turn.delegationId, content);
+    };
+    // Silence while the backend works feels like a dropped call. Short
+    // spoken updates bridge it; they carry progress, never a result.
+    const spoken = new Set<string>();
+    clearProgressTimers();
+    progressTimersRef.current = LIVE_SPOKEN_PROGRESS_DELAYS_MS.map((delay) =>
+      setTimeout(() => {
+        if (delivered || generation !== generationRef.current) return;
+        const update = spokenProgress(collector.foundTitle);
+        if (spoken.has(update)) return;
+        spoken.add(update);
+        sendCommentary(turn.delegationId, update);
+      }, delay),
+    );
+
     try {
       const answer = turn.transcript
-        ? await onTurnRef.current(turn.transcript)
+        ? await onTurnRef.current(turn.transcript, (event) => {
+            if (delivered || generation !== generationRef.current) return;
+            const update = collector.apply(event);
+            if (update.progress) setProgress(update.progress);
+            if (update.answer) deliver(update.answer);
+          })
         : null;
       if (generation !== generationRef.current) return;
-      sendResult(
-        turn.delegationId,
+      deliver(
         answer?.trim() ||
           "Ich habe die Frage nicht sicher verstanden. Bitte sag sie noch einmal.",
       );
     } catch {
       if (generation !== generationRef.current) return;
-      sendResult(
-        turn.delegationId,
-        "Das hat gerade nicht geklappt. Bitte versuch es noch einmal.",
-      );
+      deliver("Das hat gerade nicht geklappt. Bitte versuch es noch einmal.");
     } finally {
+      if (generation === generationRef.current) {
+        clearProgressTimers();
+        awaitingAnswerRef.current = false;
+      }
       turnRunningRef.current = false;
       const pending = pendingTurnRef.current;
       pendingTurnRef.current = null;
@@ -305,7 +388,12 @@ export function useNativeLiveConversation({
       await setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
+        shouldRouteThroughEarpiece: false,
       });
+      // WebRTC replaces the audio session configuration when the call
+      // audio starts, so the speaker route has to be part of its own
+      // configuration — before getUserMedia opens the audio unit.
+      routeLiveAudioToSpeaker();
       const microphone = await mediaDevices.getUserMedia({
         audio: true,
         video: false,
@@ -362,6 +450,18 @@ export function useNativeLiveConversation({
           }
         } else if (event.type === "session.output_transcript.delta") {
           setStatus("speaking");
+          if (speechSettleTimerRef.current) {
+            clearTimeout(speechSettleTimerRef.current);
+          }
+          speechSettleTimerRef.current = setTimeout(() => {
+            speechSettleTimerRef.current = null;
+            if (
+              generation === generationRef.current &&
+              awaitingAnswerRef.current
+            ) {
+              setStatus("thinking");
+            }
+          }, SPEECH_SETTLE_MS);
         } else if (event.type === "session.usage.updated") {
           providerSecondsRef.current = Math.max(
             providerSecondsRef.current,
@@ -503,6 +603,7 @@ export function useNativeLiveConversation({
     previousTranscript,
     micBlocked,
     muted,
+    progress,
     start,
     status,
     stop,
