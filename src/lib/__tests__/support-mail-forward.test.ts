@@ -72,6 +72,11 @@ describe("senderDisplayName", () => {
     expect(senderDisplayName('"Anna Berger" <anna@example.com>')).toBe("Anna Berger");
     expect(senderDisplayName("anna@example.com")).toBe("anna@example.com");
   });
+
+  it("drops characters that could break out of a quoted name", () => {
+    expect(senderDisplayName('"Doe, Jane \\" <jane@example.com>')).toBe("Doe, Jane");
+  });
+
 });
 
 describe("forwardSupportEmail", () => {
@@ -89,7 +94,7 @@ describe("forwardSupportEmail", () => {
 
     const [payload, options] = send.mock.calls[0];
     expect(payload).toMatchObject({
-      from: "Anna Berger über Ordilo <info@ordilo.de>",
+      from: '"Anna Berger über Ordilo" <info@ordilo.de>',
       to: "owner@example.com",
       replyTo: "Anna Berger <anna@example.com>",
       subject: "Frage zur App",
@@ -103,6 +108,12 @@ describe("forwardSupportEmail", () => {
     expect(payload.html).toContain("Absender: Anna Berger &lt;anna@example.com&gt;");
     expect(payload.html).toContain("<p>Hallo <b>Ordilo</b></p>");
     expect(options).toEqual({ idempotencyKey: "support-forward/mail-1" });
+  });
+
+  it("keeps a sender name with a comma inside one quoted From name", async () => {
+    const { resend, send } = fakeResend({ from: '"Doe, Jane" <jane@example.com>' });
+    await forwardSupportEmail({ resend, ...base });
+    expect(send.mock.calls[0][0].from).toBe('"Doe, Jane über Ordilo" <info@ordilo.de>');
   });
 
   it("prefers an explicit Reply-To and sends text-only mail without html", async () => {

@@ -45,7 +45,7 @@ export function matchSupportAddress(
 /** "Anna Berger <anna@example.com>" → "Anna Berger"; a bare address stays as it is. */
 export function senderDisplayName(from: string): string {
   const named = from.match(/^\s*"?([^"<]*?)"?\s*<[^>]+>\s*$/);
-  const name = (named?.[1] ?? from).replace(/["<>\r\n]/g, "").trim();
+  const name = (named?.[1] ?? from).replace(/["<>\\\r\n]/g, "").trim();
   return name || "Unbekannt";
 }
 
@@ -100,7 +100,9 @@ export async function forwardSupportEmail(params: {
 
   const { data: sent, error: sendError } = await params.resend.emails.send(
     {
-      from: `${senderDisplayName(received.from)} über Ordilo <${params.supportAddress}>`,
+      // Quoted, because a comma or other special character in a bare display
+      // name would split the From header into several mailboxes.
+      from: `"${senderDisplayName(received.from)} über Ordilo" <${params.supportAddress}>`,
       to: params.forwardTo,
       replyTo,
       subject: received.subject || "(ohne Betreff)",
