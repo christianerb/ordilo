@@ -139,12 +139,20 @@ const DOCUMENT_ANSWER_TOOLS = new Set([
   "search_documents", "read_document", "answer_from_documents", "set_response_state", "suggest_next_action",
 ]);
 
-/** A second question mark, or "und" followed by a new question word, means
- * the request has a part the document claims may not cover — even when
- * that part needs no tool at all. */
-function asksSeveralThings(question: string): boolean {
-  return /\?[\s\S]*\S[\s\S]*\?/u.test(question)
-    || /\b(?:und|sowie|außerdem)\s+(?:wie|was|wann|wo|warum|wieso|weshalb|wer|welche[rsnm]?|erklär\w*)\b/iu.test(question);
+const SECOND_PART = new RegExp(
+  "(?<!\\p{L})(?:und|sowie|außerdem|dazu|zusätzlich)\\s+(?:\\p{L}+\\s+){0,3}?"
+  + "(?:(?:wie|was|wann|wo|woher|wohin|warum|wieso|weshalb|wozu|wer|wen|wem|welche[rsnm]?|ob"
+  + "|kannst|könntest|würdest)(?!\\p{L})"
+  + "|(?:erklär|erläuter|beschreib|begründ|nenn|sag|zeig|gib|hilf|schreib|formulier|fass|schlag|empfiehl"
+  + "|rechne|berechne|vergleich|prüf|übersetz|liste)\\p{L}*)",
+  "iu",
+);
+
+/** A second question mark, or "und" followed by a new question word or
+ * request, means the question has a part the document claims may not
+ * cover — even when that part needs no tool at all. */
+export function asksSeveralThings(question: string): boolean {
+  return /\?[\s\S]*\S[\s\S]*\?/u.test(question) || SECOND_PART.test(question);
 }
 
 export function incompleteDocumentAnswer(context: ToolContext, calledTools: ReadonlySet<string> = new Set()): string {
