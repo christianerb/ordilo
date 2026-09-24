@@ -75,7 +75,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
     ],
     amounts: [],
     tasks: [
-      { title: "Elternabend besuchen", due_date: "2026-07-15", confidence: 0.8 },
+      { title: "Rückmeldung zum Elternabend abgeben", due_date: "2026-07-15", confidence: 0.8 },
     ],
     facts: [],
     suggested_category: "Kita",
@@ -788,8 +788,56 @@ describe("POST /api/documents/[id]/confirm", () => {
       p_tasks: { title: string; due_date: string | null }[];
     };
     expect(params.p_tasks).toHaveLength(1);
-    expect(params.p_tasks[0].title).toBe("Elternabend besuchen");
+    expect(params.p_tasks[0].title).toBe("Rückmeldung zum Elternabend abgeben");
     expect(params.p_tasks[0].due_date).toBe("2026-07-15");
+  });
+
+  it("drops a stored task that only repeats an appointment", async () => {
+    const client = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(
+      createRequest(
+        validPayload({
+          tasks: [
+            { title: "Elternabend", due_date: "2026-07-15", confidence: 0.8 },
+            { title: "Rückmeldung zum Elternabend abgeben", due_date: "2026-07-10", confidence: 0.8 },
+          ],
+        }),
+      ),
+      createParams(),
+    );
+
+    const params = client._rpcCalls[0].params as { p_tasks: { title: string }[] };
+    expect(params.p_tasks.map((task) => task.title)).toEqual([
+      "Rückmeldung zum Elternabend abgeben",
+    ]);
+  });
+
+  it("never creates an event from the document's own date", async () => {
+    const client = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(
+      createRequest({
+        ...validPayload({
+          dates: [
+            { date: "2026-07-01", type: "date", label: "Datum des Elternbriefs", confidence: 0.9 },
+            { date: "2026-07-15", type: "event", label: "Elternabend", confidence: 0.88 },
+          ],
+        }),
+        calendar_events: [
+          { date: "2026-07-01", label: "Einladung zum Elternabend" },
+          { date: "2026-07-15", label: "Elternabend" },
+        ],
+      }),
+      createParams(),
+    );
+
+    const params = client._rpcCalls[0].params as {
+      p_events: { date: string; label: string }[];
+    };
+    expect(params.p_events).toEqual([{ date: "2026-07-15", label: "Elternabend" }]);
   });
 
   // --- Empty OCR text ---

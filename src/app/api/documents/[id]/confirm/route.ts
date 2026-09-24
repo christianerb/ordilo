@@ -35,6 +35,8 @@ import { normalizeFactValue } from "@/lib/schemas/extraction";
 import {
   dedupeDates,
   dedupeAmounts,
+  dropDocumentDateEvents,
+  dropTasksDuplicatingAppointments,
   toIsoDateOrNull,
 } from "@/lib/analysis-cleanup";
 import { buildEntityRows } from "@/lib/pipeline/entity-rows";
@@ -199,6 +201,9 @@ export async function POST(
   //     confirmed entities (search, detail views) are clean either way.
   payload.dates = dedupeDates(payload.dates);
   payload.amounts = dedupeAmounts(payload.amounts);
+  // Analyses stored before the analyze step dropped them can still carry
+  // a task that only repeats an appointment ("Elternabend" twice).
+  payload.tasks = dropTasksDuplicatingAppointments(payload.tasks, payload.dates);
 
   // 6b. Canonicalize the category against the family's existing categories
   //     and collection names (documents.category === collection.name links
@@ -414,9 +419,12 @@ function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
  * offer. Defence in depth: the RPC skips malformed rows, but a value like
  * "Montag" should never leave this route — an invalid date cast would roll
  * the whole confirm back.
+ *
+ * The document's own date ("Briefdatum") never becomes an event, whatever
+ * an older client sends.
  */
 function buildEventRows(payload: ConfirmPayload): ConfirmRpcEvent[] {
-  return payload.calendar_events
+  return dropDocumentDateEvents(payload.calendar_events, payload.dates)
     .map((event) => ({
       date: toIsoDateOrNull(event.date),
       label: event.label.trim(),

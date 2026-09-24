@@ -166,6 +166,7 @@ export function ReviewCardContent({
         analysis.dates.map((d, i) => ({
           date: edits.dates.get(i) ?? d.date,
           label: d.label,
+          type: d.type,
         })),
       );
   const calendarCandidateIndices = new Set(

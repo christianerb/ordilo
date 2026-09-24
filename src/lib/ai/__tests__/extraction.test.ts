@@ -167,6 +167,14 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("school");
   });
 
+  it("keeps times on their date, marks the letter date, and keeps appointments out of tasks", () => {
+    const prompt = buildSystemPrompt(validFamilyContext());
+    expect(prompt).toContain("NIEMALS nur eine Uhrzeit");
+    expect(prompt).not.toContain('Typ "time"');
+    expect(prompt).toContain('Typ "document_date" und Label "Briefdatum"');
+    expect(prompt).toContain("ist KEINE Aufgabe");
+  });
+
   it("handles members without roles", () => {
     const prompt = buildSystemPrompt({
       members: [{ id: "m1", name: "Emma", role: null }],

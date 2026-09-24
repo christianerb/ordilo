@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { recordProductEvent } from "./analytics";
+import { formatShortDate } from "./date-labels";
 import { getSupabase } from "./supabase";
 
 /**
@@ -546,13 +547,8 @@ export function formatDueLabel(
   }
   if (difference === 0) return { text: "Heute", overdue: false };
   if (difference === 1) return { text: "Morgen", overdue: false };
-  const parsed = new Date(`${dueDate}T12:00:00`);
   return {
-    text: new Intl.DateTimeFormat("de-DE", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-    }).format(parsed),
+    text: formatShortDate(new Date(`${dueDate}T12:00:00`), now),
     overdue: false,
   };
 }
@@ -948,11 +944,7 @@ export function getUpcomingAgenda(
       label:
         entry.date === tomorrow
           ? "Morgen"
-          : new Intl.DateTimeFormat("de-DE", {
-              weekday: "short",
-              day: "numeric",
-              month: "short",
-            }).format(new Date(`${entry.date}T12:00:00`)),
+          : formatShortDate(new Date(`${entry.date}T12:00:00`), date),
       entries: [entry],
     });
   }

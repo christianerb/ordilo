@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   GENERIC_AMOUNT_LABELS,
   GENERIC_DATE_LABELS,
+  attachTimesToDates,
   cleanupAnalysisEntities,
   dedupeAmounts,
   dedupeDates,
+  dropDocumentDateEvents,
+  dropTasksDuplicatingAppointments,
   formatMinorAsGerman,
   meaningfulLabel,
   parseAmountToMinor,
@@ -201,7 +204,150 @@ describe("cleanupAnalysisEntities", () => {
   it("passes through untouched fields", () => {
     const result = cleanupAnalysisEntities(base);
     expect(result.title).toBe("Test");
-    expect(result.tasks).toBe(base.tasks);
+    expect(result.tasks).toEqual(base.tasks);
+  });
+
+  it("folds a lone time into its date and drops a task that repeats an appointment", () => {
+    const result = cleanupAnalysisEntities({
+      ...base,
+      dates: [
+        date("2026-09-01", "Datum", { type: "document_date" }),
+        date("2026-10-12", "Klassenfahrt"),
+        date("08:15", "Abfahrt Klassenfahrt", { type: "time" }),
+        date("2026-09-14", "Elternabend"),
+      ],
+      tasks: [
+        { title: "Elternabend", due_date: "2026-09-14", confidence: 0.9 },
+        { title: "Zum Elternabend anmelden", due_date: "2026-09-10", confidence: 0.9 },
+      ],
+    });
+    expect(result.dates.map((d) => [d.date, d.label])).toEqual([
+      ["2026-09-01", "Briefdatum"],
+      ["2026-10-12", "Klassenfahrt · Abfahrt 08:15 Uhr"],
+      ["2026-09-14", "Elternabend"],
+    ]);
+    expect(result.tasks.map((t) => t.title)).toEqual(["Zum Elternabend anmelden"]);
+  });
+});
+
+describe("attachTimesToDates", () => {
+  it("attaches a time to the date whose label shares a word", () => {
+    const result = attachTimesToDates([
+      date("2026-10-12", "Abfahrt Klassenfahrt"),
+      date("2026-10-16", "Rückkehr Klassenfahrt"),
+      date("08:15", "Abfahrt"),
+    ]);
+    expect(result.map((d) => d.label)).toEqual([
+      "Abfahrt Klassenfahrt · 08:15 Uhr",
+      "Rückkehr Klassenfahrt",
+    ]);
+  });
+
+  it("uses the only real date when no label matches", () => {
+    const result = attachTimesToDates([
+      date("2026-09-01", "Briefdatum", { type: "document_date" }),
+      date("2026-10-12", "Klassenfahrt"),
+      date("8:15 Uhr", "Abfahrt", { type: "time" }),
+    ]);
+    expect(result.map((d) => d.label)).toEqual([
+      "Briefdatum",
+      "Klassenfahrt · Abfahrt 08:15 Uhr",
+    ]);
+  });
+
+  it("does not repeat a time the label already carries", () => {
+    const result = attachTimesToDates([
+      date("2026-10-12", "Abfahrt 8:15 Uhr"),
+      date("08:15", "Abfahrt"),
+    ]);
+    expect(result).toEqual([date("2026-10-12", "Abfahrt 8:15 Uhr")]);
+  });
+
+  it("drops a time it cannot place and unreadable time entries", () => {
+    const result = attachTimesToDates([
+      date("2026-09-14", "Elternabend"),
+      date("2026-09-20", "Schulfest"),
+      date("19:25", "Abflug"),
+      date("morgens", "Treffen", { type: "time" }),
+    ]);
+    expect(result.map((d) => d.label)).toEqual(["Elternabend", "Schulfest"]);
+  });
+
+  it("keeps a German date that only looks like a time", () => {
+    const result = attachTimesToDates([date("12.07.", "Sommerfest")]);
+    expect(result).toEqual([date("12.07.", "Sommerfest")]);
+  });
+
+  it("splits an ISO date-time into the date and a time in the label", () => {
+    expect(
+      attachTimesToDates([date("2026-10-12T08:15:00", "Abfahrt")]),
+    ).toEqual([date("2026-10-12", "Abfahrt · 08:15 Uhr")]);
+    expect(
+      attachTimesToDates([date("2026-10-12T00:00:00Z", "Klassenfahrt")]),
+    ).toEqual([date("2026-10-12", "Klassenfahrt")]);
+  });
+});
+
+describe("dropTasksDuplicatingAppointments", () => {
+  const dates = [date("2026-09-14", "Elternabend Klasse 3b")];
+  const task = (title: string, due_date: string | null) => ({
+    title,
+    due_date,
+    confidence: 0.9,
+  });
+
+  it("drops a task that only names the appointment on the same day", () => {
+    expect(
+      dropTasksDuplicatingAppointments([task("Elternabend 14.09.", "2026-09-14")], dates),
+    ).toEqual([]);
+  });
+
+  it("keeps a task that asks for something to be done", () => {
+    const kept = [
+      task("Anmeldung zum Elternabend bis 10.09.", "2026-09-10"),
+      task("Zum Elternabend Unterschrift mitbringen", "2026-09-14"),
+    ];
+    expect(dropTasksDuplicatingAppointments(kept, dates)).toEqual(kept);
+  });
+
+  it("keeps the same noun on another day and tasks without a date", () => {
+    const kept = [task("Elternabend", "2026-09-21"), task("Elternabend", null)];
+    expect(dropTasksDuplicatingAppointments(kept, dates)).toEqual(kept);
+  });
+
+  it("ignores deadlines and the document's own date", () => {
+    const kept = [task("Zahlungsfrist", "2026-09-30"), task("Briefdatum", "2026-09-01")];
+    expect(
+      dropTasksDuplicatingAppointments(kept, [
+        date("2026-09-30", "Zahlungsfrist Klassenfahrt"),
+        date("2026-09-01", "Briefdatum"),
+      ]),
+    ).toEqual(kept);
+  });
+});
+
+describe("dropDocumentDateEvents", () => {
+  it("never turns the document's own date into an event", () => {
+    const dates = [
+      date("2026-09-01", "Datum des Elternbriefs"),
+      date("2026-09-14", "Elternabend"),
+      date("2026-09-20", "Briefdatum"),
+      date("2026-09-20", "Sportfest"),
+    ];
+    expect(
+      dropDocumentDateEvents(
+        [
+          { date: "2026-09-01", label: "Elternbrief Klasse 3b" },
+          { date: "2026-09-14", label: "Elternabend" },
+          { date: "2026-09-14", label: "Briefdatum" },
+          { date: "2026-09-20", label: "Sportfest" },
+        ],
+        dates,
+      ),
+    ).toEqual([
+      { date: "2026-09-14", label: "Elternabend" },
+      { date: "2026-09-20", label: "Sportfest" },
+    ]);
   });
 });
 
