@@ -33,6 +33,7 @@ vi.mock("openai", () => {
 });
 
 import {
+  asksSeveralThings,
   combineSearchResults,
   buildAgenticSystemPrompt,
   filterByRelevanceThreshold,
@@ -2093,5 +2094,25 @@ describe("streamAgenticAnswer — confirmation requests", () => {
     expect(
       lines.some((line) => line.type === "confirmation_request"),
     ).toBe(false);
+  });
+});
+
+describe("asksSeveralThings", () => {
+  it.each([
+    "Nenne die Kündigungsfrist und erläutere mir, warum sie gilt.",
+    "Wann endet der Vertrag und was kostet er danach?",
+    "Bis wann muss ich zahlen und kannst du mir eine Erinnerung schreiben?",
+    "Wie lange gilt das Ticket? Und gibt es ein günstigeres?",
+    "Wann ist der Elternabend und beschreib kurz, worum es geht.",
+  ])("sees a second part in %s", (question) => {
+    expect(asksSeveralThings(question)).toBe(true);
+  });
+  it.each([
+    "Bis wann kann ich den Handyvertrag kündigen?",
+    "Wann ist der Elternabend für Mia und Paul nächste Woche?",
+    "Was steht in der Rechnung von Strom und Gas?",
+    "das bahndings von Hannah wie lang geht das noch?",
+  ])("keeps %s as one question", (question) => {
+    expect(asksSeveralThings(question)).toBe(false);
   });
 });

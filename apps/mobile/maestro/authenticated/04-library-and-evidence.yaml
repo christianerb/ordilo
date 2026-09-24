@@ -25,13 +25,22 @@ appId: com.ordilo.app
 - tapOn: "Frage an Ordilo.*"
 - inputText: "In welchem Raum findet Hannahs Elternabend statt?"
 - tapOn: "Frage senden"
+# A fixture account without an AI decision gets the consent sheet. It must
+# open above the chat modal and be reachable, not hidden underneath it.
+- runFlow:
+    when:
+      visible: "Bevor Ordilo mitdenkt"
+    commands:
+      - assertVisible: "Datenschutzerklärung lesen"
+      - tapOn: "Der KI-Übertragung zustimmen"
+      - assertNotVisible: "Bevor Ordilo mitdenkt"
 - swipe:
     direction: DOWN
     duration: 500
 - hideKeyboard:
     optional: true
 - scrollUntilVisible:
-    element: "Fundstelle öffnen: Elternabend Hannah.*"
+    element: "Fundstelle ansehen: Elternabend Hannah.*"
     visibilityPercentage: 30
     centerElement: true
     timeout: 120000

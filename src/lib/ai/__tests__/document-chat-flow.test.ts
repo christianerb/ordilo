@@ -104,6 +104,52 @@ describe("real document tools through the chat orchestration", () => {
     const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
     expect(answer).toContain(claim.text);
     expect(answer).not.toContain('2099');
+    // A single-part question is fully answered by the verified claim alone.
+    expect(answer).not.toContain('weiteren Teil');
+    expect(result).toContainEqual({type:'response_state',state:'answered'});
+  });
+
+  it('accepts a final answer that joins the verified fact to its closing beat with a dash', async () => {
+    const voiced = 'Hannahs Ticket gilt bis zum **31. August 2027** — das steht so auf der Abo-Bestätigung. Bis dahin hast du also noch Zeit.';
+    create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'})).mockResolvedValueOnce(finalAnswer(voiced));
+    const result = await events(context());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(result.filter(event => event.type === 'text')).toEqual([{type:'text',content:voiced}]);
+    expect(result).toContainEqual({type:'response_state',state:'answered'});
+  });
+
+  it('keeps a claim verified in the last forced round as a full answer', async () => {
+    const wrongQuote = { ...claim, quote: 'Hannahs Ticket ist unbegrenzt gültig.' };
+    create.mockResolvedValueOnce(round('answer_from_documents',{claims:[wrongQuote],state:'answered'}))
+      .mockResolvedValueOnce(round('answer_from_documents',{claims:[wrongQuote],state:'answered'}))
+      .mockResolvedValueOnce(round('answer_from_documents',{claims:[wrongQuote],state:'answered'}))
+      .mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'}));
+    const result = await events(context());
+    expect(create).toHaveBeenCalledTimes(4);
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).toBe(claim.text);
+    expect(result).toContainEqual({type:'response_state',state:'answered'});
+    expect(result.find(event => event.type === 'sources').sources[0]).toMatchObject({ cited: true, highlight: '31.08.2027' });
+  });
+
+  it('marks the fallback partial when the question asks for more than the document claim', async () => {
+    const wrong = 'Hannahs Ticket gilt bis zum 31. August 2099.';
+    create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'}))
+      .mockResolvedValueOnce(finalAnswer(wrong)).mockResolvedValueOnce({output_text:wrong});
+    const result = await events(context(),'Wie lange gilt Hannahs Ticket und warum gibt es das überhaupt?');
+    const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
+    expect(answer).toContain(claim.text);
+    expect(answer).toContain('weiteren Teil');
+    expect(result).toContainEqual({type:'response_state',state:'partial'});
+  });
+
+  it('keeps a partial state the model set after verifying the claim', async () => {
+    const wrong = 'Hannahs Ticket gilt bis zum 31. August 2099.';
+    create.mockResolvedValueOnce(batch([{name:'answer_from_documents',args:{claims:[claim],state:'answered'}},{name:'set_response_state',args:{state:'partial'}}]))
+      .mockResolvedValueOnce(finalAnswer(wrong)).mockResolvedValueOnce({output_text:wrong});
+    const result = await events(context());
+    const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
+    expect(answer).toContain(claim.text);
     expect(result).toContainEqual({type:'response_state',state:'partial'});
   });
 

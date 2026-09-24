@@ -10,7 +10,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Keyboard,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import {
   OrdiloFormFooter,
@@ -81,6 +88,7 @@ const AiConsentContext = createContext<AiConsentContextValue>({
 export function AiConsentProvider({
   children,
   renderSheet,
+  sheetOnScreen = false,
 }: {
   children?: ReactNode;
   /**
@@ -88,6 +96,11 @@ export function AiConsentProvider({
    * this slot, iOS can present the root sheet underneath the visible modal.
    */
   renderSheet?: (sheet: ReactNode) => ReactNode;
+  /**
+   * The rendered sheet sits directly on a full screen rather than inside a
+   * floating form sheet, so its panel needs its own side inset.
+   */
+  sheetOnScreen?: boolean;
 }) {
   const { session } = useSession();
   const userId = session?.user?.id ?? null;
@@ -173,6 +186,9 @@ export function AiConsentProvider({
         resolversRef.current.push(resolve);
       });
       setSaveError(null);
+      // A question typed into the chat composer leaves the keyboard up,
+      // and it would cover the bottom-anchored sheet and its buttons.
+      Keyboard.dismiss();
       setSheetOpen(true);
       return result;
     };
@@ -239,6 +255,7 @@ export function AiConsentProvider({
       closeAccessibilityLabel="Einwilligung schließen"
       contained={Boolean(renderSheet)}
       dismissDisabled={saving}
+      inset={sheetOnScreen}
       onClose={dismiss}
       visible={sheetOpen}
     >
