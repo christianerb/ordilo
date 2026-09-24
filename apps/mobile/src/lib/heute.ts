@@ -822,13 +822,20 @@ export function findMember(
  * due today, documents waiting for a look, something due tomorrow —
  * otherwise the honest "alles gut". Tasks win over documents because a
  * missed deadline costs more than an unread letter.
+ *
+ * A calm week still names the next dated task beyond the agenda horizon,
+ * so a deadline two weeks out is not buried at the bottom of Start.
  */
 export type HeuteBriefing =
   | { kind: "task"; task: HeuteTask; due: { text: string; overdue: boolean } }
   | { kind: "review"; count: number; document: HeuteDocument }
   | { kind: "event"; occurrence: HeuteEventOccurrence }
   | { kind: "processing"; document: HeuteDocument }
-  | { kind: "calm"; upcomingCount: number };
+  | {
+      kind: "calm";
+      upcomingCount: number;
+      nextTask: { task: HeuteTask; dateLabel: string } | null;
+    };
 
 export function getHeuteBriefing(
   tasks: HeuteTask[],
@@ -859,7 +866,23 @@ export function getHeuteBriefing(
   }
   const unfinished = context.documents?.find((document) => !["analyzed", "confirmed"].includes(document.status));
   if (unfinished) return { kind: "processing", document: unfinished };
-  return { kind: "calm", upcomingCount };
+  return { kind: "calm", upcomingCount, nextTask: getNextTaskBeyondHorizon(dated, upcomingCount, date) };
+}
+
+function getNextTaskBeyondHorizon(
+  dated: HeuteTask[],
+  upcomingCount: number,
+  date: Date,
+): { task: HeuteTask; dateLabel: string } | null {
+  // With anything inside the horizon, "Demnächst" already holds the next
+  // thing; a task weeks away would not honestly be "als Nächstes".
+  if (upcomingCount > 0) return null;
+  const horizon = toLocalDateStr(
+    new Date(date.getFullYear(), date.getMonth(), date.getDate() + HOME_EVENTS_HORIZON_DAYS),
+  );
+  const task = dated.find((candidate) => candidate.dueDate !== null && candidate.dueDate > horizon);
+  const due = task ? formatDueLabel(task.dueDate, date) : null;
+  return task && due ? { task, dateLabel: due.text } : null;
 }
 
 export interface HeuteAgendaEntry {

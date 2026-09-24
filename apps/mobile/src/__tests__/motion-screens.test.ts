@@ -72,6 +72,20 @@ describe("native motion wiring", () => {
     expect(home).toContain("Schon erledigt");
   });
 
+  it("puts deadlines on Start before news", () => {
+    const home = source("app/(tabs)/index.tsx");
+    const upcoming = home.indexOf('title="Demnächst"');
+    const next = home.indexOf('title="Als Nächstes"');
+    const news = home.indexOf('<Section title="Neuigkeiten">');
+
+    expect(upcoming).toBeGreaterThan(-1);
+    expect(upcoming).toBeLessThan(next);
+    expect(next).toBeLessThan(news);
+    expect(home).not.toContain("Für heute und morgen ist alles erledigt.");
+    expect(home).toContain("Tagen steht nichts an.");
+    expect(home).toContain("Als Nächstes: ");
+  });
+
   it("turns family members into useful personal spaces", () => {
     const family = source("app/familie.tsx");
     const member = source("app/familie/[id].tsx");
@@ -519,6 +533,34 @@ describe("native motion wiring", () => {
     expect(scan).not.toContain("<SafeAreaView");
     expect(consent).toContain("contained={Boolean(renderSheet)}");
     expect(layout).toContain('presentation: "transparentModal"');
+  });
+
+  it("keeps the chat's consent sheet and starters inside the chat modal", () => {
+    const search = source("app/suche.tsx");
+    const consent = source("src/lib/ai-consent-context.tsx");
+
+    expect(search).toContain("renderSheet={(consentSheet) =>");
+    expect(search).toContain("<SucheScreenContent consentSheet={consentSheet} />");
+    expect(search).toContain("{consentSheet}");
+    expect(consent).toContain("inset={sheetOnScreen}");
+    expect(consent).toContain("Keyboard.dismiss()");
+    // One settled read feeds all starters, with a placeholder until then.
+    expect(search).toContain("Promise.allSettled([");
+    expect(search).toContain("<SuggestionsPlaceholder />");
+    expect(search).not.toContain("setUpcomingTaskTitle");
+  });
+
+  it("groups offline and help links as settings rows", () => {
+    const settings = source("app/einstellungen.tsx");
+    const section = sourceSection(
+      settings,
+      '<SettingsSection title="Offline und Hilfe">',
+      "</SettingsSection>",
+    );
+
+    expect(section).toContain('router.push("/offline")');
+    expect(section).toContain('router.push("/beispiel")');
+    expect(settings).not.toContain('<OrdiloButton title="Meine Offline-Kopien"');
   });
 
   it("keeps shared headers scalable and document rows recognizable", () => {

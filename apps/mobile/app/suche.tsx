@@ -20,7 +20,14 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -66,6 +73,7 @@ import {
   OrdiloButton,
   Screen,
   SectionHeader,
+  Skeleton,
 } from "@/src/components/ui";
 import {
   applyChatEvent,
@@ -92,7 +100,7 @@ import {
   type ConversationSummary,
 } from "@/src/lib/conversations";
 import { buildPersonalChatStarters, type ChatStarterKind } from "@ordilo/chat-contract";
-import { useAiConsent } from "@/src/lib/ai-consent-context";
+import { AiConsentProvider, useAiConsent } from "@/src/lib/ai-consent-context";
 import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
@@ -139,7 +147,53 @@ const VOICE_AUTO_STOP_MILLIS = MAX_VOICE_RECORDING_MILLIS - 1_000;
 
 type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
 
+interface StarterContext {
+  members: FamilyMemberOption[];
+  recentDocumentTitle: string | null;
+  upcomingTaskTitle: string | null;
+}
+
+function titleOf(
+  result: PromiseSettledResult<{ data: { title: unknown } | null }>,
+): string | null {
+  if (result.status !== "fulfilled") return null;
+  const title = result.value.data?.title;
+  return typeof title === "string" ? title : null;
+}
+
+/** Same height as the three starter rows, so nothing jumps when they land. */
+function SuggestionsPlaceholder() {
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={styles.suggestions}
+    >
+      {[0, 1, 2].map((index) => (
+        <View key={index} style={[styles.suggestion, styles.suggestionPlaceholder]}>
+          <Skeleton height={36} radius={radii.base} width={36} />
+          <Skeleton height={14} width={index === 1 ? "58%" : "72%"} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export default function SucheScreen() {
+  // suche is a native modal. iOS can present the root provider's consent
+  // sheet underneath it, out of reach for touch and VoiceOver, so the sheet
+  // renders inside this screen, the same way /scan does it.
+  return (
+    <AiConsentProvider
+      renderSheet={(consentSheet) => (
+        <SucheScreenContent consentSheet={consentSheet} />
+      )}
+      sheetOnScreen
+    />
+  );
+}
+
+function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
   const router = useRouter();
   const { family } = useFamily();
   // `isPlus` stays true while the billing rollout flag is off, so the
@@ -178,9 +232,9 @@ export default function SucheScreen() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState(() => (typeof q === "string" ? q : ""));
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [members, setMembers] = useState<FamilyMemberOption[]>([]);
-  const [recentDocumentTitle, setRecentDocumentTitle] = useState<string | null>(null);
-  const [upcomingTaskTitle, setUpcomingTaskTitle] = useState<string | null>(null);
+  // Null until every read behind the starters has settled.
+  const [starterContext, setStarterContext] = useState<StarterContext | null>(null);
+  const recentDocumentTitle = starterContext?.recentDocumentTitle ?? null;
   const [historyLoading, setHistoryLoading] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<ConversationSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -225,14 +279,14 @@ export default function SucheScreen() {
   useEffect(() => {
     if (!family) return;
     let cancelled = false;
-    void fetchFamilyMembers(family.id)
-      .then((rows) => {
-        if (!cancelled) setMembers(rows);
-      })
-      .catch(() => undefined);
-    void (async () => {
-      try {
-        const { data } = await getSupabase()
+    // The starters are built from all three reads at once. Settling them one
+    // by one swapped a fallback question for a personal one about a second
+    // after the screen appeared. Async wrappers turn a synchronous throw
+    // into a settled rejection instead of breaking the effect.
+    void Promise.allSettled([
+      (async () => fetchFamilyMembers(family.id))(),
+      (async () =>
+        getSupabase()
           .from("documents")
           .select("title")
           .eq("family_id", family.id)
@@ -240,17 +294,9 @@ export default function SucheScreen() {
           .not("title", "is", null)
           .order("created_at", { ascending: false })
           .limit(1)
-          .maybeSingle();
-        if (!cancelled && data && typeof data.title === "string") {
-          setRecentDocumentTitle(data.title);
-        }
-      } catch {
-        // The suggestion falls back to a general question.
-      }
-    })();
-    void (async () => {
-      try {
-        const { data } = await getSupabase()
+          .maybeSingle())(),
+      (async () =>
+        getSupabase()
           .from("tasks")
           .select("title")
           .eq("family_id", family.id)
@@ -258,29 +304,29 @@ export default function SucheScreen() {
           .eq("confirmed", true)
           .order("due_date", { ascending: true, nullsFirst: false })
           .limit(1)
-          .maybeSingle();
-        if (!cancelled && data && typeof data.title === "string") {
-          setUpcomingTaskTitle(data.title);
-        }
-      } catch {
-        // The suggestion falls back to family or general context.
-      }
-    })();
+          .maybeSingle())(),
+    ]).then(([memberRows, documentRow, taskRow]) => {
+      if (cancelled) return;
+      // A failed read leaves its starter on the general fallback question.
+      setStarterContext({
+        members: memberRows.status === "fulfilled" ? memberRows.value : [],
+        recentDocumentTitle: titleOf(documentRow),
+        upcomingTaskTitle: titleOf(taskRow),
+      });
+    });
     void Promise.resolve().then(() => refreshConversations());
     return () => {
       cancelled = true;
     };
   }, [family, refreshConversations]);
 
-  const suggestions = useMemo(
-    () =>
-      buildPersonalChatStarters({
-        members,
-        recentDocumentTitle,
-        upcomingTaskTitle,
-      }),
-    [members, recentDocumentTitle, upcomingTaskTitle],
-  );
+  const hasFamily = Boolean(family);
+  const suggestions = useMemo(() => {
+    if (starterContext) return buildPersonalChatStarters(starterContext);
+    // Without a family nothing personal will arrive; general starters
+    // are the final answer rather than a placeholder that never resolves.
+    return hasFamily ? null : buildPersonalChatStarters({ members: [] });
+  }, [hasFamily, starterContext]);
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === conversationId) ?? null,
     [conversations, conversationId],
@@ -1041,10 +1087,10 @@ export default function SucheScreen() {
               importantForAccessibility="no-hide-descendants"
               style={styles.topAvatar}
             >
-              <OrdiloMark size={32} />
+              <OrdiloMark size={30} />
             </View>
             <View style={styles.topCopy}>
-              <Text numberOfLines={1} style={styles.topTitle} maxFontSizeMultiplier={1.4}>
+              <Text accessibilityRole="header" numberOfLines={1} style={styles.topTitle} maxFontSizeMultiplier={1.4}>
                 {activeConversation ? getConversationTitle(activeConversation) : "Ordilo fragen"}
               </Text>
               {activeConversation ? (
@@ -1175,33 +1221,37 @@ export default function SucheScreen() {
                       history rows sitting quietly below them. */}
                   <View style={styles.suggestionsBlock}>
                     <SectionHeader title="Beispielfragen" />
-                    <View style={styles.suggestions}>
-                      {suggestions.map(({ label, prompt, kind }) => {
-                        const Icon = SUGGESTION_ICON[kind];
-                        return (
-                          <Pressable
-                            accessibilityHint="Stellt diese Frage an Ordilo"
-                            accessibilityLabel={label}
-                            accessibilityRole="button"
-                            disabled={busy}
-                            key={prompt}
-                            onPress={() => {
-                              tap();
-                              void send(prompt);
-                            }}
-                            style={({ pressed }) => [
-                              styles.suggestion,
-                              pressed && styles.pressed,
-                            ]}
-                          >
-                            <IconTile size={36} tint={colors.harborTint}>
-                              <Icon color={colors.harborBlue} size={18} strokeWidth={1.9} />
-                            </IconTile>
-                            <Text style={styles.suggestionText}>{label}</Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
+                    {suggestions ? (
+                      <View style={styles.suggestions}>
+                        {suggestions.map(({ label, prompt, kind }) => {
+                          const Icon = SUGGESTION_ICON[kind];
+                          return (
+                            <Pressable
+                              accessibilityHint="Stellt diese Frage an Ordilo"
+                              accessibilityLabel={label}
+                              accessibilityRole="button"
+                              disabled={busy}
+                              key={prompt}
+                              onPress={() => {
+                                tap();
+                                void send(prompt);
+                              }}
+                              style={({ pressed }) => [
+                                styles.suggestion,
+                                pressed && styles.pressed,
+                              ]}
+                            >
+                              <IconTile size={36} tint={colors.harborTint}>
+                                <Icon color={colors.harborBlue} size={18} strokeWidth={1.9} />
+                              </IconTile>
+                              <Text style={styles.suggestionText}>{label}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <SuggestionsPlaceholder />
+                    )}
                   </View>
                   {conversations.length > 0 ? (
                     <View style={styles.recentBlock}>
@@ -1417,6 +1467,7 @@ export default function SucheScreen() {
           />
         </Screen>
       </BottomSheetModalProvider>
+      {consentSheet}
     </GestureHandlerRootView>
   );
 }
@@ -1515,6 +1566,10 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: spacing.sm,
     paddingVertical: 9,
+  },
+  suggestionPlaceholder: {
+    backgroundColor: colors.sand,
+    borderColor: colors.sandLight,
   },
   suggestionText: { color: colors.harborBlueDarker, flex: 1, ...typography.title },
   recentBlock: {

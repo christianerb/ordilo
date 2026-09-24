@@ -323,6 +323,34 @@ describe("Heute mutations", () => {
       expect(getHeuteBriefing([TASK({ dueDate: "2026-09-10" })], [DOCUMENT("d1")], 3, today)).toEqual({
         kind: "calm",
         upcomingCount: 3,
+        nextTask: null,
+      });
+    });
+
+    it("names the next task beyond the week when the week is empty", () => {
+      const briefing = getHeuteBriefing(
+        [
+          TASK({ id: "later", dueDate: "2026-09-18", title: "Zeugnis abgeben" }),
+          TASK({ id: "next", dueDate: "2026-09-04", title: "Rückmeldung zur Klassenfahrt" }),
+          TASK({ id: "undated", dueDate: null }),
+        ],
+        [],
+        0,
+        today,
+      );
+      expect(briefing).toMatchObject({
+        kind: "calm",
+        upcomingCount: 0,
+        // ICU spells the short month differently across Node versions.
+        nextTask: { task: { id: "next" }, dateLabel: formatDueLabel("2026-09-04", today)!.text },
+      });
+    });
+
+    it("keeps the calm briefing without a next task when nothing is dated", () => {
+      expect(getHeuteBriefing([TASK({ dueDate: null })], [], 0, today)).toEqual({
+        kind: "calm",
+        upcomingCount: 0,
+        nextTask: null,
       });
     });
   });

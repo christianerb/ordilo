@@ -16,8 +16,10 @@ import {
   Scale,
   ScanFace,
   ShieldCheck,
+  Sparkles,
   Trash2,
   Users,
+  WifiOff,
 } from "lucide-react-native";
 import { useCallback, useState, type ReactNode } from "react";
 import {
@@ -251,8 +253,6 @@ export default function EinstellungenScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <OrdiloButton title="Meine Offline-Kopien" variant="outline" onPress={() => router.push("/offline")} />
-        <OrdiloButton title="Ordilo mit Beispiel ausprobieren" variant="ghost" onPress={() => router.push("/beispiel")} />
         {billingEnabled ? (
           <SettingsSection title="Ordilo Plus">
             <SettingsLinkRow
@@ -326,6 +326,22 @@ export default function EinstellungenScreen() {
                 </View>
               ))
             : null}
+        </SettingsSection>
+
+        <SettingsSection title="Offline und Hilfe">
+          <SettingsLinkRow
+            description="Dokumente, die du auch ohne Internet öffnen kannst"
+            icon={<WifiOff color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onPress={() => router.push("/offline")}
+            title="Meine Offline-Kopien"
+          />
+          <SettingsDivider />
+          <SettingsLinkRow
+            description="Sieh an einem Beispiel, wie Ordilo hilft"
+            icon={<Sparkles color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onPress={() => router.push("/beispiel")}
+            title="Ordilo mit Beispiel ausprobieren"
+          />
         </SettingsSection>
 
         <SettingsSection title="Rechtliches">
@@ -542,14 +558,16 @@ function DeleteZone({
           </View>
         </View>
       ) : (
-        <OrdiloButton
-          onPress={() => {
-            haptics.warning();
-            setConfirming(true);
-          }}
-          title={isOwner ? "Familie löschen …" : "Konto löschen …"}
-          variant="outline"
-        />
+        <View style={styles.dangerTrigger}>
+          <OrdiloButton
+            onPress={() => {
+              haptics.warning();
+              setConfirming(true);
+            }}
+            title={isOwner ? "Familie löschen …" : "Konto löschen …"}
+            variant="outline"
+          />
+        </View>
       )}
     </View>
   );
@@ -802,11 +820,16 @@ const styles = StyleSheet.create({
     fontFamily: typography.timestamp.fontFamily,
     fontSize: typography.timestamp.fontSize,
   },
+  // Left-aligned like the text above them, so the destructive step reads
+  // as part of the card rather than a floating toolbar.
+  dangerTrigger: {
+    alignItems: "flex-start",
+  },
   dangerActions: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.md,
-    justifyContent: "flex-end",
+    justifyContent: "flex-start",
     minHeight: 36,
   },
   versionNote: {
