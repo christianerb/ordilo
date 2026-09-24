@@ -45,6 +45,28 @@ eine Empfangsbestätigung. Scheitert die Verarbeitung, folgt eine zweite Mail
 mit einem Link zu den Dokumenten. Diese Mails werden über dieselbe
 `RESEND_API_KEY`-Konfiguration versendet.
 
+### Support-Postfach (info@, hallo@)
+
+Die Empfangs-Domain ist ein Catch-all: Mails an öffentliche Adressen wie
+`info@ordilo.de` kommen am selben Webhook an. Ist `SUPPORT_FORWARD_TO` gesetzt,
+leitet Ordilo sie über Resend an dieses Postfach weiter. Der ursprüngliche
+Absender steht als Reply-To drin, Anhänge kommen mit. Ohne die Variable werden
+solche Mails wie bisher ignoriert.
+
+| Variable | Pflicht | Beschreibung |
+| --- | --- | --- |
+| `SUPPORT_FORWARD_TO` | empfohlen | Eigenes Postfach für Support-Mails, z. B. eine Gmail-Adresse. Nie eine Adresse auf der Empfangs-Domain. |
+| `SUPPORT_FORWARD_ADDRESSES` | nein | Lokale Teile, die weitergeleitet werden, kommagetrennt. Standard: `info,hallo`. |
+
+**Als info@ordilo.de antworten (Gmail):** Einstellungen → Konten und Import →
+„Senden als“ → Weitere E-Mail-Adresse hinzufügen. Name `Ordilo`, Adresse
+`info@ordilo.de`, „Als Alias behandeln“ an. SMTP-Server `smtp.resend.com`,
+Port 587 (TLS), Benutzername `resend`, Passwort ein eigener Resend API-Key mit
+„Sending access“ nur für diese Domain. Gmails Bestätigungsmail an info@ kommt
+über die Weiterleitung an. Weitergeleitete Mails sind an die Gmail-Adresse
+adressiert, deshalb beim Antworten im Absenderfeld `info@ordilo.de` wählen
+oder die Adresse unter „Senden als“ als Standard setzen.
+
 ## 2. Async-Pipeline (Scan-Verarbeitung über die Job-Queue)
 
 **Standardmäßig aktiv.** Der Upload-Endpoint enqueued einen `ocr`-Job und
