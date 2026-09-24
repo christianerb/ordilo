@@ -44,7 +44,8 @@ export const VOICE_RESPONSE_INSTRUCTIONS = `SPRACHMODUS — diese Antwort wird i
 - Kein Markdown, keine Tabellen, keine Aufzählungszeichen, keine Links.
 - Bei mehreren Treffern nenne höchstens drei und sage, dass alles Weitere auf dem Bildschirm steht.
 - Geprüfte Dokumentsätze übernimmst du weiterhin wortgleich. Fakten kommen weiterhin nur aus Werkzeugergebnissen.
-- Änderungen bleiben Vorschläge: Sage, dass sie auf dem Bildschirm bestätigt werden müssen.`;
+- Änderungen bleiben Vorschläge: Sage, dass sie auf dem Bildschirm bestätigt werden müssen.
+- Zugangsdaten und Kontakte zeigst du weiterhin mit present_answer_card auf dem Bildschirm. Lies Benutzernamen, Passwörter und Geheimnisse nie vor.`;
 
 /**
  * Agentic family chat — streams an OpenAI function-calling answer to the
@@ -785,12 +786,13 @@ function joinDocumentTitles(documents: ListedDocument[]): string {
 function formatNamedMemberDocumentList(
   personName: string,
   listing: ReturnType<typeof parseListedDocuments>,
+  voice = false,
 ): string {
   if (listing.total === 0) {
     return `Zu ${personName} habe ich noch kein bestätigtes Dokument gefunden. ${personName} ist als Familienmitglied vorhanden, in den bestätigten Dokumenten wird der Name aber noch nicht genannt.`;
   }
 
-  const shownDocuments = listing.documents.slice(0, 10);
+  const shownDocuments = listing.documents.slice(0, voice ? 3 : 10);
   const count = listing.total;
   const noun = count === 1 ? "Dokument" : "Dokumente";
   const firstSentence =
@@ -799,6 +801,11 @@ function formatNamedMemberDocumentList(
       : `Ich habe ${count} bestätigte ${noun} zu ${personName} gefunden: ${joinDocumentTitles(shownDocuments)}.`;
 
   const omitted = listing.documents.length - shownDocuments.length;
+  if (voice) {
+    return omitted > 0
+      ? `${firstSentence} Alle weiteren stehen auf dem Bildschirm.`
+      : firstSentence;
+  }
   const visibilityHint =
     omitted > 0
       ? ` Die weiteren ${omitted} kannst du unten öffnen.`
@@ -833,7 +840,11 @@ function streamNamedMemberDocumentList(
         send({ type: "tool", tool: "list_documents", state: "done" });
         send({
           type: "text",
-          content: formatNamedMemberDocumentList(personName, listing),
+          content: formatNamedMemberDocumentList(
+            personName,
+            listing,
+            toolContext.responseMode === "voice",
+          ),
         });
         send({ type: "sources", sources: documentResponseSources(toolContext) });
         send({ type: "done" });
@@ -901,11 +912,6 @@ export async function streamAgenticAnswer(
   const reasoningEffort = voice
     ? CHAT_VOICE_REASONING_EFFORT
     : CHAT_REASONING_EFFORT;
-  // A card answer has no text for GPT Live to speak, so a voice turn
-  // answers in sentences instead.
-  const toolDefinitions = voice
-    ? TOOL_DEFINITIONS.filter((tool) => tool.name !== "present_answer_card")
-    : TOOL_DEFINITIONS;
 
   const input: OpenAI.Responses.ResponseInput = [
     ...truncatedHistory.map((m) => ({
@@ -965,8 +971,8 @@ export async function streamAgenticAnswer(
             // round without tools. This bounds latency without ending in a
             // technical "max rounds" error after successful searches.
             tools: round < MAX_TOOL_ROUNDS ? (toolContext.documentEvidence?.length
-              ? toolDefinitions.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : toolDefinitions) :
-              (toolContext.documentEvidence?.length && !toolContext.documentAnswer ? toolDefinitions.filter((tool) => tool.name === "answer_from_documents") : []),
+              ? TOOL_DEFINITIONS.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : TOOL_DEFINITIONS) :
+              (toolContext.documentEvidence?.length && !toolContext.documentAnswer ? TOOL_DEFINITIONS.filter((tool) => tool.name === "answer_from_documents") : []),
             tool_choice: toolContext.documentEvidence?.length && !toolContext.documentAnswer ? "required" : "auto",
             stream: true,
             reasoning: { effort: reasoningEffort },

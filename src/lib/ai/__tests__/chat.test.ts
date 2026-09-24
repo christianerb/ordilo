@@ -240,7 +240,7 @@ function makeToolContext(
   };
 }
 
-function makeNamedMemberDocumentContext(): ToolContext {
+function makeNamedMemberDocumentContext(extraTitles: string[] = []): ToolContext {
   const documents = [
     {
       id: "doc-emma-1",
@@ -258,6 +258,14 @@ function makeNamedMemberDocumentContext(): ToolContext {
       created_at: "2026-07-01T10:00:00Z",
       confirmed_at: "2026-07-02T10:00:00Z",
     },
+    ...extraTitles.map((title, index) => ({
+      id: `doc-emma-extra-${index + 1}`,
+      title,
+      document_type: "letter",
+      category: "Schule",
+      created_at: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00Z`,
+      confirmed_at: `2026-06-${String(10 + index).padStart(2, "0")}T10:00:00Z`,
+    })),
   ];
 
   const builder = (result: { data: unknown; error: null; count?: number }) => {
@@ -725,6 +733,20 @@ describe("streamAgenticAnswer — named member document listings", () => {
   beforeEach(() => {
     setApiKey();
     mockCreate.mockReset();
+  });
+
+  it("names at most three documents when the list is spoken in Live", async () => {
+    const stream = await streamAgenticAnswer("Dokumente zu Emma", [], {
+      ...makeNamedMemberDocumentContext(["Impfpass", "Zahnarztbrief", "Sportverein"]),
+      responseMode: "voice",
+    });
+    const lines = await readNdjsonStream(stream);
+    const text = lines.find((line) => line.type === "text");
+
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(text?.content).toMatch(
+      /^Ich habe 5 bestätigte Dokumente zu Emma gefunden: „[^“]+“, „[^“]+“ und „[^“]+“\. Alle weiteren stehen auf dem Bildschirm\.$/,
+    );
   });
 
   it("lists Emma's documents without relying on model tool selection", async () => {
@@ -1721,7 +1743,7 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     );
   });
 
-  it("answers Live voice turns briefly, without reasoning time or answer cards", async () => {
+  it("answers Live voice turns briefly, without reasoning time, and keeps answer cards", async () => {
     mockCreate.mockResolvedValueOnce(
       fakeOpenAIStream([{ content: "Hallo!" }]),
     );
@@ -1740,7 +1762,9 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     // The evidence rules stay part of the prompt in voice mode.
     expect(request.instructions).toContain("answer_from_documents");
     const toolNames = request.tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).not.toContain("present_answer_card");
+    // Credentials and contacts only reach the screen through a card.
+    expect(toolNames).toContain("present_answer_card");
+    expect(request.instructions).toContain("Lies Benutzernamen, Passwörter und Geheimnisse nie vor");
     expect(toolNames).toContain("read_document");
   });
 
