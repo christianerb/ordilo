@@ -40,6 +40,21 @@ describe("document answer evidence", () => {
     const shown = "Kündigung\nSie möchten nicht verlängern? Dann kündigen Sie bis spätestens 30. November 2026 – online unter funkwelle.example/kuendigen oder per Brief.";
     expect(result).toMatchObject({ sources: [{ quote: shown, excerpt: shown, highlight: "30. November 2026" }] });
   });
+  it("accepts a quote copied from the readable letter instead of the OCR Markdown", () => {
+    const ocr = "Sie möchten nicht verlängern? Dann kündigen Sie bis spätestens **30. November 2026** – online unter [funkwelle.example/kuendigen](http://funkwelle.example/kuendigen) oder per Brief.";
+    const letter = [{ documentId: id, title: "Handyvertrag", page: 1, text: ocr }];
+    for (const quote of [
+      "Dann kündigen Sie bis spätestens 30. November 2026 – online unter funkwelle.example/kuendigen oder per Brief.",
+      "Dann kündigen Sie bis spätestens 30. November 2026 - online unter funkwelle.example/kuendigen",
+    ]) {
+      const result = verifyDocumentAnswer({ claims: [{ text: "Du kannst bis zum 30. November 2026 kündigen.", document_id: id, page_number: 1,
+        quote, highlight: "30. November 2026" }], state: "answered" }, letter);
+      expect(result).not.toHaveProperty("error");
+    }
+    const invented = verifyDocumentAnswer({ claims: [{ text: "Du kannst bis zum 30. November 2026 kündigen.", document_id: id, page_number: 1,
+      quote: "Dann kündigen Sie bis spätestens 30. November 2026 telefonisch.", highlight: "30. November 2026" }], state: "answered" }, letter);
+    expect(invented).toHaveProperty("error");
+  });
   it("leaves plain text, IBANs and lone asterisks untouched", () => {
     const plain = "IBAN DE12 5005 0000 0123 4567 89, Preis 3 * 12 Euro, Verwendungszweck Klasse_3b.";
     expect(readableQuote(plain)).toBe(plain);

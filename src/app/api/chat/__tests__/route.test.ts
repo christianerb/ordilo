@@ -449,6 +449,30 @@ describe("POST /api/chat", () => {
     expect(events.at(-1)).toEqual({ type: "done" });
   });
 
+  it("saves the cited evidence the client was shown, not the raw lookup sources", async () => {
+    const cited = {
+      document_id: "doc-1", title: "Handyvertrag", excerpt: "Dann kündigen Sie bis spätestens 30. November 2026.",
+      score: 1, origin: "semantic", page_number: 1, quote: "Dann kündigen Sie bis spätestens 30. November 2026.",
+      highlight: "30. November 2026", cited: true, has_original: true,
+    };
+    vi.mocked(streamAgenticAnswer).mockResolvedValue(
+      ndjsonStream([
+        { type: "text", content: "Du kannst bis spätestens 30. November 2026 kündigen." },
+        { type: "sources", sources: [cited] },
+        { type: "done" },
+      ]),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    await response.text();
+
+    const inserted = fromMock.mock.results
+      .flatMap((result) => (result.value?.insert?.mock?.calls ?? []) as Array<[Record<string, unknown>]>)
+      .map(([row]) => row)
+      .find((row) => row.role === "assistant");
+    expect(inserted?.sources).toEqual([cited]);
+  });
+
   it("persists card-only answers and announces their saved message id", async () => {
     (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
       ndjsonStream([

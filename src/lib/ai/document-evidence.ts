@@ -19,6 +19,16 @@ export function normalizeEvidence(text: string): string {
     .replace(/\u00ad/g, "").replace(/\s+/g, " ").trim();
 }
 
+/** Quotes are checked against what the family reads, not the OCR markup:
+ * the model may copy the Markdown page or its readable excerpt, and may
+ * type a plain hyphen or straight quotes for the typographic ones. */
+export function comparableEvidence(text: string): string {
+  return normalizeEvidence(readableQuote(text)
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/[\u201c\u201d\u201e\u00ab\u00bb]/g, "\"")
+    .replace(/[\u2018\u2019\u201a\u2039\u203a]/g, "'"));
+}
+
 function comparableLink(value: string): string {
   return value.trim().toLocaleLowerCase("de-DE")
     .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
@@ -212,7 +222,8 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
   const sources: ChatSource[] = [];
   for (const claim of parsed.data.claims) {
     const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
-      && normalizeEvidence(item.text).includes(normalizeEvidence(claim.quote)));
+      && (normalizeEvidence(item.text).includes(normalizeEvidence(claim.quote))
+        || comparableEvidence(item.text).includes(comparableEvidence(claim.quote))));
     if (!page) return { error: "Die zitierte Stelle wurde so noch nicht gelesen. Lies die passende Seite mit read_document und übernimm das Zitat wörtlich." };
     if (claim.quote.includes("[…]")) return { error: "Zitiere eine zusammenhängende Originalstelle, nicht mehrere zusammengefügte Ausschnitte." };
     for (const person of people) {
