@@ -1,4 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
+import { isDocumentIssueDate } from "@/lib/calendar-heuristics";
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Per-document metadata needed by the documents table (person names, tags,
@@ -11,10 +14,10 @@ export interface DocumentTableMeta {
   /** Distinct tags (entity_type "tag"). */
   tags: string[];
   /**
-   * The document's own date (e.g. invoice/letter date), resolved as the
-   * earliest extracted `date` entity. Falls back to `null` when the
-   * document has no extracted dates — callers should fall back to
-   * `created_at` in that case.
+   * The document's own date (e.g. invoice/letter date): the extracted
+   * issue date ("Briefdatum") when there is one, otherwise the earliest
+   * extracted `date` entity. Falls back to `null` when the document has no
+   * extracted dates — callers should fall back to `created_at` in that case.
    */
   documentDate: string | null;
 }
@@ -41,13 +44,15 @@ export async function fetchDocumentsTableMeta(
 
   const { data: entities, error } = await supabase
     .from("extracted_entities")
-    .select("document_id, entity_type, entity_value")
+    .select("document_id, entity_type, entity_value, label")
     .in("document_id", documentIds)
     .in("entity_type", ["person", "tag", "date"]);
 
   if (error || !entities) return {};
 
   const meta: Record<string, DocumentTableMeta> = {};
+  // Documents whose date came from an explicit issue date ("Briefdatum").
+  const issueDates = new Set<string>();
 
   for (const entity of entities) {
     const current = meta[entity.document_id] ?? {
@@ -65,9 +70,18 @@ export async function fetchDocumentsTableMeta(
         current.tags.push(entity.entity_value);
       }
     } else if (entity.entity_type === "date") {
-      // Keep the earliest date seen for this document.
-      if (!current.documentDate || entity.entity_value < current.documentDate) {
-        current.documentDate = entity.entity_value;
+      const value = entity.entity_value.trim();
+      if (ISO_DATE_PATTERN.test(value)) {
+        const issued = isDocumentIssueDate({ label: entity.label });
+        if (issued && !issueDates.has(entity.document_id)) {
+          issueDates.add(entity.document_id);
+          current.documentDate = value;
+        } else if (
+          !issueDates.has(entity.document_id) &&
+          (!current.documentDate || value < current.documentDate)
+        ) {
+          current.documentDate = value;
+        }
       }
     }
 

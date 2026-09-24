@@ -1,5 +1,6 @@
 import { apiJson, apiFetch } from "./api";
 import { getSupabase } from "./supabase";
+import { formatShortIsoDate } from "./date-labels";
 import { todayLocalDate } from "./tasks";
 
 export type DocumentType =
@@ -358,17 +359,140 @@ export function isDeadlineLike(label: string): boolean {
 }
 
 /**
+ * Words that mark a date as an appointment. Mirrors APPOINTMENT_KEYWORDS in
+ * src/lib/calendar-heuristics.ts; here they only serve to spot a task that
+ * repeats an appointment.
+ */
+const APPOINTMENT_KEYWORDS = [
+  "termin",
+  "elternabend",
+  "elterngespräch",
+  "elterngespraech",
+  "abflug",
+  "ankunft",
+  "arzt",
+  "impfung",
+  "feier",
+  "fest",
+  "treffen",
+  "einschulung",
+  "sprechstunde",
+  "geburtstag",
+  "ausflug",
+  "gespräch",
+  "gespraech",
+  "untersuchung",
+  "kontrolle",
+  "vorsorge",
+  "veranstaltung",
+  "konzert",
+  "aufführung",
+  "auffuehrung",
+  "turnier",
+  "wettbewerb",
+  "probetraining",
+  "schnuppertag",
+  "reise",
+  "urlaub",
+  "flug",
+  "abholung",
+  "übergabe",
+  "uebergabe",
+  "abfahrt",
+  "klassenfahrt",
+  "sprechtag",
+  "infoabend",
+  "informationsabend",
+] as const;
+
+const DOCUMENT_DATE_TYPES: ReadonlySet<string> = new Set(["document_date", "issue_date", "letter_date"]);
+
+/** Mirrors DOCUMENT_DATE_LABEL_PATTERNS in src/lib/calendar-heuristics.ts. */
+const DOCUMENT_DATE_LABEL_PATTERNS: readonly RegExp[] = [
+  /(brief|schreibens?|ausstellungs|dokuments?|dokumenten|rechnungs|bescheid|erstellungs)datum/i,
+  /\bdatum\s+(des|der|vom)\s+\S*(brief|schreiben|dokument|rechnung|bescheid|mitteilung)/i,
+  /^\s*(ausgestellt|erstellt|geschrieben|verfasst)\s+am\b/i,
+];
+
+/**
+ * Whether a date is the document's own date („Briefdatum“) rather than
+ * something that happens. It stays in the document, but never becomes a
+ * planner event. Stored dates lose their type, so the label decides too.
+ */
+export function isDocumentIssueDate(entry: { type?: string | null; label?: string | null }): boolean {
+  if (DOCUMENT_DATE_TYPES.has((entry.type ?? "").trim().toLowerCase())) return true;
+  const label = entry.label ?? "";
+  return DOCUMENT_DATE_LABEL_PATTERNS.some((pattern) => pattern.test(label));
+}
+
+/** Mirrors APPOINTMENT_FILLER_WORDS in src/lib/analysis-cleanup.ts. */
+const APPOINTMENT_FILLER_WORDS = new Set([
+  "besuchen", "besuch", "teilnehmen", "teilnahme", "hingehen", "gehen", "wahrnehmen", "dabei", "sein",
+  "findet", "statt", "stattfinden", "beginnt", "beginn", "termin", "uhr", "datum",
+  "am", "um", "ab", "bis", "zum", "zur", "im", "in", "an", "auf", "bei", "mit", "von", "für", "und",
+  "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
+  "heute", "morgen", "vormittag", "mittag", "nachmittag", "abend", "nächste", "nächsten", "woche",
+]);
+
+/** Mirrors onlyRestatesAppointment in src/lib/analysis-cleanup.ts. */
+function onlyRestatesAppointment(title: string, appointmentWords: readonly string[]): boolean {
+  return title
+    .toLocaleLowerCase("de")
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean)
+    .every((word) => APPOINTMENT_FILLER_WORDS.has(word) || appointmentWords.includes(word));
+}
+
+/**
+ * Drops tasks that only repeat an appointment already listed as a date:
+ * same day, the task names the appointment and asks for nothing to be
+ * done. Mirrors dropTasksDuplicatingAppointments on the web, which the
+ * confirm route applies as well — doing it here keeps the counts the app
+ * reports after confirming honest.
+ */
+export function dropTasksDuplicatingAppointments<T extends { title: string; due_date: string | null }>(
+  tasks: readonly T[],
+  dates: readonly { date: string; label: string; type?: string }[],
+): T[] {
+  const appointments = dates.flatMap((entry) => {
+    const date = entry.date.trim();
+    if (!ISO_DATE_PATTERN.test(date) || isDocumentIssueDate(entry) || isDeadlineLike(entry.label)) return [];
+    const label = entry.label.toLocaleLowerCase("de");
+    const keywords = APPOINTMENT_KEYWORDS.filter((keyword) => label.includes(keyword));
+    // The label's own appointment words ("elternabend", "schulfest"): a
+    // title word must be one of them exactly, so "Reisepass" is not "Reise".
+    const words = entry.label
+      .toLocaleLowerCase("de")
+      .split(/[^\p{L}]+/u)
+      .filter((word) => keywords.some((keyword) => word.includes(keyword)));
+    return keywords.length > 0 ? [{ date, keywords, words }] : [];
+  });
+  return tasks.filter((task) => {
+    const due = task.due_date?.trim().slice(0, 10) ?? "";
+    if (!ISO_DATE_PATTERN.test(due)) return true;
+    const title = task.title.toLocaleLowerCase("de");
+    return !appointments.some(
+      (appointment) =>
+        appointment.date === due &&
+        appointment.keywords.some((keyword) => title.includes(keyword)) &&
+        onlyRestatesAppointment(task.title, appointment.words),
+    );
+  });
+}
+
+/**
  * The dates that may become planner events at all: a real ISO calendar
- * date that is not in the past. A „Gezahlt am …“ from last month is
- * information, not something to plan — the web offers the same set.
+ * date that is not in the past and not the document's own date. A
+ * „Gezahlt am …“ from last month is information, not something to plan —
+ * the web offers the same set.
  */
 export function calendarEligibleDateIndices(
-  dates: readonly { date: string }[],
+  dates: readonly { date: string; label?: string; type?: string }[],
   today: string = todayLocalDate(),
 ): number[] {
   return dates.flatMap((entry, index) => {
     const value = entry.date.trim();
-    if (!ISO_DATE_PATTERN.test(value) || value < today) return [];
+    if (!ISO_DATE_PATTERN.test(value) || value < today || isDocumentIssueDate(entry)) return [];
     return [index];
   });
 }
@@ -405,6 +529,16 @@ export function remapCalendarSelection(
   return next;
 }
 
+/** The nonempty tasks a confirmation keeps, in the order they are sent. */
+function confirmableTasks(analysis: ReviewAnalysis): ReviewAnalysis["tasks"] {
+  return dropTasksDuplicatingAppointments(
+    analysis.tasks
+      .map((task) => ({ ...task, title: task.title.trim(), due_date: task.due_date?.trim() || null }))
+      .filter((task) => Boolean(task.title)),
+    analysis.dates,
+  );
+}
+
 export function buildConfirmDocumentPayload(
   analysis: ReviewAnalysis,
   options: { calendarDateIndices?: number[] } = {},
@@ -421,9 +555,7 @@ export function buildConfirmDocumentPayload(
     contacts: analysis.contacts,
     dates: analysis.dates.filter((date) => Boolean(date.date.trim())),
     amounts: analysis.amounts,
-    tasks: analysis.tasks
-      .map((task) => ({ ...task, title: task.title.trim(), due_date: task.due_date?.trim() || null }))
-      .filter((task) => Boolean(task.title)),
+    tasks: confirmableTasks(analysis),
     facts: analysis.facts
       .map((fact) => ({ ...fact, label: fact.label.trim(), value: fact.value.trim() }))
       .filter((fact) => Boolean(fact.label && fact.value)),
@@ -434,8 +566,8 @@ export function buildConfirmDocumentPayload(
     // Dates the family kept checked become planner events in the same
     // transaction as the confirmation — "Ordilo hat den Termin eingetragen".
     calendar_events: analysis.dates
-      .map((date, index) => ({ date: date.date.trim(), label: date.label.trim(), index }))
-      .filter((date) => keptDates.has(date.index) && ISO_DATE_PATTERN.test(date.date))
+      .map((date, index) => ({ date: date.date.trim(), label: date.label.trim(), type: date.type, index }))
+      .filter((date) => keptDates.has(date.index) && ISO_DATE_PATTERN.test(date.date) && !isDocumentIssueDate(date))
       .map((date) => ({ date: date.date, label: date.label || analysis.title.trim() || "Termin" })),
   };
 }
@@ -472,15 +604,20 @@ function parseDateOnly(value: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** "Di., 8. Sep." — or the raw text when Ordilo could not read a date. */
-export function formatReviewDate(value: string): string {
-  const date = parseDateOnly(value.trim());
-  if (!date) return value.trim();
-  return new Intl.DateTimeFormat("de-DE", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(date);
+const TIME_ONLY = /^(\d{1,2}):(\d{2})(\s*uhr)?$/i;
+
+/**
+ * "Di., 8. Sept.", with the year when it is not this year ("Fr., 1. Jan.
+ * 2027"); a bare time from an older analysis reads "08:15 Uhr"; anything
+ * else Ordilo could not read stays as written.
+ */
+export function formatReviewDate(value: string, now = new Date()): string {
+  const trimmed = value.trim();
+  const formatted = formatShortIsoDate(trimmed, now);
+  if (formatted) return formatted;
+  const time = TIME_ONLY.exec(trimmed);
+  if (time) return `${time[1].padStart(2, "0")}:${time[2]} Uhr`;
+  return trimmed;
 }
 
 /** "heute", "morgen", "in 6 Tagen", "vor 3 Tagen", null beyond ~8 weeks. */
@@ -523,13 +660,23 @@ export function getDocumentConsequences(
   const dates: DocumentConsequence[] = analysis.dates
     .map((date, index) => ({ date, index }))
     .filter(({ date }) => date.date.trim() || date.label.trim())
-    .sort((a, b) => a.date.date.localeCompare(b.date.date))
+    .sort((a, b) => {
+      // Real dates in calendar order first; unreadable values ("08:15",
+      // "bald") keep their order after them instead of sorting to the top.
+      const aDate = a.date.date.trim();
+      const bDate = b.date.date.trim();
+      const aIso = DATE_ONLY.test(aDate);
+      const bIso = DATE_ONLY.test(bDate);
+      if (aIso && bIso) return aDate.localeCompare(bDate);
+      if (aIso !== bIso) return aIso ? -1 : 1;
+      return a.index - b.index;
+    })
     .map(({ date, index }) => ({
       kind: "date" as const,
       index,
       label: date.label.trim() || "Termin",
       date: date.date.trim(),
-      dateLabel: formatReviewDate(date.date),
+      dateLabel: formatReviewDate(date.date, now),
       relative: formatRelativeDays(date.date, now),
     }));
   const tasks: DocumentConsequence[] = analysis.tasks
@@ -540,7 +687,7 @@ export function getDocumentConsequences(
       index,
       title: task.title.trim(),
       dueDate: task.due_date?.trim() || null,
-      dueLabel: task.due_date?.trim() ? formatReviewDate(task.due_date) : null,
+      dueLabel: task.due_date?.trim() ? formatReviewDate(task.due_date, now) : null,
     }));
   const amounts: DocumentConsequence[] = analysis.amounts
     .map((amount, index) => ({ amount, index }))
@@ -606,7 +753,7 @@ export function canReviewDocument(status: string): status is "analyzed" {
 
 /** Only facts the confirmation actually retained are described as saved. */
 export function confirmedDocumentOutcomes(analysis: ReviewAnalysis, result: ConfirmDocumentResult, calendarDateIndices: number[]): string[] {
-  const tasks = analysis.tasks.filter((task) => task.title.trim()).slice(0, result.tasksKept).map((task) =>
+  const tasks = confirmableTasks(analysis).slice(0, result.tasksKept).map((task) =>
     task.due_date ? `${task.title} — bis ${formatReviewDate(task.due_date)} im Plan` : `${task.title} — in eurem Plan`,
   );
   const dates = calendarDateIndices.map((index) => analysis.dates[index]).filter(Boolean)

@@ -4,7 +4,9 @@ import {
   calendarEligibleDateIndices,
   confirmDocumentReview,
   defaultCalendarDateIndices,
+  formatReviewDate,
   isDeadlineLike,
+  isDocumentIssueDate,
   remapCalendarSelection,
   formatRelativeDays,
   formatReviewAmount,
@@ -263,6 +265,73 @@ describe("document review", () => {
     expect(consequences[0]).toMatchObject({ label: "Sportfest", dateLabel: "Di., 8. Sept.", relative: "in 6 Tagen", index: 1 });
     expect(consequences[3]).toMatchObject({ label: "Gesamtbetrag", value: "12,50\u00a0€" });
   });
+
+  it("names the year only when a date is not in the current one", () => {
+    const now = new Date(2026, 8, 2);
+    expect(formatReviewDate("2026-09-08", now)).toBe("Di., 8. Sept.");
+    expect(formatReviewDate("2027-01-01", now)).toBe("Fr., 1. Jan. 2027");
+    expect(formatReviewDate("2025-12-31", now)).toBe("Mi., 31. Dez. 2025");
+    expect(formatReviewDate("8:15", now)).toBe("08:15 Uhr");
+    expect(formatReviewDate("bald", now)).toBe("bald");
+  });
+
+  it("keeps bare times and unreadable values after the real dates", () => {
+    const consequences = getDocumentConsequences(
+      {
+        ...analysis,
+        dates: [
+          { date: "08:15", label: "Abfahrt", type: "time", confidence: 1 },
+          { date: "2027-01-01", label: "Vertragsbeginn", type: "date", confidence: 1 },
+          { date: "2026-10-12", label: "Klassenfahrt", type: "date", confidence: 1 },
+        ],
+      },
+      new Date(2026, 8, 2),
+    );
+    expect(consequences.map((entry) => (entry.kind === "date" ? entry.dateLabel : null))).toEqual([
+      "Mo., 12. Okt.",
+      "Fr., 1. Jan. 2027",
+      "08:15 Uhr",
+    ]);
+  });
+
+  it("never sends the document's own date as a planner event", () => {
+    const payload = buildConfirmDocumentPayload(
+      {
+        ...analysis,
+        title: "Elternbrief",
+        dates: [
+          { date: "2026-09-01", label: "Briefdatum", type: "date", confidence: 1 },
+          { date: "2026-09-02", label: "", type: "document_date", confidence: 1 },
+          { date: "2026-09-14", label: "Elternabend", type: "date", confidence: 1 },
+        ],
+      },
+      { calendarDateIndices: [0, 1, 2] },
+    );
+    expect(payload.calendar_events).toEqual([{ date: "2026-09-14", label: "Elternabend" }]);
+    expect(payload.dates).toHaveLength(3);
+  });
+
+  it("does not send a task that only repeats an appointment", () => {
+    const withDuplicate: ReviewAnalysis = {
+      ...analysis,
+      dates: [{ date: "2026-09-14", label: "Elternabend", type: "date", confidence: 1 }],
+      tasks: [
+        { title: "Elternabend 14.09.", due_date: "2026-09-14", confidence: 1 },
+        { title: "Anmeldung zum Elternabend bis 10.09.", due_date: "2026-09-10", confidence: 1 },
+        { title: "Elternabend", due_date: "2026-09-21", confidence: 1 },
+        { title: "Fotos beim Elternabend machen", due_date: "2026-09-14", confidence: 1 },
+      ],
+    };
+    const payload = buildConfirmDocumentPayload(withDuplicate);
+    expect(payload.tasks.map((task) => task.title)).toEqual([
+      "Anmeldung zum Elternabend bis 10.09.",
+      "Elternabend",
+      "Fotos beim Elternabend machen",
+    ]);
+    const outcomes = confirmedDocumentOutcomes(withDuplicate, { tasksKept: payload.tasks.length, eventsCreated: 0 }, []);
+    expect(outcomes.join()).not.toContain("Elternabend 14.09.");
+    expect(outcomes).toHaveLength(3);
+  });
 });
 
 /**
@@ -281,6 +350,21 @@ describe("calendar pre-selection", () => {
 
   it("offers only real ISO dates from today on", () => {
     expect(calendarEligibleDateIndices(dates, today)).toEqual([0, 1, 3]);
+  });
+
+  it("never offers the document's own date", () => {
+    expect(
+      calendarEligibleDateIndices(
+        [
+          { date: "2026-09-04", label: "Datum des Elternbriefs" },
+          { date: "2026-09-05", label: "", type: "document_date" },
+          { date: "2026-09-10", label: "Elternabend" },
+        ],
+        today,
+      ),
+    ).toEqual([2]);
+    expect(isDocumentIssueDate({ label: "Briefdatum" })).toBe(true);
+    expect(isDocumentIssueDate({ label: "Vertragsbeginn" })).toBe(false);
   });
 
   it("pre-checks confident appointments and nothing else", () => {

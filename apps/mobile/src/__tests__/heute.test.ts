@@ -118,6 +118,13 @@ describe("Heute pure helpers", () => {
     });
   });
 
+  it("adds the year to due labels outside the current year", () => {
+    const now = new Date(2026, 11, 20, 12);
+    expect(formatDueLabel("2026-12-21", now)?.text).toBe("Morgen");
+    expect(formatDueLabel("2026-12-28", now)?.text).toBe("Mo., 28. Dez.");
+    expect(formatDueLabel("2027-01-01", now)?.text).toBe("Fr., 1. Jan. 2027");
+  });
+
   it("keeps far-future tasks out of the immediate priority hero", () => {
     const now = new Date(2026, 7, 21, 12);
     expect(
@@ -382,6 +389,18 @@ describe("Heute mutations", () => {
       ["event", "Sportfest", "08:15"],
       ["task", "Formular zurückgeben", null],
     ]);
+  });
+
+  it("names the year on agenda days in the next year", () => {
+    const { days } = getUpcomingAgenda(
+      [
+        TASK({ id: "t1", dueDate: "2026-12-30", title: "Geschenke abholen" }),
+        TASK({ id: "t2", dueDate: "2027-01-02", title: "Rechnung zahlen" }),
+      ],
+      [],
+      new Date(2026, 11, 28),
+    );
+    expect(days.map((day) => day.label)).toEqual(["Mi., 30. Dez.", "Sa., 2. Jan. 2027"]);
   });
 
   it("caps the agenda and reports what it left out", () => {

@@ -91,6 +91,11 @@ const APPOINTMENT_KEYWORDS = [
   "abholung",
   "übergabe",
   "uebergabe",
+  "abfahrt",
+  "klassenfahrt",
+  "sprechtag",
+  "infoabend",
+  "informationsabend",
 ] as const;
 
 function labelIncludes(label: string, keywords: readonly string[]): boolean {
@@ -106,6 +111,45 @@ export function isDeadlineLike(label: string): boolean {
 /** Whether the label describes an appointment ("Elternabend", "Abflug"). */
 export function isAppointmentLike(label: string): boolean {
   return labelIncludes(label, APPOINTMENT_KEYWORDS);
+}
+
+/** The appointment words a label contains ("Elternabend Kita" → ["elternabend"]). */
+export function appointmentKeywordsIn(label: string): string[] {
+  const normalized = label.toLocaleLowerCase("de");
+  return APPOINTMENT_KEYWORDS.filter((keyword) => normalized.includes(keyword));
+}
+
+const DOCUMENT_DATE_TYPES: ReadonlySet<string> = new Set([
+  "document_date",
+  "issue_date",
+  "letter_date",
+]);
+
+/**
+ * Labels that name the date a document was written or issued: "Briefdatum",
+ * "Rechnungsdatum", "Datum des Elternbriefs", "Ausgestellt am".
+ */
+const DOCUMENT_DATE_LABEL_PATTERNS: readonly RegExp[] = [
+  /(brief|schreibens?|ausstellungs|dokuments?|dokumenten|rechnungs|bescheid|erstellungs)datum/i,
+  /\bdatum\s+(des|der|vom)\s+\S*(brief|schreiben|dokument|rechnung|bescheid|mitteilung)/i,
+  /^\s*(ausgestellt|erstellt|geschrieben|verfasst)\s+am\b/i,
+];
+
+/**
+ * Whether a date is the document's own date (when the letter was written),
+ * not something that happens. The analysis keeps it — the documents table
+ * uses it as the document date — but it must never become a planner event.
+ * Stored entities keep only the label, so the label check matters as much
+ * as the type.
+ */
+export function isDocumentIssueDate(entry: {
+  type?: string | null;
+  label?: string | null;
+}): boolean {
+  const type = (entry.type ?? "").trim().toLowerCase();
+  if (DOCUMENT_DATE_TYPES.has(type)) return true;
+  const label = entry.label ?? "";
+  return DOCUMENT_DATE_LABEL_PATTERNS.some((pattern) => pattern.test(label));
 }
 
 /**
@@ -128,19 +172,21 @@ export interface CalendarCandidate {
  *
  * A date is offered when it is a real ISO calendar date (pure times like
  * "19:25" are not) and lies today or in the future — a "Gezahlt am …"
- * from last month is information, not something to plan.
+ * from last month is information, not something to plan. The document's
+ * own date ("Briefdatum") is never offered.
  *
  * @param dates - The analysis' dates (edited values applied).
  * @param today - ISO date override for tests; defaults to the local today.
  */
 export function findCalendarCandidates(
-  dates: { date: string; label: string }[],
+  dates: { date: string; label: string; type?: string }[],
   today: string = toCalendarDate(new Date()),
 ): CalendarCandidate[] {
   const candidates: CalendarCandidate[] = [];
   dates.forEach((entry, index) => {
     if (!ISO_DATE_PATTERN.test(entry.date)) return;
     if (entry.date < today) return;
+    if (isDocumentIssueDate(entry)) return;
     candidates.push({
       index,
       date: entry.date,

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  appointmentKeywordsIn,
   findCalendarCandidates,
   isAppointmentLike,
   isDeadlineLike,
+  isDocumentIssueDate,
   selectedCalendarEvents,
 } from "@/lib/calendar-heuristics";
 
@@ -101,6 +103,54 @@ describe("findCalendarCandidates", () => {
       TODAY,
     );
     expect(candidates[0].index).toBe(1);
+  });
+
+  it("never offers the document's own date", () => {
+    const candidates = findCalendarCandidates(
+      [
+        entry("2026-09-01", "Datum des Elternbriefs"),
+        { date: "2026-09-02", label: "", type: "document_date" },
+        entry("2026-09-14", "Elternabend"),
+      ],
+      TODAY,
+    );
+    expect(candidates.map((candidate) => candidate.index)).toEqual([2]);
+  });
+});
+
+describe("isDocumentIssueDate", () => {
+  it.each([
+    "Briefdatum",
+    "Rechnungsdatum",
+    "Datum des Elternbriefs",
+    "Datum des Schreibens",
+    "Datum der Rechnung",
+    "Ausgestellt am",
+    "Dokumentdatum",
+  ])("treats %s as the document's own date", (label) => {
+    expect(isDocumentIssueDate({ label })).toBe(true);
+  });
+
+  it("reads the document_date type without a label", () => {
+    expect(isDocumentIssueDate({ type: "document_date", label: "" })).toBe(true);
+  });
+
+  it.each(["Elternabend", "Zahlungsfrist", "Datum der Klassenfahrt", "Vertragsbeginn"])(
+    "does not treat %s as the document's own date",
+    (label) => {
+      expect(isDocumentIssueDate({ type: "date", label })).toBe(false);
+    },
+  );
+});
+
+describe("appointmentKeywordsIn", () => {
+  it("names the appointment words of a label", () => {
+    expect(appointmentKeywordsIn("Elternabend Klasse 3b")).toEqual(["elternabend"]);
+    expect(appointmentKeywordsIn("Abfahrt Klassenfahrt")).toEqual([
+      "abfahrt",
+      "klassenfahrt",
+    ]);
+    expect(appointmentKeywordsIn("Zahlungsfrist")).toEqual([]);
   });
 });
 
