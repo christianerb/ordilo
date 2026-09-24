@@ -3,6 +3,11 @@ import { after } from "next/server";
 import { Resend } from "resend";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { inboundAliasCandidates } from "@/lib/family-inbound-email";
+import {
+  forwardSupportEmail,
+  matchSupportAddress,
+  supportLocalParts,
+} from "@/lib/support-mail-forward";
 import { importInboundEmailAttachments } from "@/lib/inbound-email-import";
 import { recordInboundEmailInsights } from "@/lib/inbound-email-insights";
 import { hasAiDataSharingConsent } from "@/lib/ai/consent";
@@ -50,6 +55,32 @@ export async function POST(request: Request): Promise<Response> {
   if (event.type !== "email.received") return Response.json({ ok: true });
 
   const recipients = [...event.data.to, ...event.data.received_for];
+
+  const forwardTo = process.env.SUPPORT_FORWARD_TO?.trim();
+  const supportAddress = forwardTo
+    ? matchSupportAddress(
+        recipients,
+        inboundDomain,
+        supportLocalParts(process.env.SUPPORT_FORWARD_ADDRESSES),
+      )
+    : null;
+  if (forwardTo && supportAddress) {
+    try {
+      const result = await forwardSupportEmail({
+        resend,
+        emailId: event.data.email_id,
+        supportAddress,
+        forwardTo,
+        inboundDomain,
+      });
+      return Response.json({ ok: true, forwarded: result.forwarded });
+    } catch (error) {
+      console.error("[email/inbound] support forward failed", error);
+      // A 5xx makes Resend retry; the idempotency key keeps that to one mail.
+      return Response.json({ error: "E-Mail konnte nicht weitergeleitet werden." }, { status: 502 });
+    }
+  }
+
   const aliases = inboundAliasCandidates(recipients, inboundDomain);
   if (aliases.length === 0) return Response.json({ ok: true, ignored: true });
 
