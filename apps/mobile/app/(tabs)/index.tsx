@@ -85,6 +85,7 @@ import {
   getTodayEvents,
   getTodayTasks,
   getUpcomingAgenda,
+  HOME_EVENTS_HORIZON_DAYS,
   loadHeuteData,
   mergeJournalDocuments,
   setHeuteTaskStatus,
@@ -327,7 +328,12 @@ export default function HeuteScreen() {
     !todayEvents.length &&
     !journalDocuments.length &&
     !discoveries.length;
-  const heroTaskId = briefing.kind === "task" ? briefing.task.id : null;
+  const heroTaskId =
+    briefing.kind === "task"
+      ? briefing.task.id
+      : briefing.kind === "calm"
+        ? (briefing.nextTask?.task.id ?? null)
+        : null;
   const nextTasks = useMemo(() => {
     const todayStr = toLocalDateStr(referenceDate);
     const horizonStr = toLocalDateStr(
@@ -572,21 +578,6 @@ export default function HeuteScreen() {
 
         {!isFirstVisit ? (
           <>
-            {activityItems.length > 0 ? (
-              <Section title="Neuigkeiten">
-                <ListGroup>
-                  {activityItems.slice(0, NEUIGKEITEN_ROWS).map((item, index) => (
-                    <ActivityRow
-                      first={index === 0}
-                      item={item}
-                      key={item.id}
-                      onOpen={openActivity}
-                    />
-                  ))}
-                </ListGroup>
-              </Section>
-            ) : null}
-
             {todayEvents.length > 0 || todayTasks.some((task) => task.id !== heroTaskId) ? (
               <Section
                 title="Heute bei euch"
@@ -653,6 +644,44 @@ export default function HeuteScreen() {
               </Section>
             ) : null}
 
+            {nextTasks.length > 0 ? (
+              <Section
+                action={{ label: "Plan", onPress: () => router.push("/(tabs)/plan") }}
+                title="Als Nächstes"
+              >
+                <ListGroup>
+                  {nextTasks.map((task, index) => (
+                    <TaskListRow
+                      busy={mutatingTaskId === task.id}
+                      first={index === 0}
+                      key={task.id}
+                      members={members}
+                      onToggle={() => void toggleTask(task)}
+                      referenceDate={referenceDate}
+                      task={task}
+                    />
+                  ))}
+                </ListGroup>
+              </Section>
+            ) : null}
+
+            {/* Deadlines come before news: a date the family could miss
+                outranks a record of what already happened. */}
+            {activityItems.length > 0 ? (
+              <Section title="Neuigkeiten">
+                <ListGroup>
+                  {activityItems.slice(0, NEUIGKEITEN_ROWS).map((item, index) => (
+                    <ActivityRow
+                      first={index === 0}
+                      item={item}
+                      key={item.id}
+                      onOpen={openActivity}
+                    />
+                  ))}
+                </ListGroup>
+              </Section>
+            ) : null}
+
             {journalDocuments.length > 0 ? (
               <Section
                 action={{
@@ -678,27 +707,6 @@ export default function HeuteScreen() {
                       first={index === 0}
                       key={document.id}
                       onPress={() => openDocument(document.id)}
-                    />
-                  ))}
-                </ListGroup>
-              </Section>
-            ) : null}
-
-            {nextTasks.length > 0 ? (
-              <Section
-                action={{ label: "Plan", onPress: () => router.push("/(tabs)/plan") }}
-                title="Als Nächstes"
-              >
-                <ListGroup>
-                  {nextTasks.map((task, index) => (
-                    <TaskListRow
-                      busy={mutatingTaskId === task.id}
-                      first={index === 0}
-                      key={task.id}
-                      members={members}
-                      onToggle={() => void toggleTask(task)}
-                      referenceDate={referenceDate}
-                      task={task}
                     />
                   ))}
                 </ListGroup>
@@ -1029,17 +1037,33 @@ function BriefingCard({
     );
   }
 
+  const { nextTask } = briefing;
   return (
     <DayBriefLead message="Heute ist alles in guten Händen.">
       <Text style={styles.priorityLabel}>Ein ruhiger Moment</Text>
       <Text style={styles.priorityTitle}>Keine offenen Fristen für heute.</Text>
       <Text style={styles.priorityText}>
         {briefing.upcomingCount === 0
-          ? "Für heute und morgen ist alles erledigt."
+          ? `In den nächsten ${HOME_EVENTS_HORIZON_DAYS} Tagen steht nichts an.`
           : briefing.upcomingCount === 1
-            ? "Eine Sache steht in den nächsten Tagen an."
-            : `${briefing.upcomingCount} Dinge stehen in den nächsten Tagen an.`}
+            ? `Eine Sache steht in den nächsten ${HOME_EVENTS_HORIZON_DAYS} Tagen an.`
+            : `${briefing.upcomingCount} Dinge stehen in den nächsten ${HOME_EVENTS_HORIZON_DAYS} Tagen an.`}
       </Text>
+      {nextTask ? (
+        <Pressable
+          accessibilityHint="Öffnet den Plan"
+          accessibilityLabel={`Als Nächstes: ${nextTask.task.title}, ${nextTask.dateLabel}`}
+          accessibilityRole="button"
+          onPress={onOpenPlan}
+          style={({ pressed }) => [styles.calmNext, pressed && styles.pressed]}
+        >
+          <CalendarDays color={colors.harborBlue} size={16} strokeWidth={1.9} />
+          <Text numberOfLines={2} style={styles.calmNextText}>
+            <Text style={styles.calmNextLead}>Als Nächstes: </Text>
+            {nextTask.task.title} · {nextTask.dateLabel}
+          </Text>
+        </Pressable>
+      ) : null}
     </DayBriefLead>
   );
 }
@@ -1638,6 +1662,26 @@ const styles = StyleSheet.create({
   briefingGoText: {
     color: colors.harborBlue,
     ...typography.caption,
+  },
+  calmNext: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: colors.sand,
+    borderRadius: radii.base,
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm + 4,
+    paddingVertical: spacing.sm,
+  },
+  calmNextText: {
+    color: colors.graphite,
+    flexShrink: 1,
+    ...typography.timestamp,
+  },
+  calmNextLead: {
+    color: colors.mistDark,
   },
   briefingLink: {
     alignSelf: "flex-start",

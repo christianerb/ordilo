@@ -31,8 +31,13 @@ export function ChatEvidence({ source, onOpenDocument }: { source: ChatSource; o
     } catch { setError("Das Original konnte gerade nicht geöffnet werden. Versuche es noch einmal."); }
     finally { setLoading(false); }
   }
+  // The button label replaces its children for VoiceOver, so the quoted
+  // passage itself has to be part of it or the evidence is never read out.
+  const quoteText = (source.quote ?? source.excerpt).trim();
   return <>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Fundstelle öffnen: ${source.title ?? "Dokument"}${source.page_number ? `, Seite ${source.page_number}` : ""}`}
+    <Pressable accessibilityRole="button"
+      accessibilityLabel={`Fundstelle ansehen: ${source.title ?? "Dokument"}${source.page_number ? `, Seite ${source.page_number}` : ""}${quoteText ? `. „${quoteText}“` : ""}`}
+      accessibilityHint="Öffnet den Originaltext"
       onPress={() => { tap(); setOpen(true); }} style={({ pressed }) => [styles.paper, pressed && styles.pressed]}>
       <View style={styles.sourceHeader}><FileText size={17} color={colors.harborBlue} />
         <Text numberOfLines={2} style={styles.title}>{source.title ?? "Eure Unterlage"}</Text>
@@ -43,7 +48,7 @@ export function ChatEvidence({ source, onOpenDocument }: { source: ChatSource; o
     </Pressable>
     <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setOpen(false)}>
       <SafeAreaView style={styles.sheet} edges={["top", "bottom"]}>
-        <View style={styles.sheetHeader}><Text style={[styles.sheetTitle, fontScale > 1.3 && styles.accessibleHeading]}>Die Fundstelle</Text>
+        <View style={styles.sheetHeader}><Text accessibilityRole="header" style={[styles.sheetTitle, fontScale > 1.3 && styles.accessibleHeading]}>Die Fundstelle</Text>
           <Pressable accessibilityLabel="Fundstelle schließen" accessibilityRole="button" onPress={() => setOpen(false)} style={styles.close}><X size={22} color={colors.graphite} /></Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.reading}>

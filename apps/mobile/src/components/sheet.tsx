@@ -376,6 +376,7 @@ export function OrdiloNestedSheet({
   closeAccessibilityLabel = "Auswahl schließen",
   contained = false,
   dismissDisabled = false,
+  inset = false,
   onClose,
   visible,
 }: {
@@ -384,6 +385,11 @@ export function OrdiloNestedSheet({
   /** Keep the overlay inside an already-floating parent sheet. */
   contained?: boolean;
   dismissDisabled?: boolean;
+  /**
+   * With `contained`, give the panel its own side inset. Needed when the
+   * host is a full screen (a native modal route) instead of a form sheet.
+   */
+  inset?: boolean;
   onClose: () => void;
   visible: boolean;
 }) {
@@ -406,6 +412,7 @@ export function OrdiloNestedSheet({
     <ContainedNestedSheet
       closeAccessibilityLabel={closeAccessibilityLabel}
       dismissDisabled={dismissDisabled}
+      inset={inset}
       onClose={onClose}
       visible={visible}
     >
@@ -424,12 +431,14 @@ function ContainedNestedSheet({
   children,
   closeAccessibilityLabel,
   dismissDisabled,
+  inset,
   onClose,
   visible,
 }: {
   children: ReactNode;
   closeAccessibilityLabel: string;
   dismissDisabled: boolean;
+  inset: boolean;
   onClose: () => void;
   visible: boolean;
 }) {
@@ -521,7 +530,11 @@ function ContainedNestedSheet({
       </Animated.View>
       <View
         pointerEvents="box-none"
-        style={[styles.nestedPanelSlot, { paddingBottom: slotBottomInset }]}
+        style={[
+          styles.nestedPanelSlot,
+          inset && styles.nestedPanelSlotInset,
+          { paddingBottom: slotBottomInset },
+        ]}
       >
         <Animated.View style={[styles.nestedPanel, sheetStyle]}>
           <View style={styles.floatingHandle} />
@@ -902,13 +915,16 @@ const styles = StyleSheet.create({
   nestedBackdrop: {
     backgroundColor: "rgba(38, 36, 33, 0.28)",
   },
-  // No horizontal inset here: every current `contained` caller already
-  // renders inside an OrdiloFormSheet, whose own outer slot already
-  // insets modalSheet — and therefore this overlay, which fills it — by
-  // FLOATING_SHEET_INSET. Adding it again would double the side margins.
+  // No horizontal inset by default: a `contained` sheet inside an
+  // OrdiloFormSheet is already inset by the form sheet's own outer slot.
+  // Adding it again would double the side margins; only a sheet hosted
+  // directly on a full screen opts into nestedPanelSlotInset.
   nestedPanelSlot: {
     flex: 1,
     justifyContent: "flex-end",
+  },
+  nestedPanelSlotInset: {
+    paddingHorizontal: FLOATING_SHEET_INSET,
   },
   nestedPanel: {
     backgroundColor: colors.warmWhite,
