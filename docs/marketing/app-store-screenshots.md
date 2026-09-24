@@ -3,6 +3,14 @@
 Stand 23.09.2026. Bewertung der sechs gespeicherten Bilder und Konzept für
 ein neues Set. Die Texte dazu stehen in [app-store-texte.md](app-store-texte.md).
 
+**Umgesetzt (23.09.2026):** Das neue Set liegt unter
+[`app-store-assets/1.0/`](app-store-assets/1.0/), die Rohaufnahmen unter
+`app-store-assets/raw/`, gebaut mit `node scripts/compose-store-screenshots.mjs`.
+Abweichungen vom Konzept unten: Bild 5 zeigt den Plan („Alles, was ansteht.“),
+weil Start noch keine Fristen der Woche zeigt; Bild 2 nennt Scannen, Foto,
+PDF und Mail; das Maskottchen steht nur in der App-Ansicht, nicht zusätzlich
+am Rand.
+
 ## Kurzfassung
 
 - **Technisch passt alles.** Sechs Bilder, 1260 × 2736 (eine gültige
@@ -123,10 +131,11 @@ und ein späteres Abo würde die Bilder sonst sofort falsch machen.
 
 ## Später, nach dem Launch
 
-- **App-Vorschauvideo (15 bis 30 Sekunden):** Brief scannen, Frage stellen,
-  Antwort mit Fundstelle. Ein Video ersetzt in der Suche das erste Bild und
-  startet von selbst. Nur machen, wenn es wirklich gut wird; ein
-  mittelmäßiges Video schadet mehr als es hilft.
+- **App-Vorschauvideo (15 bis 30 Sekunden):** Ein Video ersetzt in der Suche
+  das erste Bild und startet von selbst. Eine erste Fassung liegt als
+  `app-store-assets/1.0/app-preview.mp4` bereit (Frage → Antwort →
+  Fundstelle → Plan → Dokumente, 28,9 s). Scannen fehlt, weil der Simulator
+  keine Kamera hat; eine Fassung mit echtem Scan braucht ein Gerät.
 - **Produktseiten-Test:** In App Store Connect zwei Reihenfolgen gegeneinander
   testen, zum Beispiel „Fragen zuerst“ gegen „Scannen zuerst“. Erst sinnvoll,
   wenn genug Besucher kommen.

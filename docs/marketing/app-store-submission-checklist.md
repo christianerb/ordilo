@@ -26,12 +26,13 @@ die Klicks in App Store Connect.
 ## 2. App Store Connect: Version 1.0 — Klickliste mit fertigen Antworten
 
 - [ ] **Build auswählen**: der Produktionsbuild vom 23.09.2026.
-- [ ] **Screenshots ersetzen** (offene Voraussetzung): Das neue Achter-Set
-      nach [app-store-screenshots.md](app-store-screenshots.md) fertigstellen
-      und unter `app-store-assets/1.0/` ins Repo legen; dann das alte
-      Sechser-Set löschen und die acht Bilder hochladen (6,9 Zoll). Das alte
-      `06-gemeinsam.png` zeigt den entfernten Button „Ich übernehme das“ und
-      darf nicht eingereicht werden.
+- [ ] **Screenshots ersetzen**: Das neue Achter-Set liegt fertig unter
+      `app-store-assets/1.0/` (1320 × 2868, RGB, ohne Alpha). Das alte
+      Sechser-Set löschen und die acht Bilder in Dateireihenfolge hochladen
+      (6,9 Zoll). Das alte `06-gemeinsam.png` zeigt den entfernten Button
+      „Ich übernehme das“ und darf nicht eingereicht werden.
+- [ ] **App-Vorschau** (optional): `app-store-assets/1.0/app-preview.mp4`
+      bei 6,9 Zoll hochladen, Posterbild mit der Antwort wählen.
 - [ ] **In-App-Käufe**: nichts zuordnen. Die vorbereiteten Abo-Produkte
       bleiben unverknüpft und werden nicht zur Prüfung eingereicht.
 - [ ] **Inhaltsrechte** → Antwort: **„Ja“** (die App greift auf Drittinhalte

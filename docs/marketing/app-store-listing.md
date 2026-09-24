@@ -52,21 +52,36 @@ Current app is a private document utility. No public feed or broad distribution 
 
 ## Screenshots
 
-Six German 6.9-inch iPhone screenshots are saved in App Store Connect. All are
-1260 × 2736, RGB PNGs without alpha and use synthetic content only:
+**For 1.0 (ready, not yet uploaded):** eight German 6.9-inch screenshots in
+`docs/marketing/app-store-assets/1.0/`, 1320 × 2868, RGB PNGs without alpha.
+Real app captures from the 1.0 code (iPhone 17 Pro Max simulator, status bar
+9:41) of a dedicated screenshot account with a fictional family (Berger) and
+self-made letters. Unframed captures live in `app-store-assets/raw/`;
+`node scripts/compose-store-screenshots.mjs` rebuilds the set.
 
-1. `01-papierkram.png` — Scan and extracted details.
-2. `02-fragen.png` — A concrete family-document question and cited answer.
-3. `03-fundstelle.png` — The supporting passage inside the original document.
-4. `04-angaben.png` — Extracted dates, times and identifiers to review.
-5. `05-ablage.png` — Searchable document library.
-6. `06-gemeinsam.png` — Shared tasks and appointments.
+1. `01-fragen.png` — "Bis wann kann ich den Handyvertrag kündigen?" with the
+   answer and the highlighted quote.
+2. `02-rein-damit.png` — Intake sheet: scan, photos, file, email forwarding.
+3. `03-liest-mit.png` — School letter with extracted dates and calendar toggles.
+4. `04-fundstelle.png` — "Die Fundstelle" reading sheet with the highlight.
+5. `05-heute.png` — Plan list with faces on tasks.
+6. `06-wer-macht-was.png` — "Wer macht das?" assignee picker.
+7. `07-alles-an-einem-ort.png` — Document library with types and faces.
+8. `08-sicher.png` — Face ID lock screen.
 
-Copies of the exact uploaded assets live in
-`docs/marketing/app-store-assets/`. No additional image is required for the
-first submission. The first three tell the complete Scan → Ask → Verify story;
-the remaining three prove breadth without repeating it. There is no App Preview
-video, which is optional.
+Upload order = file order. Delete the old six first: `06-gemeinsam.png` shows
+the removed "Ich übernehme das" button. Concept and rules:
+[app-store-screenshots.md](app-store-screenshots.md).
+
+**App Preview (ready, optional):** `app-store-assets/1.0/app-preview.mp4`,
+28.9 s, 886 × 1920, H.264 High 30 fps, silent stereo AAC track. Real screen
+recording of the 1.0 app: Start → ask the Handyvertrag question → Ordilo
+works through the documents (sped up 2×) → answer with quote → "Die
+Fundstelle" → Plan, assign a task → Dokumente. No overlays or captions. Upload
+under 6.9-inch as the first preview; pick a poster frame showing the answer.
+
+**Still saved in App Store Connect (to be replaced):** six 1260 × 2736 images
+(`01-papierkram` … `06-gemeinsam`), copies in `docs/marketing/app-store-assets/`.
 
 ## App Review access
 
