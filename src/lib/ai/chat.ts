@@ -139,12 +139,23 @@ const DOCUMENT_ANSWER_TOOLS = new Set([
   "search_documents", "read_document", "answer_from_documents", "set_response_state", "suggest_next_action",
 ]);
 
+/** A second question mark, or "und" followed by a new question word, means
+ * the request has a part the document claims may not cover — even when
+ * that part needs no tool at all. */
+function asksSeveralThings(question: string): boolean {
+  return /\?[\s\S]*\S[\s\S]*\?/u.test(question)
+    || /\b(?:und|sowie|außerdem)\s+(?:wie|was|wann|wo|warum|wieso|weshalb|wer|welche[rsnm]?|erklär\w*)\b/iu.test(question);
+}
+
 export function incompleteDocumentAnswer(context: ToolContext, calledTools: ReadonlySet<string> = new Set()): string {
-  const otherPart = [...calledTools].some(tool => !DOCUMENT_ANSWER_TOOLS.has(tool));
+  const otherPart = [...calledTools].some(tool => !DOCUMENT_ANSWER_TOOLS.has(tool))
+    || asksSeveralThings(context.documentQuestion ?? "");
   if (context.documentAnswer && !otherPart) {
     // The verified claims are the whole answer; only the wording around
     // them failed the checks, so show them plainly instead of "partial".
-    context.responseState = context.documentAnswer.state;
+    // A state the model set explicitly after verifying (partial, conflict)
+    // still stands.
+    context.responseState = context.responseState ?? context.documentAnswer.state;
     return context.documentAnswer.text;
   }
   context.responseState = "partial";

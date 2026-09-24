@@ -221,6 +221,10 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
   }
   const sources: ChatSource[] = [];
   for (const claim of parsed.data.claims) {
+    // Markup-only quotes ("<br><br>") normalize to "" and would match any page.
+    if (comparableEvidence(claim.quote).replace(/[^\p{L}\p{N}]/gu, "").length < 8) {
+      return { error: "Zitiere eine zusammenhängende Originalstelle mit echtem Text aus der Unterlage." };
+    }
     const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
       && (normalizeEvidence(item.text).includes(normalizeEvidence(claim.quote))
         || comparableEvidence(item.text).includes(comparableEvidence(claim.quote))));

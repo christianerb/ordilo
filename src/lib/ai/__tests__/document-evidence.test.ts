@@ -55,6 +55,13 @@ describe("document answer evidence", () => {
       quote: "Dann kündigen Sie bis spätestens 30. November 2026 telefonisch.", highlight: "30. November 2026" }], state: "answered" }, letter);
     expect(invented).toHaveProperty("error");
   });
+  it("rejects a quote that is only markup", () => {
+    const letter = [{ documentId: id, title: "Handyvertrag", page: 1, text: "Sie können jederzeit kündigen." }];
+    for (const quote of ["<br><br><br>", "**  **  ** __"]) {
+      const result = verifyDocumentAnswer({ claims: [{ text: "Du kannst jederzeit kündigen.", document_id: id, page_number: 1, quote }], state: "answered" }, letter);
+      expect(result).toHaveProperty("error");
+    }
+  });
   it("leaves plain text, IBANs and lone asterisks untouched", () => {
     const plain = "IBAN DE12 5005 0000 0123 4567 89, Preis 3 * 12 Euro, Verwendungszweck Klasse_3b.";
     expect(readableQuote(plain)).toBe(plain);

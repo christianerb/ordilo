@@ -132,6 +132,27 @@ describe("real document tools through the chat orchestration", () => {
     expect(result.find(event => event.type === 'sources').sources[0]).toMatchObject({ cited: true, highlight: '31.08.2027' });
   });
 
+  it('marks the fallback partial when the question asks for more than the document claim', async () => {
+    const wrong = 'Hannahs Ticket gilt bis zum 31. August 2099.';
+    create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'}))
+      .mockResolvedValueOnce(finalAnswer(wrong)).mockResolvedValueOnce({output_text:wrong});
+    const result = await events(context(),'Wie lange gilt Hannahs Ticket und warum gibt es das überhaupt?');
+    const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
+    expect(answer).toContain(claim.text);
+    expect(answer).toContain('weiteren Teil');
+    expect(result).toContainEqual({type:'response_state',state:'partial'});
+  });
+
+  it('keeps a partial state the model set after verifying the claim', async () => {
+    const wrong = 'Hannahs Ticket gilt bis zum 31. August 2099.';
+    create.mockResolvedValueOnce(batch([{name:'answer_from_documents',args:{claims:[claim],state:'answered'}},{name:'set_response_state',args:{state:'partial'}}]))
+      .mockResolvedValueOnce(finalAnswer(wrong)).mockResolvedValueOnce({output_text:wrong});
+    const result = await events(context());
+    const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
+    expect(answer).toContain(claim.text);
+    expect(result).toContainEqual({type:'response_state',state:'partial'});
+  });
+
   it('keeps the document fact but rejects an uncited public addition', async () => {
     const uncited = `${claim.text}\n\nEin neues Ticket kostet 63 Euro.`;
     create.mockResolvedValueOnce(batch([{name:'answer_from_documents',args:{claims:[claim],state:'answered'}},{name:'search_web',args:{query:'Ticket aktueller Preis'}}]))
