@@ -1,6 +1,6 @@
 import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
-import { normalizeEvidence, readableQuote } from "./document-evidence";
+import { comparableEvidence, readableQuote } from "./document-evidence";
 import { documentPrefetchQuery } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
@@ -121,12 +121,51 @@ function documentResponseSources(context: ToolContext): ChatSource[] {
     source.origin === "web" || !readDocuments.has(source.document_id))];
 }
 
-function includesVerifiedDocumentAnswer(text: string, context: ToolContext): boolean {
-  const normalize = (value: string) => normalizeEvidence(value.replace(/[*_`]/g, ""));
-  return !context.documentAnswer || context.documentAnswer.text.split(/\n\s*\n/).every(sentence => normalize(text).includes(normalize(sentence)));
+/** Every verified sentence must survive into the answer. Its closing
+ * punctuation may not: the voice rules join a fact and its closing beat
+ * with a dash ("… kündigen — so steht es im Vertrag."). */
+export function includesVerifiedDocumentAnswer(text: string, context: ToolContext): boolean {
+  if (!context.documentAnswer) return true;
+  const answer = comparableEvidence(text.replace(/[*_`]/g, ""));
+  return context.documentAnswer.text
+    .split(/\n\s*\n|(?<=[.!?])\s+(?=\p{Lu})/u)
+    .map(sentence => comparableEvidence(sentence.replace(/[*_`]/g, "")).replace(/[\s.!?:;,-]+$/u, ""))
+    .every(sentence => !sentence || answer.includes(sentence));
 }
 
-function incompleteDocumentAnswer(context: ToolContext): string {
+/** Tools that only serve the document answer itself. Anything else means
+ * the question had another part that the fallback cannot vouch for. */
+const DOCUMENT_ANSWER_TOOLS = new Set([
+  "search_documents", "read_document", "answer_from_documents", "set_response_state", "suggest_next_action",
+]);
+
+const SECOND_PART = new RegExp(
+  "(?<!\\p{L})(?:und|sowie|außerdem|dazu|zusätzlich)\\s+(?:\\p{L}+\\s+){0,3}?"
+  + "(?:(?:wie|was|wann|wo|woher|wohin|warum|wieso|weshalb|wozu|wer|wen|wem|welche[rsnm]?|ob"
+  + "|kannst|könntest|würdest)(?!\\p{L})"
+  + "|(?:erklär|erläuter|beschreib|begründ|nenn|sag|zeig|gib|hilf|schreib|formulier|fass|schlag|empfiehl"
+  + "|rechne|berechne|vergleich|prüf|übersetz|liste)\\p{L}*)",
+  "iu",
+);
+
+/** A second question mark, or "und" followed by a new question word or
+ * request, means the question has a part the document claims may not
+ * cover — even when that part needs no tool at all. */
+export function asksSeveralThings(question: string): boolean {
+  return /\?[\s\S]*\S[\s\S]*\?/u.test(question) || SECOND_PART.test(question);
+}
+
+export function incompleteDocumentAnswer(context: ToolContext, calledTools: ReadonlySet<string> = new Set()): string {
+  const otherPart = [...calledTools].some(tool => !DOCUMENT_ANSWER_TOOLS.has(tool))
+    || asksSeveralThings(context.documentQuestion ?? "");
+  if (context.documentAnswer && !otherPart) {
+    // The verified claims are the whole answer; only the wording around
+    // them failed the checks, so show them plainly instead of "partial".
+    // A state the model set explicitly after verifying (partial, conflict)
+    // still stands.
+    context.responseState = context.responseState ?? context.documentAnswer.state;
+    return context.documentAnswer.text;
+  }
   context.responseState = "partial";
   return context.documentAnswer
     ? `${context.documentAnswer.text}\n\nDen weiteren Teil deiner Frage konnte ich noch nicht verlässlich beantworten.`
@@ -852,6 +891,7 @@ export async function streamAgenticAnswer(
       // misleading bubble behind (the route only persists complete
       // answers, so a partial one would be wrong AND unpersisted).
       let answerTextVisible = false;
+      const calledTools = new Set<string>();
 
       try {
         const prefetchQuery = familyContext.documentCount > 0 ? documentPrefetchQuery(query, truncatedHistory) : null;
@@ -1185,6 +1225,7 @@ export async function streamAgenticAnswer(
             // (a result only becomes visible in the NEXT round), so this
             // is safe and cuts the wait to the slowest single call.
             for (const e of executable) {
+              calledTools.add(e.name);
               if (!silentUiTools.has(e.name)) {
                 send({ type: "tool", tool: e.name, state: "start" });
               }
@@ -1453,7 +1494,7 @@ export async function streamAgenticAnswer(
               !retryHasHedging && !retryMissingCitation && !retryMissingDocument
                 ? retryContent
                 : toolContext.documentAnswer
-                  ? incompleteDocumentAnswer(toolContext)
+                  ? incompleteDocumentAnswer(toolContext, calledTools)
                   : retryMissingCitation
                   ? FAIL_CLOSED_CITATION
                   : FAIL_CLOSED_HEDGING;
@@ -1487,10 +1528,9 @@ export async function streamAgenticAnswer(
 
         // Preserve usable evidence when the bounded correction budget is exhausted.
         if (toolContext.documentEvidence?.length) {
-          toolContext.responseState = "partial";
-          send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext) });
+          send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext, calledTools) });
           send({ type: "sources", sources: documentResponseSources(toolContext) });
-          send({ type: "response_state", state: "partial" });
+          send({ type: "response_state", state: toolContext.responseState ?? "partial" });
           send({ type: "done" });
           controller.close();
           return;

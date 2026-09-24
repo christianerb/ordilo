@@ -18,6 +18,7 @@ import {
   extractHistoryEvidence,
   parseChatWireEvent,
   splitChatNdjsonChunk,
+  type ChatSource,
 } from "@ordilo/chat-contract";
 import {
   getOrCreateConversation,
@@ -473,6 +474,10 @@ async function handleChat(request: Request): Promise<Response> {
         // so a page reload restores the action cards instead of leaving
         // answer text that points at cards that no longer exist.
         const pendingActions: PersistedChatAction[] = [];
+        // The sources the client was shown, including the cited quote and
+        // highlight. The tool context only keeps the raw lookup sources, so
+        // saving those would lose the evidence panel on reopening.
+        let streamedSources: ChatSource[] | null = null;
         // Latency/activity metrics, logged once per request so chat speed
         // is measurable instead of guessed (time-to-first-visible-word
         // from the user's perspective, tool calls per answer).
@@ -530,6 +535,9 @@ async function handleChat(request: Request): Promise<Response> {
                 : line;
             ctrl.enqueue(encoder.encode(outboundLine + "\n"));
 
+            if (event.type === "sources") {
+              streamedSources = event.sources;
+            }
             if (event.type === "text") {
               fullAnswer += event.content;
               firstVisibleAt ??= Date.now();
@@ -605,7 +613,7 @@ async function handleChat(request: Request): Promise<Response> {
                     messageId: repairMessageId,
                     familyId,
                     content: persistedAnswer,
-                    sources: toolContext.sources,
+                    sources: streamedSources ?? toolContext.sources,
                     card: answerCard,
                     actions: pendingActions,
                     responseState: toolContext.responseState ?? "answered",
@@ -618,7 +626,7 @@ async function handleChat(request: Request): Promise<Response> {
                     conversationId,
                     familyId,
                     content: persistedAnswer,
-                    sources: toolContext.sources,
+                    sources: streamedSources ?? toolContext.sources,
                     card: answerCard,
                     actions: pendingActions,
                     responseState: toolContext.responseState ?? "answered",
