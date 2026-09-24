@@ -175,6 +175,12 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("ist KEINE Aufgabe");
   });
 
+  it("asks for short, calendar-style date labels", () => {
+    const prompt = buildSystemPrompt(validFamilyContext());
+    expect(prompt).toContain("Das Label ist KURZ: höchstens 5 Wörter");
+    expect(prompt).toContain("kein Ort");
+  });
+
   it("handles members without roles", () => {
     const prompt = buildSystemPrompt({
       members: [{ id: "m1", name: "Emma", role: null }],
