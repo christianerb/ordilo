@@ -103,6 +103,8 @@ export interface ToolContext {
   documentAnswer?: { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found" };
   signal?: AbortSignal;
   timings?: Array<{ phase: string; ms: number }>;
+  /** "voice": the answer is read aloud in a Live conversation. */
+  responseMode?: "text" | "voice";
 }
 
 /**

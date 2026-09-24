@@ -593,6 +593,41 @@ describe("POST /api/chat", () => {
     );
   });
 
+  it("marks Live voice turns for the voice answer mode", async () => {
+    vi.mocked(streamAgenticAnswer).mockResolvedValue(
+      ndjsonStream([{ type: "done" }]),
+    );
+
+    await POST(createRequest(validBody({ mode: "voice" })));
+
+    expect(streamAgenticAnswer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({ responseMode: "voice" }),
+    );
+  });
+
+  it("keeps typed turns in text mode when no mode is sent", async () => {
+    vi.mocked(streamAgenticAnswer).mockResolvedValue(
+      ndjsonStream([{ type: "done" }]),
+    );
+
+    await POST(createRequest(validBody()));
+
+    expect(streamAgenticAnswer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({ responseMode: "text" }),
+    );
+  });
+
+  it("rejects an unknown answer mode", async () => {
+    const response = await POST(createRequest(validBody({ mode: "shout" })));
+
+    expect(response.status).toBe(400);
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
+  });
+
   it("feeds client-history evidence into the web-search guard input", async () => {
     // When the client history is the (fallback) source of a turn, its
     // evidence sections still carry private excerpts — the search_web

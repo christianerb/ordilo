@@ -27,8 +27,24 @@ import {
   CONFIRMATION_TOOLS,
   type ToolContext,
 } from "@/lib/ai/tools";
-import { CHAT_MODEL, CHAT_REASONING_EFFORT } from "@/lib/ai/models";
+import {
+  CHAT_MODEL,
+  CHAT_REASONING_EFFORT,
+  CHAT_VOICE_REASONING_EFFORT,
+} from "@/lib/ai/models";
 import { truncateHistory } from "@/lib/ai/chat-history";
+
+/**
+ * Appended to the system prompt for turns delegated by the Live
+ * conversation. GPT Live speaks the result, so the answer is short and
+ * plain; the evidence and confirmation rules above still apply in full.
+ */
+export const VOICE_RESPONSE_INSTRUCTIONS = `SPRACHMODUS — diese Antwort wird in einem Live-Gespräch vorgelesen. Diese Regeln haben Vorrang vor den Regeln zu Länge, Markdown, Tabellen und Antwortkarten:
+- Antworte in ein bis drei kurzen, gesprochenen Sätzen. Die Antwort steht im ersten Satz.
+- Kein Markdown, keine Tabellen, keine Aufzählungszeichen, keine Links.
+- Bei mehreren Treffern nenne höchstens drei und sage, dass alles Weitere auf dem Bildschirm steht.
+- Geprüfte Dokumentsätze übernimmst du weiterhin wortgleich. Fakten kommen weiterhin nur aus Werkzeugergebnissen.
+- Änderungen bleiben Vorschläge: Sage, dass sie auf dem Bildschirm bestätigt werden müssen.`;
 
 /**
  * Agentic family chat — streams an OpenAI function-calling answer to the
@@ -835,6 +851,23 @@ function streamNamedMemberDocumentList(
   });
 }
 
+/**
+ * Title of the family document a read_document call opens, taken only from
+ * this family's own search results — a model-supplied id that no search
+ * returned yields nothing.
+ */
+function readDocumentTitle(
+  args: Record<string, unknown>,
+  toolContext: ToolContext,
+): string | null {
+  const documentId = args.document_id;
+  if (typeof documentId !== "string") return null;
+  const title = toolContext.sources.find(
+    (source) => source.document_id === documentId && source.origin !== "web",
+  )?.title?.trim();
+  return title ? title.slice(0, 120) : null;
+}
+
 export async function streamAgenticAnswer(
   query: string,
   history: HistoryMessage[],
@@ -861,7 +894,18 @@ export async function streamAgenticAnswer(
   }
 
   const client = getOpenAIClient();
-  const systemPrompt = buildAgenticSystemPrompt(familyContext);
+  const voice = toolContext.responseMode === "voice";
+  const systemPrompt = voice
+    ? `${buildAgenticSystemPrompt(familyContext)}\n\n${VOICE_RESPONSE_INSTRUCTIONS}`
+    : buildAgenticSystemPrompt(familyContext);
+  const reasoningEffort = voice
+    ? CHAT_VOICE_REASONING_EFFORT
+    : CHAT_REASONING_EFFORT;
+  // A card answer has no text for GPT Live to speak, so a voice turn
+  // answers in sentences instead.
+  const toolDefinitions = voice
+    ? TOOL_DEFINITIONS.filter((tool) => tool.name !== "present_answer_card")
+    : TOOL_DEFINITIONS;
 
   const input: OpenAI.Responses.ResponseInput = [
     ...truncatedHistory.map((m) => ({
@@ -921,11 +965,11 @@ export async function streamAgenticAnswer(
             // round without tools. This bounds latency without ending in a
             // technical "max rounds" error after successful searches.
             tools: round < MAX_TOOL_ROUNDS ? (toolContext.documentEvidence?.length
-              ? TOOL_DEFINITIONS.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : TOOL_DEFINITIONS) :
-              (toolContext.documentEvidence?.length && !toolContext.documentAnswer ? TOOL_DEFINITIONS.filter((tool) => tool.name === "answer_from_documents") : []),
+              ? toolDefinitions.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : toolDefinitions) :
+              (toolContext.documentEvidence?.length && !toolContext.documentAnswer ? toolDefinitions.filter((tool) => tool.name === "answer_from_documents") : []),
             tool_choice: toolContext.documentEvidence?.length && !toolContext.documentAnswer ? "required" : "auto",
             stream: true,
-            reasoning: { effort: CHAT_REASONING_EFFORT },
+            reasoning: { effort: reasoningEffort },
             // Family documents and conversations must not be retained by
             // OpenAI. Reasoning items are explicitly included so they can
             // be returned with the next tool output in this stateless loop.
@@ -1227,7 +1271,15 @@ export async function streamAgenticAnswer(
             for (const e of executable) {
               calledTools.add(e.name);
               if (!silentUiTools.has(e.name)) {
-                send({ type: "tool", tool: e.name, state: "start" });
+                const title = voice && e.name === "read_document"
+                  ? readDocumentTitle(e.args, toolContext)
+                  : null;
+                send({
+                  type: "tool",
+                  tool: e.name,
+                  state: "start",
+                  ...(title ? { title } : {}),
+                });
               }
             }
             await Promise.all(
@@ -1479,7 +1531,7 @@ export async function streamAgenticAnswer(
                 `${systemPrompt}\n\n` +
                 `HINWEIS: ${correction}`,
               input,
-              reasoning: { effort: CHAT_REASONING_EFFORT },
+              reasoning: { effort: reasoningEffort },
               store: false,
             }, { signal: toolContext.signal });
 

@@ -181,7 +181,10 @@ async function handleLiveSession(request: Request): Promise<Response> {
               "- Du direkt aus der Unterhaltung antworten kannst, etwa bei einer Begrüßung oder einer Wiederholung des letzten Ergebnisses.\n" +
               "- Eine kurze Rückfrage nötig ist, um die Anfrage zu verstehen.\n\n" +
               "Delegiere, bevor du eine Antwort gibst, die von Backend-Arbeit abhängt. " +
-              "Sage beim Delegieren kurz, dass du nachschaust. " +
+              "Sage beim Delegieren sofort einen kurzen Satz, der die Frage in deinen Worten wiederholt und sagt, wo du nachschaust, " +
+              "zum Beispiel: „Verstanden, ich schaue in euren Unterlagen nach dem Handyvertrag.“ " +
+              "Bleib nie stumm, während das Backend arbeitet. " +
+              "Kommt ein Zwischenstand vom Backend, sag ihn in einem kurzen Satz und nenne dabei noch kein Ergebnis. " +
               "Rate das Ergebnis nicht, während du wartest.\n\n" +
               "Fakten zu Familie, Dokumenten, Terminen und Aufgaben stammen ausschließlich aus der Antwort des Ordilo-Backends. " +
               "Gib diese Fakten vollständig und ohne Ergänzungen wieder. " +

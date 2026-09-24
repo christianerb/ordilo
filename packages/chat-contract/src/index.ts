@@ -202,7 +202,13 @@ export type ChatToolCallState = "start" | "done" | "error";
 
 export type ChatWireEvent =
   | { type: "conversation"; conversationId: string }
-  | { type: "tool"; toolName: string; state: ChatToolCallState }
+  | {
+      type: "tool";
+      toolName: string;
+      state: ChatToolCallState;
+      /** Voice turns only: the family document a read_document call opens. */
+      documentTitle?: string;
+    }
   | { type: "text"; content: string }
   | { type: "replace"; content: string }
   | { type: "card"; card: Record<string, unknown> }
@@ -317,7 +323,14 @@ export function parseChatWireEvent(raw: unknown): ChatWireEvent | null {
         (raw.state === "start" ||
           raw.state === "done" ||
           raw.state === "error")
-        ? { type: "tool", toolName: raw.tool, state: raw.state }
+        ? {
+            type: "tool",
+            toolName: raw.tool,
+            state: raw.state,
+            ...(typeof raw.title === "string" && raw.title.trim()
+              ? { documentTitle: raw.title.trim() }
+              : {}),
+          }
         : null;
     case "text":
     case "replace":

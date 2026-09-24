@@ -194,6 +194,25 @@ describe("shared chat contract", () => {
     expect(parseChatWireEvent({ type: "text" })).toBeNull();
   });
 
+  it("carries the opened document title on voice tool steps", () => {
+    expect(
+      parseChatWireEvent({
+        type: "tool",
+        tool: "read_document",
+        state: "start",
+        title: " Kita-Brief ",
+      }),
+    ).toEqual({
+      type: "tool",
+      toolName: "read_document",
+      state: "start",
+      documentTitle: "Kita-Brief",
+    });
+    expect(
+      parseChatWireEvent({ type: "tool", tool: "search_documents", state: "start", title: 3 }),
+    ).toEqual({ type: "tool", toolName: "search_documents", state: "start" });
+  });
+
   it("rejects malformed cards and sources at the shared wire boundary", () => {
     expect(
       parseChatWireEvent({

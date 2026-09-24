@@ -64,7 +64,8 @@ import {
  *   {"type":"error","error":"...","code":"..."}      — error
  *
  * Input:  { message: string (max 4000 chars), family_id: string (UUID),
- *           history?: HistoryMessage[], conversation_id?: string }
+ *           history?: HistoryMessage[], conversation_id?: string,
+ *           mode?: "text" | "voice" }
  *
  * Auth:   401 without session, 403 when the user is not a member of
  *         the family identified by family_id.
@@ -113,6 +114,7 @@ async function handleChat(request: Request): Promise<Response> {
     family_id: familyId,
     history: clientHistory,
     repair,
+    mode,
   } = parsed.data;
   const operationId = parsed.data.operation_id ?? crypto.randomUUID();
   const supportsWebSourceUrls = capabilities.includes("web_source_urls");
@@ -430,6 +432,8 @@ async function handleChat(request: Request): Promise<Response> {
       ...extractHistoryEvidence(clientHistory),
     ],
     userId: user.id,
+    // A repair is reviewed on screen, never read aloud.
+    responseMode: repair ? "text" : mode,
   };
 
   // 11. Existing conversations use the RLS-verified server history as the
