@@ -12,7 +12,12 @@ function fakeResend(overrides: {
   replyTo?: string[] | null;
   html?: string | null;
   text?: string | null;
-  attachments?: Array<{ filename?: string; download_url: string; content_type: string }>;
+  attachments?: Array<{
+    filename?: string;
+    download_url: string;
+    content_type: string;
+    content_id?: string;
+  }>;
 } = {}) {
   const send = vi.fn().mockResolvedValue({ data: { id: "sent-1" }, error: null });
   const get = vi.fn().mockResolvedValue({
@@ -84,6 +89,7 @@ describe("forwardSupportEmail", () => {
     const { resend, send } = fakeResend({
       attachments: [
         { filename: "brief.pdf", download_url: "https://files/brief.pdf", content_type: "application/pdf" },
+        { filename: "logo.png", download_url: "https://files/logo.png", content_type: "image/png", content_id: "logo@mail" },
       ],
     });
 
@@ -100,8 +106,10 @@ describe("forwardSupportEmail", () => {
       subject: "Frage zur App",
       attachments: [
         { filename: "brief.pdf", path: "https://files/brief.pdf", contentType: "application/pdf" },
+        { filename: "logo.png", path: "https://files/logo.png", contentType: "image/png", contentId: "logo@mail" },
       ],
     });
+    expect(payload.attachments[0]).not.toHaveProperty("contentId");
     expect(payload.text).toBe(
       "Weitergeleitet von info@ordilo.de · Absender: Anna Berger <anna@example.com>\n\nHallo Ordilo",
     );
@@ -138,6 +146,20 @@ describe("forwardSupportEmail", () => {
       reason: "loop",
     });
     expect(fromSelf.send).not.toHaveBeenCalled();
+  });
+
+  it("asks Resend for cid references so inline images keep working", async () => {
+    const { resend, get } = fakeResend();
+    await forwardSupportEmail({ resend, ...base });
+    expect(get).toHaveBeenCalledWith("mail-1", { html_format: "cid" });
+  });
+
+  it("fails loudly on a malformed target so Resend keeps retrying", async () => {
+    const { resend, get } = fakeResend();
+    await expect(
+      forwardSupportEmail({ resend, ...base, forwardTo: "owner-at-example.com" }),
+    ).rejects.toThrow("SUPPORT_FORWARD_TO");
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("throws when Resend cannot send, so the webhook is retried", async () => {

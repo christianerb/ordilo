@@ -75,11 +75,18 @@ export async function forwardSupportEmail(params: {
 }): Promise<SupportForwardResult> {
   const domain = normalizeDomain(params.inboundDomain);
   const target = addressParts(params.forwardTo);
+  // Thrown, not skipped: a 5xx keeps Resend retrying until the setting is
+  // fixed instead of acknowledging mail that goes nowhere.
+  if (!target) throw new Error("SUPPORT_FORWARD_TO is not a valid email address.");
   // A target on the receiving domain would come straight back through this
   // webhook and forward itself forever.
-  if (!target || target.domain === domain) return { forwarded: false, reason: "loop" };
+  if (target.domain === domain) return { forwarded: false, reason: "loop" };
 
-  const { data: received, error } = await params.resend.emails.receiving.get(params.emailId);
+  // "cid" keeps inline images as references to their attachments; data URIs
+  // are stripped by most mail clients.
+  const { data: received, error } = await params.resend.emails.receiving.get(params.emailId, {
+    html_format: "cid",
+  });
   if (error) throw error;
   if (!received) throw new Error("Received email could not be loaded.");
 
@@ -114,6 +121,7 @@ export async function forwardSupportEmail(params: {
               filename: attachment.filename ?? "Anhang",
               path: attachment.download_url,
               contentType: attachment.content_type,
+              ...(attachment.content_id ? { contentId: attachment.content_id } : {}),
             })),
           }
         : {}),
