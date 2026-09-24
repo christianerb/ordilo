@@ -149,13 +149,48 @@ const TIME_LABEL_STOPWORDS: ReadonlySet<string> = new Set([
   "planmäßig",
   "datum",
   "termin",
+  "der",
+  "die",
+  "das",
+  "den",
+  "dem",
+  "des",
+  "und",
+  "für",
+  "von",
+  "zum",
+  "zur",
+  "bei",
+  "mit",
+  "ab",
+  "am",
+  "um",
 ]);
 
+/**
+ * The words that tell one date label from another. Short words and
+ * numbers stay ("Bus 1" vs "Bus 2"); times and day dates inside the label
+ * go first so "08:15" never links to a "15".
+ */
 function labelTokens(label: string): string[] {
   return label
     .toLocaleLowerCase("de")
-    .split(/[^\p{L}]+/u)
-    .filter((token) => token.length >= 4 && !TIME_LABEL_STOPWORDS.has(token));
+    .replace(/\b\d{1,2}[:.]\d{2}\s*(?:uhr)?\b/g, " ")
+    .replace(/\b\d{1,2}\.\d{1,2}\.(?:\d{2,4})?/g, " ")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((token) => (token.length >= 2 || /\d/.test(token)) && !TIME_LABEL_STOPWORDS.has(token));
+}
+
+function tokenMatchScore(tokens: readonly string[], dateTokens: readonly string[]): number {
+  return tokens.reduce((sum, token) => {
+    if (dateTokens.includes(token)) return sum + 2;
+    // Partial matches only between real words: "fahrt" in "klassenfahrt",
+    // never "1" in "12".
+    if (token.length < 4 || /\d/.test(token)) return sum;
+    return dateTokens.some((dateToken) => dateToken.length >= 4 && (dateToken.includes(token) || token.includes(dateToken)))
+      ? sum + 1
+      : sum;
+  }, 0);
 }
 
 function normalizeTime(hours: string, minutes: string): string | null {
@@ -223,22 +258,22 @@ export function attachTimesToDates(
     const tokens = labelTokens(label);
     // The most specific label wins: "Abfahrt Klassenfahrt" belongs to
     // "Abfahrt Klassenfahrt", not to an earlier "Rückkehr Klassenfahrt".
+    // A tie means the label cannot tell the days apart; dropping the time
+    // is better than putting it on the wrong day.
     let best: (typeof isoDates)[number] | undefined;
     let bestScore = 0;
+    let tied = false;
     for (const entry of isoDates) {
-      const dateTokens = labelTokens(entry.label);
-      const score = tokens.reduce((sum, token) => {
-        if (dateTokens.includes(token)) return sum + 2;
-        return dateTokens.some((dateToken) => dateToken.includes(token) || token.includes(dateToken))
-          ? sum + 1
-          : sum;
-      }, 0);
+      const score = tokenMatchScore(tokens, labelTokens(entry.label));
       if (score > bestScore) {
         best = entry;
         bestScore = score;
+        tied = false;
+      } else if (score > 0 && score === bestScore) {
+        tied = true;
       }
     }
-    const target = best ?? (isoDates.length === 1 ? isoDates[0] : undefined);
+    const target = tied ? undefined : (best ?? (isoDates.length === 1 ? isoDates[0] : undefined));
     if (target) appendTime(target, time, label);
   }
   return kept;
@@ -364,8 +399,10 @@ export function labelDocumentDates(
   dates: DocumentAnalysis["dates"],
 ): DocumentAnalysis["dates"] {
   return dates.map((entry) =>
+    // A meaningful label the label patterns would not recognize after
+    // storage ("Vertragsdatum") is replaced too; the type is lost there.
     isDocumentIssueDate({ type: entry.type }) &&
-    !meaningfulLabel(entry.label, GENERIC_DATE_LABELS)
+    (!meaningfulLabel(entry.label, GENERIC_DATE_LABELS) || !isDocumentIssueDate({ label: entry.label }))
       ? { ...entry, label: "Briefdatum" }
       : entry,
   );

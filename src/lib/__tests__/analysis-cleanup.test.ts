@@ -256,6 +256,19 @@ describe("attachTimesToDates", () => {
     ]);
   });
 
+  it("tells labels apart by short words and numbers, and drops a tied time", () => {
+    const result = attachTimesToDates([
+      date("2026-10-12", "Abfahrt Bus 1"),
+      date("2026-10-13", "Abfahrt Bus 2"),
+      date("08:15", "Abfahrt Bus 2"),
+      date("09:30", "Abfahrt"),
+    ]);
+    expect(result.map((d) => d.label)).toEqual([
+      "Abfahrt Bus 1",
+      "Abfahrt Bus 2 · 08:15 Uhr",
+    ]);
+  });
+
   it("uses the only real date when no label matches", () => {
     const result = attachTimesToDates([
       date("2026-09-01", "Briefdatum", { type: "document_date" }),
@@ -365,8 +378,10 @@ describe("labelDocumentDates", () => {
       date("2026-09-02", "", { type: "letter_date" }),
       date("2026-09-03", "", { type: "document_date" }),
       date("2026-09-04", "", { type: "date" }),
+      date("2026-09-05", "Vertragsdatum", { type: "document_date" }),
+      date("2026-09-06", "Rechnungsdatum", { type: "document_date" }),
     ]);
-    expect(result.map((d) => d.label)).toEqual(["Briefdatum", "Briefdatum", "Briefdatum", ""]);
+    expect(result.map((d) => d.label)).toEqual(["Briefdatum", "Briefdatum", "Briefdatum", "", "Briefdatum", "Rechnungsdatum"]);
   });
 });
 
