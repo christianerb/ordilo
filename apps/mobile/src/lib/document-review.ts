@@ -435,13 +435,12 @@ const APPOINTMENT_FILLER_WORDS = new Set([
 ]);
 
 /** Mirrors onlyRestatesAppointment in src/lib/analysis-cleanup.ts. */
-function onlyRestatesAppointment(title: string, appointmentLabel: string): boolean {
-  const labelWords = appointmentLabel.toLocaleLowerCase("de").split(/[^\p{L}]+/u).filter(Boolean);
+function onlyRestatesAppointment(title: string, appointmentWords: readonly string[]): boolean {
   return title
     .toLocaleLowerCase("de")
     .split(/[^\p{L}]+/u)
     .filter(Boolean)
-    .every((word) => APPOINTMENT_FILLER_WORDS.has(word) || labelWords.includes(word));
+    .every((word) => APPOINTMENT_FILLER_WORDS.has(word) || appointmentWords.includes(word));
 }
 
 /**
@@ -460,7 +459,13 @@ export function dropTasksDuplicatingAppointments<T extends { title: string; due_
     if (!ISO_DATE_PATTERN.test(date) || isDocumentIssueDate(entry) || isDeadlineLike(entry.label)) return [];
     const label = entry.label.toLocaleLowerCase("de");
     const keywords = APPOINTMENT_KEYWORDS.filter((keyword) => label.includes(keyword));
-    return keywords.length > 0 ? [{ date, label: entry.label, keywords }] : [];
+    // The label's own appointment words ("elternabend", "schulfest"): a
+    // title word must be one of them exactly, so "Reisepass" is not "Reise".
+    const words = entry.label
+      .toLocaleLowerCase("de")
+      .split(/[^\p{L}]+/u)
+      .filter((word) => keywords.some((keyword) => word.includes(keyword)));
+    return keywords.length > 0 ? [{ date, keywords, words }] : [];
   });
   return tasks.filter((task) => {
     const due = task.due_date?.trim().slice(0, 10) ?? "";
@@ -470,7 +475,7 @@ export function dropTasksDuplicatingAppointments<T extends { title: string; due_
       (appointment) =>
         appointment.date === due &&
         appointment.keywords.some((keyword) => title.includes(keyword)) &&
-        onlyRestatesAppointment(task.title, appointment.label),
+        onlyRestatesAppointment(task.title, appointment.words),
     );
   });
 }

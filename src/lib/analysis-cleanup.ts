@@ -274,18 +274,18 @@ const APPOINTMENT_FILLER_WORDS = new Set([
 ]);
 
 /**
- * True when every word of the title is the appointment's own name or
- * filler, so the task asks for nothing beyond showing up. Deciding by
- * what is left over — rather than by a list of action verbs — keeps any
- * task that says more ("Fotos beim Schulfest machen").
+ * True when every word of the title is an appointment word or filler, so
+ * the task asks for nothing beyond showing up. Deciding by what is left
+ * over — rather than by a list of action verbs — keeps any task that says
+ * more ("Fotos beim Schulfest machen"). Other words of the date's label
+ * do not count: "Anmeldung zum Elternabend" carries the action itself.
  */
-export function onlyRestatesAppointment(title: string, appointmentLabel: string): boolean {
-  const labelWords = appointmentLabel.toLocaleLowerCase("de").split(/[^\p{L}]+/u).filter(Boolean);
+export function onlyRestatesAppointment(title: string, appointmentWords: readonly string[]): boolean {
   return title
     .toLocaleLowerCase("de")
     .split(/[^\p{L}]+/u)
     .filter(Boolean)
-    .every((word) => APPOINTMENT_FILLER_WORDS.has(word) || labelWords.includes(word));
+    .every((word) => APPOINTMENT_FILLER_WORDS.has(word) || appointmentWords.includes(word));
 }
 
 /**
@@ -305,7 +305,13 @@ export function dropTasksDuplicatingAppointments<
     if (!ISO_DATE_PATTERN.test(date)) return [];
     if (isDocumentIssueDate(entry) || isDeadlineLike(entry.label)) return [];
     const keywords = appointmentKeywordsIn(entry.label);
-    return keywords.length > 0 ? [{ date, label: entry.label, keywords }] : [];
+    // The label's own appointment words ("elternabend", "schulfest"): a
+    // title word must be one of them exactly, so "Reisepass" is not "Reise".
+    const words = entry.label
+      .toLocaleLowerCase("de")
+      .split(/[^\p{L}]+/u)
+      .filter((word) => keywords.some((keyword) => word.includes(keyword)));
+    return keywords.length > 0 ? [{ date, keywords, words }] : [];
   });
   if (appointments.length === 0) return [...tasks];
 
@@ -317,7 +323,7 @@ export function dropTasksDuplicatingAppointments<
       (appointment) =>
         appointment.date === due &&
         appointment.keywords.some((keyword) => title.includes(keyword)) &&
-        onlyRestatesAppointment(task.title, appointment.label),
+        onlyRestatesAppointment(task.title, appointment.words),
     );
   });
 }
@@ -350,14 +356,15 @@ export function dropDocumentDateEvents<T extends { date: string; label: string }
 
 /**
  * Give the document's own date a label that survives storage: stored
- * entities keep the label but not the type, so a "document_date" with a
- * generic or empty label would otherwise look like any other date.
+ * entities keep the label but not the type, so a "document_date" (or
+ * "issue_date", "letter_date") with a generic or empty label would
+ * otherwise look like any other date.
  */
-function labelDocumentDates(
+export function labelDocumentDates(
   dates: DocumentAnalysis["dates"],
 ): DocumentAnalysis["dates"] {
   return dates.map((entry) =>
-    entry.type.trim().toLowerCase() === "document_date" &&
+    isDocumentIssueDate({ type: entry.type }) &&
     !meaningfulLabel(entry.label, GENERIC_DATE_LABELS)
       ? { ...entry, label: "Briefdatum" }
       : entry,

@@ -9,6 +9,7 @@ import {
   dropDocumentDateEvents,
   dropTasksDuplicatingAppointments,
   formatMinorAsGerman,
+  labelDocumentDates,
   meaningfulLabel,
   parseAmountToMinor,
   toIsoDateOrNull,
@@ -331,6 +332,16 @@ describe("dropTasksDuplicatingAppointments", () => {
     ).toEqual([]);
   });
 
+  it("keeps a task whose action sits in the date's own label", () => {
+    const kept = [task("Anmeldung zum Elternabend", "2026-09-10"), task("Reisepass", "2026-10-01")];
+    expect(
+      dropTasksDuplicatingAppointments(kept, [
+        date("2026-09-10", "Anmeldung zum Elternabend"),
+        date("2026-10-01", "Reise nach Italien"),
+      ]),
+    ).toEqual(kept);
+  });
+
   it("keeps the same noun on another day and tasks without a date", () => {
     const kept = [task("Elternabend", "2026-09-21"), task("Elternabend", null)];
     expect(dropTasksDuplicatingAppointments(kept, dates)).toEqual(kept);
@@ -344,6 +355,18 @@ describe("dropTasksDuplicatingAppointments", () => {
         date("2026-09-01", "Briefdatum"),
       ]),
     ).toEqual(kept);
+  });
+});
+
+describe("labelDocumentDates", () => {
+  it("gives every document-date type a label that survives storage", () => {
+    const result = labelDocumentDates([
+      date("2026-09-01", "Datum", { type: "issue_date" }),
+      date("2026-09-02", "", { type: "letter_date" }),
+      date("2026-09-03", "", { type: "document_date" }),
+      date("2026-09-04", "", { type: "date" }),
+    ]);
+    expect(result.map((d) => d.label)).toEqual(["Briefdatum", "Briefdatum", "Briefdatum", ""]);
   });
 });
 
