@@ -243,6 +243,18 @@ describe("attachTimesToDates", () => {
     ]);
   });
 
+  it("prefers the most specific label over the first shared word", () => {
+    const result = attachTimesToDates([
+      date("2026-10-16", "Rückkehr Klassenfahrt"),
+      date("2026-10-12", "Abfahrt Klassenfahrt"),
+      date("08:15", "Abfahrt Klassenfahrt"),
+    ]);
+    expect(result.map((d) => d.label)).toEqual([
+      "Rückkehr Klassenfahrt",
+      "Abfahrt Klassenfahrt · 08:15 Uhr",
+    ]);
+  });
+
   it("uses the only real date when no label matches", () => {
     const result = attachTimesToDates([
       date("2026-09-01", "Briefdatum", { type: "document_date" }),
@@ -308,6 +320,15 @@ describe("dropTasksDuplicatingAppointments", () => {
       task("Zum Elternabend Unterschrift mitbringen", "2026-09-14"),
     ];
     expect(dropTasksDuplicatingAppointments(kept, dates)).toEqual(kept);
+  });
+
+  it("keeps a same-day task that says more than the appointment, whatever the verb", () => {
+    const schulfest = [date("2026-09-20", "Schulfest")];
+    const kept = [task("Fotos beim Schulfest machen", "2026-09-20"), task("Kuchen fürs Schulfest", "2026-09-20")];
+    expect(dropTasksDuplicatingAppointments(kept, schulfest)).toEqual(kept);
+    expect(
+      dropTasksDuplicatingAppointments([task("Schulfest besuchen", "2026-09-20"), task("Zum Elternabend am Abend", "2026-09-14")], [...schulfest, ...dates]),
+    ).toEqual([]);
   });
 
   it("keeps the same noun on another day and tasks without a date", () => {

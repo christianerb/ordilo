@@ -319,16 +319,18 @@ describe("document review", () => {
         { title: "Elternabend 14.09.", due_date: "2026-09-14", confidence: 1 },
         { title: "Anmeldung zum Elternabend bis 10.09.", due_date: "2026-09-10", confidence: 1 },
         { title: "Elternabend", due_date: "2026-09-21", confidence: 1 },
+        { title: "Fotos beim Elternabend machen", due_date: "2026-09-14", confidence: 1 },
       ],
     };
     const payload = buildConfirmDocumentPayload(withDuplicate);
     expect(payload.tasks.map((task) => task.title)).toEqual([
       "Anmeldung zum Elternabend bis 10.09.",
       "Elternabend",
+      "Fotos beim Elternabend machen",
     ]);
     const outcomes = confirmedDocumentOutcomes(withDuplicate, { tasksKept: payload.tasks.length, eventsCreated: 0 }, []);
     expect(outcomes.join()).not.toContain("Elternabend 14.09.");
-    expect(outcomes).toHaveLength(2);
+    expect(outcomes).toHaveLength(3);
   });
 });
 

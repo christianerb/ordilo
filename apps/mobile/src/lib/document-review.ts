@@ -425,9 +425,24 @@ export function isDocumentIssueDate(entry: { type?: string | null; label?: strin
   return DOCUMENT_DATE_LABEL_PATTERNS.some((pattern) => pattern.test(label));
 }
 
-/** Mirrors TASK_ACTION_PATTERN in src/lib/analysis-cleanup.ts. */
-const TASK_ACTION_PATTERN =
-  /meld|zahl|überweis|ueberweis|unterschreib|unterschrift|mitbring|mitnehm|mitgeb|einpack|packen|abgeb|abgabe|kündig|kuendig|ausfüll|ausfuell|bestell|buchen|beantrag|antrag|einreich|schick|senden|besorg|kauf|vorbereit|bestätig|bestaetig|absag|zusag|vereinbar|anruf|kontaktier|organisier|abhol|backen|spenden|zurückgeb|zurueckgeb/i;
+/** Mirrors APPOINTMENT_FILLER_WORDS in src/lib/analysis-cleanup.ts. */
+const APPOINTMENT_FILLER_WORDS = new Set([
+  "besuchen", "besuch", "teilnehmen", "teilnahme", "hingehen", "gehen", "wahrnehmen", "dabei", "sein",
+  "findet", "statt", "stattfinden", "beginnt", "beginn", "termin", "uhr", "datum",
+  "am", "um", "ab", "bis", "zum", "zur", "im", "in", "an", "auf", "bei", "mit", "von", "für", "und",
+  "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
+  "heute", "morgen", "vormittag", "mittag", "nachmittag", "abend", "nächste", "nächsten", "woche",
+]);
+
+/** Mirrors onlyRestatesAppointment in src/lib/analysis-cleanup.ts. */
+function onlyRestatesAppointment(title: string, appointmentLabel: string): boolean {
+  const labelWords = appointmentLabel.toLocaleLowerCase("de").split(/[^\p{L}]+/u).filter(Boolean);
+  return title
+    .toLocaleLowerCase("de")
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean)
+    .every((word) => APPOINTMENT_FILLER_WORDS.has(word) || labelWords.includes(word));
+}
 
 /**
  * Drops tasks that only repeat an appointment already listed as a date:
@@ -445,15 +460,17 @@ export function dropTasksDuplicatingAppointments<T extends { title: string; due_
     if (!ISO_DATE_PATTERN.test(date) || isDocumentIssueDate(entry) || isDeadlineLike(entry.label)) return [];
     const label = entry.label.toLocaleLowerCase("de");
     const keywords = APPOINTMENT_KEYWORDS.filter((keyword) => label.includes(keyword));
-    return keywords.length > 0 ? [{ date, keywords }] : [];
+    return keywords.length > 0 ? [{ date, label: entry.label, keywords }] : [];
   });
   return tasks.filter((task) => {
     const due = task.due_date?.trim().slice(0, 10) ?? "";
     if (!ISO_DATE_PATTERN.test(due)) return true;
     const title = task.title.toLocaleLowerCase("de");
-    if (TASK_ACTION_PATTERN.test(title)) return true;
     return !appointments.some(
-      (appointment) => appointment.date === due && appointment.keywords.some((keyword) => title.includes(keyword)),
+      (appointment) =>
+        appointment.date === due &&
+        appointment.keywords.some((keyword) => title.includes(keyword)) &&
+        onlyRestatesAppointment(task.title, appointment.label),
     );
   });
 }

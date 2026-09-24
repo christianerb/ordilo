@@ -221,13 +221,24 @@ export function attachTimesToDates(
   );
   for (const { time, label } of times) {
     const tokens = labelTokens(label);
-    const target =
-      isoDates.find((entry) => {
-        const dateTokens = labelTokens(entry.label);
-        return tokens.some((token) =>
-          dateTokens.some((dateToken) => dateToken.includes(token) || token.includes(dateToken)),
-        );
-      }) ?? (isoDates.length === 1 ? isoDates[0] : undefined);
+    // The most specific label wins: "Abfahrt Klassenfahrt" belongs to
+    // "Abfahrt Klassenfahrt", not to an earlier "Rückkehr Klassenfahrt".
+    let best: (typeof isoDates)[number] | undefined;
+    let bestScore = 0;
+    for (const entry of isoDates) {
+      const dateTokens = labelTokens(entry.label);
+      const score = tokens.reduce((sum, token) => {
+        if (dateTokens.includes(token)) return sum + 2;
+        return dateTokens.some((dateToken) => dateToken.includes(token) || token.includes(dateToken))
+          ? sum + 1
+          : sum;
+      }, 0);
+      if (score > bestScore) {
+        best = entry;
+        bestScore = score;
+      }
+    }
+    const target = best ?? (isoDates.length === 1 ? isoDates[0] : undefined);
     if (target) appendTime(target, time, label);
   }
   return kept;
@@ -251,18 +262,37 @@ function appendTime(
 }
 
 /**
- * Stems of verbs that make a task real work: something to register, pay,
- * sign, bring or hand in. A task without one that merely restates an
- * appointment ("Elternabend") is the appointment a second time.
+ * Words that add nothing to an appointment's name: attending it, articles,
+ * prepositions and times of day. Mirrored in apps/mobile document-review.ts.
  */
-const TASK_ACTION_PATTERN =
-  /meld|zahl|überweis|ueberweis|unterschreib|unterschrift|mitbring|mitnehm|mitgeb|einpack|packen|abgeb|abgabe|kündig|kuendig|ausfüll|ausfuell|bestell|buchen|beantrag|antrag|einreich|schick|senden|besorg|kauf|vorbereit|bestätig|bestaetig|absag|zusag|vereinbar|anruf|kontaktier|organisier|abhol|backen|spenden|zurückgeb|zurueckgeb/i;
+const APPOINTMENT_FILLER_WORDS = new Set([
+  "besuchen", "besuch", "teilnehmen", "teilnahme", "hingehen", "gehen", "wahrnehmen", "dabei", "sein",
+  "findet", "statt", "stattfinden", "beginnt", "beginn", "termin", "uhr", "datum",
+  "am", "um", "ab", "bis", "zum", "zur", "im", "in", "an", "auf", "bei", "mit", "von", "für", "und",
+  "der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem",
+  "heute", "morgen", "vormittag", "mittag", "nachmittag", "abend", "nächste", "nächsten", "woche",
+]);
+
+/**
+ * True when every word of the title is the appointment's own name or
+ * filler, so the task asks for nothing beyond showing up. Deciding by
+ * what is left over — rather than by a list of action verbs — keeps any
+ * task that says more ("Fotos beim Schulfest machen").
+ */
+export function onlyRestatesAppointment(title: string, appointmentLabel: string): boolean {
+  const labelWords = appointmentLabel.toLocaleLowerCase("de").split(/[^\p{L}]+/u).filter(Boolean);
+  return title
+    .toLocaleLowerCase("de")
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean)
+    .every((word) => APPOINTMENT_FILLER_WORDS.has(word) || labelWords.includes(word));
+}
 
 /**
  * Remove tasks that only repeat an appointment already extracted as a
  * date: same due date, the task names the appointment ("Elternabend") and
- * asks for nothing to be done. "Anmeldung zum Elternabend" stays — that
- * is work — and so does anything on another day.
+ * says nothing else. "Anmeldung zum Elternabend" stays — that is work —
+ * and so does anything on another day.
  */
 export function dropTasksDuplicatingAppointments<
   T extends { title: string; due_date: string | null },
@@ -275,7 +305,7 @@ export function dropTasksDuplicatingAppointments<
     if (!ISO_DATE_PATTERN.test(date)) return [];
     if (isDocumentIssueDate(entry) || isDeadlineLike(entry.label)) return [];
     const keywords = appointmentKeywordsIn(entry.label);
-    return keywords.length > 0 ? [{ date, keywords }] : [];
+    return keywords.length > 0 ? [{ date, label: entry.label, keywords }] : [];
   });
   if (appointments.length === 0) return [...tasks];
 
@@ -283,11 +313,11 @@ export function dropTasksDuplicatingAppointments<
     const due = toIsoDateOrNull(task.due_date);
     if (!due) return true;
     const title = task.title.toLocaleLowerCase("de");
-    if (TASK_ACTION_PATTERN.test(title)) return true;
     return !appointments.some(
       (appointment) =>
         appointment.date === due &&
-        appointment.keywords.some((keyword) => title.includes(keyword)),
+        appointment.keywords.some((keyword) => title.includes(keyword)) &&
+        onlyRestatesAppointment(task.title, appointment.label),
     );
   });
 }
