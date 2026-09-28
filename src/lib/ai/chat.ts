@@ -131,11 +131,85 @@ function requiredCitationSources(toolContext: ToolContext): ChatSource[] {
   return webSources.length > 0 || toolContext.documentAnswer ? webSources : toolContext.sources;
 }
 
+/**
+ * Strips Markdown from a spoken answer. The voice rules already forbid it,
+ * but a model that ignores them would have the speech layer read the
+ * asterisks out loud, so the transport enforces what the prompt asks for.
+ *
+ * Only removes characters, never reorders them: it runs per streamed chunk,
+ * where a marker pair can be split across two chunks.
+ */
+function isAnswerTextEvent(
+  event: unknown,
+): event is { type: "text" | "replace"; content: string } {
+  if (typeof event !== "object" || event === null) return false;
+  const candidate = event as { type?: unknown; content?: unknown };
+  return (
+    (candidate.type === "text" || candidate.type === "replace") &&
+    typeof candidate.content === "string"
+  );
+}
+
+export function plainVoiceText(text: string): string {
+  return text
+    .replace(/```+[a-z]*/gi, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]{0,3}>[ \t]?/gm, "")
+    .replace(/^[ \t]{0,3}[-*+][ \t]+/gm, "")
+    .replace(/^[ \t]*\|.*$/gm, "")
+    .replace(/[*_`#|]/g, "")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
+/**
+ * A retrieval artefact rather than something a family would open: a graph
+ * row ("Person: Emma") or one of the generated questions stored alongside
+ * a document chunk. Both help the search find the document; neither reads
+ * as evidence under an answer.
+ */
+function isRetrievalArtefact(source: ChatSource): boolean {
+  if (source.origin === "web") return false;
+  if (source.origin === "graph") return true;
+  const excerpt = source.excerpt.trim();
+  return (
+    /^(?:Person|Aufgabe|Verkn(?:ü|ue)pft|Termin|Kontakt)\s*:/iu.test(excerpt) ||
+    (/^(?:wann|welche[rsnm]?|was|wer|wie|wo|warum)\b/iu.test(excerpt) &&
+      excerpt.endsWith("?"))
+  );
+}
+
+/**
+ * The sources shown under an answer. A verified document answer supplies
+ * its own cited passages, so the other documents the search happened to
+ * touch are dropped; public sources always stay, because a claim taken
+ * from the web must keep its citation.
+ *
+ * Artefacts are only removed while something else is left to show — an
+ * answer that genuinely rests on a graph match still points somewhere.
+ */
 function documentResponseSources(context: ToolContext): ChatSource[] {
-  if (!context.documentAnswer) return context.sources;
-  const readDocuments = new Set(context.documentEvidence?.map(page => page.documentId));
-  return [...context.documentAnswer.sources, ...context.sources.filter(source =>
-    source.origin === "web" || !readDocuments.has(source.document_id))];
+  const sources = context.documentAnswer
+    ? [
+        ...context.documentAnswer.sources,
+        ...context.sources.filter((source) => source.origin === "web"),
+      ]
+    : context.sources;
+
+  const seen = new Set<string>();
+  const deduped = sources.filter((source) => {
+    const key = `${source.document_id}:${source.page_number ?? ""}:${source.quote ?? source.excerpt}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const meaningful = deduped.filter((source) => !isRetrievalArtefact(source));
+  return (meaningful.length > 0 ? meaningful : deduped).sort(
+    (left, right) =>
+      Number(Boolean(right.cited)) - Number(Boolean(left.cited)) ||
+      right.score - left.score,
+  );
 }
 
 /** Every verified sentence must survive into the answer. Its closing
@@ -423,7 +497,6 @@ function formatCurrentDateTime(now: Date): {
 export function buildAgenticSystemPrompt(
   familyContext?: {
     members: Array<{ name: string; role: string | null }>;
-    upcomingTasks: Array<{ title: string; dueDate: string | null }>;
     documentCount: number;
     speakerName?: string | null;
   },
@@ -447,17 +520,6 @@ export function buildAgenticSystemPrompt(
         `Familienmitglieder: ${familyContext.members
           .map((m) => m.name + (m.role ? ` (${m.role})` : ""))
           .join(", ")}`,
-      );
-    }
-
-    if (familyContext.upcomingTasks.length > 0) {
-      parts.push(
-        `Anstehende Aufgaben: ${familyContext.upcomingTasks
-          .map(
-            (t) =>
-              `${t.title}${t.dueDate ? ` (faellig ${t.dueDate})` : ""}`,
-          )
-          .join("; ")}`,
       );
     }
 
@@ -524,12 +586,12 @@ STRENGE REGELN:
 3. Verwende NIEMALS interne Fachbegriffe: "Knowledge Graph", "pgvector", "embedding", "HNSW", "Vektor", "Vektordatenbank", "Knoten", "Kanten".
 4. Waehle frei den passenden Wissensraum: Familienwerkzeuge fuer private Angaben, dein stabiles Allgemeinwissen fuer zeitlose Erklaerungen und search_web fuer aktuelle oder veraenderliche Informationen. Verbinde mehrere Wissensraeume, wenn die Frage es braucht.
 4a. Beantworte die konkrete Frage im ERSTEN Satz. Wenn du Dokumente durchsucht hast, nenne die Unterlage im Satz selbst (z.B. "Das Fest ist am Freitag, das steht im Kita-Brief.") — nie als angehaengtes "Quelle:"-Etikett. Nenne niemals nur passende Dokumente, wenn deren Inhalt die Frage beantwortet. Quellen unter der Antwort sind Belege und niemals ein Ersatz fuer die Antwort.
-4b. Wenn eine Fundstelle schwach, unvollstaendig oder widerspruechlich ist, darfst du gezielt ein weiteres Werkzeug verwenden. Suche nicht endlos. Rufe danach set_response_state mit partial oder conflict auf, nenne zuerst das Gesicherte, benenne die konkrete Luecke oder den Widerspruch und stelle hoechstens eine gezielte Rueckfrage.
+4b. Wenn eine Fundstelle schwach, unvollstaendig oder widerspruechlich ist, darfst du gezielt ein weiteres Werkzeug verwenden. Suche nicht endlos. Rufe danach set_response_state mit partial oder conflict auf, nenne zuerst das Gesicherte, benenne die konkrete Luecke oder den Widerspruch und stelle hoechstens eine gezielte Rueckfrage. Verwende partial NUR, wenn ein vom Nutzer gefragter Teil offen bleibt. Eine gepruefte Dokumentaussage, die die gestellte Frage vollstaendig beantwortet, ist answered — auch dann, wenn du unterwegs weitere Unterlagen gesehen hast, die zu dieser Frage nichts sagen.
 4c. Wenn du nichts findest, rufe set_response_state mit not_found auf, sage klar, WO du gesucht hast und was als naechster Schritt helfen wuerde. Zeige nie ein unpassendes Dokument als Antwort.
 4d. Aktuelle Aussagen duerfen nur aus search_web stammen. Nenne die oeffentliche Quelle kurz in der Antwort. Verwende in Web-Suchanfragen niemals Familiennamen, Dokumenttext, Adressen, Kontaktdaten, Kennnummern, Gesundheits- oder Finanzdaten. Formuliere die Anfrage stattdessen allgemein.
 5. Wenn du Aufgaben auflistest, nenne Titel und Frist (falls vorhanden).
 6. Bei Begruessung, Dank, Smalltalk und zeitlosem Allgemeinwissen antworte natuerlich und freundlich, ohne Tools aufzurufen.
-6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach bereits bekannten Profil- oder Aufgabendaten. Ausnahme Dokumentfragen: Auch bei kurzen Folgefragen muss answer_from_documents die aktuelle Antwort mit einer gelesenen Originalstelle belegen; fehlt diese im Werkzeugkontext, lies das Dokument erneut. Beantworte die aktuelle Frage genau: Bei "wann" nenne die Zeit, bei "wo" den Ort; ein Treffpunkt-Ort beantwortet keine Frage nach der Treffzeit.
+6a. Beantworte Fragen DIREKT ohne Tool-Aufruf nur, wenn die Antwort bereits im bisherigen Gespraechsverlauf steht. Ausnahme Dokumentfragen: Auch bei kurzen Folgefragen muss answer_from_documents die aktuelle Antwort mit einer gelesenen Originalstelle belegen; fehlt diese im Werkzeugkontext, lies das Dokument erneut. Aufgaben, Fristen und andere private Angaben holst du immer mit dem passenden Familienwerkzeug; beantworte sie nicht nur aus dem allgemeinen Kontext. Beantworte die aktuelle Frage genau: Bei "wann" nenne die Zeit, bei "wo" den Ort; ein Treffpunkt-Ort beantwortet keine Frage nach der Treffzeit.
 6b. Rufe so wenige Tools wie noetig auf. Mehrere Tools sind sinnvoll, wenn die Frage verschiedene Wissensraeume verbindet oder eine erste Fundstelle geprueft werden muss. Fuehre voneinander unabhaengige Suchen parallel aus.
 6c. Bei einer Frage nach Dokumenten zu, von oder ueber genau einem bekannten Familienmitglied verwende list_documents mit dessen person_name. Verwende dafuer NICHT graph_query oder search_documents.
 7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, add_contact, update_task, mark_task_done, add_family_member, create_collection, create_note, update_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe fuer JEDES verlangte Ziel genau einen passenden Tool-Aufruf mit confirmed=false auf. Bei zwei zu aendernden Notizen sind das also zwei update_note-Aufrufe und zwei getrennte Aktionskarten. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen oder aendern willst. Die App zeigt dem Nutzer dazu je eine Aktionskarte mit einem "Uebernehmen"-Button — die Bestaetigung und Ausfuehrung laeuft NUR ueber diese Karte. Rufe das Tool NIEMALS mit confirmed=true auf, auch nicht wenn der Nutzer im Chat mit "Ja" antwortet; verweise dann freundlich auf die Karten.
@@ -614,14 +676,13 @@ function credentialCardFields(ocrText: string): AnswerCardField[] {
  */
 async function loadFamilyContext(toolContext: ToolContext): Promise<{
   members: Array<{ name: string; role: string | null }>;
-  upcomingTasks: Array<{ title: string; dueDate: string | null }>;
   documentCount: number;
   speakerName: string | null;
   privateNamesAvailable: boolean;
 }> {
   const { client, familyId } = toolContext;
 
-  const [membersResult, tasksResult, docsResult] = await Promise.all([
+  const [membersResult, docsResult] = await Promise.all([
     toolContext.preloadedFamilyMembers !== undefined
       ? Promise.resolve({
           data: toolContext.preloadedFamilyMembers,
@@ -633,14 +694,6 @@ async function loadFamilyContext(toolContext: ToolContext): Promise<{
           .eq("family_id", familyId)
           .order("created_at", { ascending: true }),
     client
-      .from("tasks")
-      .select("title, due_date")
-      .eq("family_id", familyId)
-      .eq("status", "open")
-      .eq("confirmed", true)
-      .order("due_date", { ascending: true, nullsFirst: false })
-      .limit(5),
-    client
       .from("documents")
       .select("id", { count: "exact", head: true })
       .eq("family_id", familyId)
@@ -651,10 +704,6 @@ async function loadFamilyContext(toolContext: ToolContext): Promise<{
     members: (membersResult.data ?? []).map((m) => ({
       name: m.name,
       role: m.role,
-    })),
-    upcomingTasks: (tasksResult.data ?? []).map((t) => ({
-      title: t.title,
-      dueDate: t.due_date ? t.due_date.slice(0, 10) : null,
     })),
     documentCount: docsResult.count ?? 0,
     speakerName: toolContext.speakerName,
@@ -926,7 +975,11 @@ export async function streamAgenticAnswer(
   let cancelled = false;
   function send(obj: unknown): void {
     if (cancelled) return;
-    controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+    const event =
+      voice && isAnswerTextEvent(obj)
+        ? { ...obj, content: plainVoiceText(obj.content) }
+        : obj;
+    controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
   }
 
   let controller: ReadableStreamDefaultController<Uint8Array>;

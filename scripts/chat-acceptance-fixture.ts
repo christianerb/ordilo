@@ -25,6 +25,14 @@ async function main() {
     state = { email, password, userId: created.user!.id, familyId: '', documents: [] }; await save(state);
   }
   if (!state.email.startsWith('ordilo-chat-qa-') || !state.email.endsWith('@example.com')) throw new Error('Not a disposable fixture.');
+  // The synthetic tester explicitly consents to AI processing (migration 0086):
+  // every AI-touching route fails closed without it, so the fixture would die
+  // on the first document confirm. Re-grant on every run so an old state file
+  // from before the consent gate keeps working too.
+  checked(await admin.from('user_consents').upsert(
+    { user_id: state.userId, ai_data_sharing: 'granted' },
+    { onConflict: 'user_id' },
+  ).select('user_id'), 'grant synthetic AI consent');
   if (!state.familyId) {
     const family = checked(await admin.from('families').insert({ name: 'Chat-Abnahme · synthetisch', created_by: state.userId, onboarding_completed_at: new Date().toISOString() }).select('id').single(), 'create family');
     state.familyId = family!.id; await save(state);
