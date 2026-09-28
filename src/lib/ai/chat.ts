@@ -1103,14 +1103,24 @@ export async function streamAgenticAnswer(
       let pendingConfirmationMessage: string | null = null;
       const calledTools = new Set<string>();
 
-      // A pending write card is the turn's real outcome. Where the answer
-      // text would otherwise be a fallback about a document search the
-      // family never asked for, the card's own ask is what belongs next
-      // to it — and it needs no sources, because it claims nothing.
+      // A pending write card is the turn's real outcome for its action
+      // half. A request can pair the two ("Wann ist der Elternabend, und
+      // leg mir dafür eine Aufgabe an?"), so the document half keeps its
+      // own text, sources and state alongside the card's ask instead of
+      // being discarded by a degenerating model run. Only where the model
+      // engaged the documents itself does an unfinished lookup get its
+      // honest fallback; the prefetch's finds alone must not answer a
+      // question nobody asked.
       const closeWithPendingCard = (message: string) => {
-        send({ type: answerTextVisible ? "replace" : "text", content: message });
-        send({ type: "sources", sources: [] });
-        send({ type: "response_state", state: "answered" });
+        const engagedDocuments = ["search_documents", "read_document", "answer_from_documents"]
+          .some((tool) => calledTools.has(tool));
+        const documentText = toolContext.documentAnswer?.text
+          ?? (engagedDocuments && toolContext.documentEvidence?.length
+            ? incompleteDocumentAnswer(toolContext, calledTools)
+            : "");
+        send({ type: answerTextVisible ? "replace" : "text", content: documentText ? `${documentText}\n\n${message}` : message });
+        send({ type: "sources", sources: documentText ? documentResponseSources(toolContext) : [] });
+        send({ type: "response_state", state: toolContext.responseState ?? "answered" });
         send({ type: "done" });
         controller.close();
       };
@@ -1790,15 +1800,15 @@ export async function streamAgenticAnswer(
         }
 
         // Preserve usable evidence when the bounded correction budget is exhausted.
+        // A pending card closes the turn with its ask and with whatever
+        // document half the turn verified or was still looking into — the
+        // generic fallback would bury that half under a "not reliably
+        // answered" tail about the very part the card just took on.
+        if (pendingConfirmationMessage) {
+          closeWithPendingCard(pendingConfirmationMessage);
+          return;
+        }
         if (toolContext.documentEvidence?.length) {
-          if (pendingConfirmationMessage && !toolContext.documentAnswer) {
-            // Nothing was verified in the documents because the turn was
-            // never about them: the family asked for a task, the prefetch
-            // searched anyway. Telling them a passage could not be placed
-            // would answer a question nobody asked.
-            closeWithPendingCard(pendingConfirmationMessage);
-            return;
-          }
           send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext, calledTools) });
           send({ type: "sources", sources: documentResponseSources(toolContext) });
           send({ type: "response_state", state: toolContext.responseState ?? "partial" });
