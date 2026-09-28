@@ -28,9 +28,10 @@ function round(name: string, args: unknown) {
     yield { type: "response.completed", response: { output: [{ type: "function_call", name, arguments: JSON.stringify(args), call_id: crypto.randomUUID(), id: "fc_test", status: "completed" }] } };
   })();
 }
-function context(): ToolContext {
+function context(otherDocuments: Array<{ id: string; title: string }> = []): ToolContext {
   const from = vi.fn((table: string) => {
-    const rows = table === "documents" ? [{ id, title: "Abo-Bestätigung Hannah", document_type: "contract", summary: "Ticket", category: "Mobilität" }] :
+    const rows = table === "documents" ? [{ id, title: "Abo-Bestätigung Hannah", document_type: "contract", summary: "Ticket", category: "Mobilität" },
+      ...otherDocuments.map(document => ({ ...document, document_type: "contract", summary: "", category: "Mobilität" }))] :
       table === "document_pages" ? [{ page_number: 2, ocr_markdown: "Bedingungen. ".repeat(80) + "\n\n" + quote }] : [];
     const chain = {
       select: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), order: vi.fn(() => chain), limit: vi.fn(() => chain),
@@ -96,6 +97,23 @@ describe("real document tools through the chat orchestration", () => {
     expect(result.filter(event => event.type === 'text')).toEqual([{type:'text',content:complete}]);
     expect(JSON.stringify(create.mock.calls[2][0].input)).toContain('Keine Aufgaben gefunden');
   });
+  it('keeps documents listed for another part of the question openable', async () => {
+    const other = { id: '10000000-0000-4000-8000-000000000002', title: 'Handyvertrag' };
+    const complete = `${claim.text}\n\nAls Verträge habt ihr außerdem den Handyvertrag.`;
+    create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'}))
+      .mockResolvedValueOnce(round('list_documents',{document_type:'contract'}))
+      .mockResolvedValueOnce(finalAnswer(complete));
+    const result = await events(context([other]),'Wie lange gilt Hannahs Ticket und welche Verträge habt ihr sonst?');
+    const sources = result.find(event => event.type === 'sources').sources;
+    expect(sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ document_id: id, quote, cited: true }),
+      expect.objectContaining({ document_id: other.id, title: other.title }),
+    ]));
+    // The quoted document keeps its passage instead of gaining a second,
+    // quoteless entry from the listing that also found it.
+    expect(sources.filter((source: { document_id: string }) => source.document_id === id)).toHaveLength(1);
+  });
+
   it('does not let final synthesis overwrite the verified document date', async () => {
     const wrong = 'Hannahs Ticket gilt bis zum 31. August 2099.';
     create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'}))

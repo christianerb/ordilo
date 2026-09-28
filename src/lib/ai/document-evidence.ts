@@ -237,8 +237,13 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     }
     if (validityDateConflict(claim.text, claim.quote)) return { error: "Die Ticketgültigkeit wurde mit einem anderen Datum verwechselt. Zitiere das Gültigkeitsende, nicht die Kündigungsfrist." };
     if (!numbersAreSupported(claim.text, claim.quote)) return { error: "Ein Datum oder eine Zahl der Aussage steht nicht in ihrem Beleg. Prüfe die Gültigkeit bzw. Frist auf der Originalseite und korrigiere die Aussage." };
-    if (claim.highlight && (!normalizeFactText(claim.quote).includes(normalizeFactText(claim.highlight))
-      || !normalizeFactText(claim.text).includes(normalizeFactText(claim.highlight)))) {
+    const normalizedHighlight = claim.highlight
+      ? normalizeFactText(readableQuote(claim.highlight))
+      : null;
+    if (normalizedHighlight && (
+      !normalizeFactText(readableQuote(claim.quote)).includes(normalizedHighlight)
+      || !normalizeFactText(readableQuote(claim.text)).includes(normalizedHighlight)
+    )) {
       return { error: "Die Hervorhebung muss sowohl in der Antwort als auch im Beleg stehen." };
     }
     const shownQuote = readableQuote(claim.quote);

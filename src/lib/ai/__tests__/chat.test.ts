@@ -37,6 +37,7 @@ import {
   combineSearchResults,
   buildAgenticSystemPrompt,
   filterByRelevanceThreshold,
+  plainVoiceText,
   streamAgenticAnswer,
   ChatError,
 } from "@/lib/ai/chat";
@@ -643,9 +644,28 @@ describe("buildAgenticSystemPrompt", () => {
     expect(prompt.toLowerCase()).toContain("nur einmal");
   });
 
-  it("instructs to answer directly without tools when the context already has the answer", () => {
+  it("allows a tool-free answer only from the conversation itself", () => {
     expect(prompt).toContain("DIREKT ohne Tool-Aufruf");
-    expect(prompt).toContain("NICHT erneut");
+    expect(prompt).toContain("nur, wenn die Antwort bereits im bisherigen Gespraechsverlauf steht");
+  });
+
+  it("requires a family tool for tasks and deadlines instead of the prompt context", () => {
+    expect(prompt).toContain(
+      "Aufgaben, Fristen und andere private Angaben holst du immer mit dem passenden Familienwerkzeug",
+    );
+  });
+
+  it("keeps a fully answered document question out of the partial state", () => {
+    expect(prompt).toContain("Verwende partial NUR, wenn ein vom Nutzer gefragter Teil offen bleibt");
+  });
+
+  it("names the family but keeps private task data out of the context block", () => {
+    const withFamily = buildAgenticSystemPrompt({
+      members: [{ name: "Hannah", role: "Tochter" }],
+      documentCount: 3,
+    });
+    expect(withFamily).toContain("Hannah");
+    expect(withFamily).not.toContain("Anstehende Aufgaben");
   });
 
   it("requires the concrete document answer before source references", () => {
@@ -2230,5 +2250,178 @@ describe("asksSeveralThings", () => {
     "das bahndings von Hannah wie lang geht das noch?",
   ])("keeps %s as one question", (question) => {
     expect(asksSeveralThings(question)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spoken answers
+// ---------------------------------------------------------------------------
+
+describe("plainVoiceText", () => {
+  it("removes emphasis without touching the words", () => {
+    expect(plainVoiceText("Das Ticket gilt bis **31. August 2027**.")).toBe(
+      "Das Ticket gilt bis 31. August 2027.",
+    );
+  });
+
+  it("removes list markers, headings and quotes", () => {
+    expect(plainVoiceText("## Termine\n- Elternabend\n- Schulfest")).toBe(
+      "Termine\nElternabend\nSchulfest",
+    );
+  });
+
+  it("keeps the label of a link and drops its destination", () => {
+    expect(plainVoiceText("Siehe [den Kita-Brief](https://example.org/brief).")).toBe(
+      "Siehe den Kita-Brief.",
+    );
+  });
+
+  it("keeps the cells of a table and drops only the dashed row", () => {
+    expect(
+      plainVoiceText(
+        "Das steht an:\n\n| Aufgabe | Frist |\n|---|---|\n| Fahrkarte kündigen | 10. August |",
+      ),
+    ).toBe("Das steht an:\n\nAufgabe, Frist\n\nFahrkarte kündigen, 10. August");
+  });
+
+  it("never turns a table-only answer into blank text", () => {
+    const spoken = plainVoiceText("| Aufgabe | Frist |\n| --- | --- |\n| Obst | Montag |");
+    expect(spoken.trim()).not.toBe("");
+    expect(spoken).toContain("Obst");
+    expect(spoken).toContain("Montag");
+  });
+
+  it("works when a marker pair is split across two streamed chunks", () => {
+    expect(plainVoiceText("Der Beitrag ist *") + plainVoiceText("*49 Euro**.")).toBe(
+      "Der Beitrag ist 49 Euro.",
+    );
+  });
+});
+
+describe("streamAgenticAnswer — spoken answers", () => {
+  it("sends voice text without Markdown even when the model uses it", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Der Grundbeitrag ist **49 €** pro Monat. Das steht so im Vertrag." },
+      ]),
+    );
+
+    const lines = await readNdjsonStream(
+      await streamAgenticAnswer("Was kostet die Mitgliedschaft?", [], {
+        ...makeToolContext(),
+        responseMode: "voice",
+      }),
+    );
+
+    const spoken = lines
+      .filter((line) => line.type === "text")
+      .map((line) => line.content)
+      .join("");
+    expect(spoken).toBe(
+      "Der Grundbeitrag ist 49 € pro Monat. Das steht so im Vertrag.",
+    );
+  });
+
+  it("sanitizes a link that arrives split across two deltas", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Das steht in [den Kita-" },
+        { content: "Brief](https://example.org/brief)." },
+      ]),
+    );
+
+    const lines = await readNdjsonStream(
+      await streamAgenticAnswer("Wo steht das?", [], {
+        ...makeToolContext(),
+        responseMode: "voice",
+      }),
+    );
+
+    const spoken = lines
+      .filter((line) => line.type === "text")
+      .map((line) => line.content)
+      .join("");
+    expect(spoken).toBe("Das steht in den Kita-Brief.");
+    expect(spoken).not.toContain("https://");
+  });
+
+  it("leaves Markdown intact for the written answer", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([{ content: "Der Grundbeitrag ist **49 €** pro Monat." }]),
+    );
+
+    const lines = await readNdjsonStream(
+      await streamAgenticAnswer("Was kostet die Mitgliedschaft?", [], makeToolContext()),
+    );
+
+    const written = lines
+      .filter((line) => line.type === "text")
+      .map((line) => line.content)
+      .join("");
+    expect(written).toBe("Der Grundbeitrag ist **49 €** pro Monat.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sources shown under an answer
+// ---------------------------------------------------------------------------
+
+describe("streamAgenticAnswer — source list", () => {
+  const passage: ChatSource = {
+    document_id: "doc-1",
+    title: "Kita-Brief",
+    excerpt: "Das Sommerfest beginnt um 15 Uhr.",
+    score: 0.9,
+    origin: "semantic",
+  };
+
+  async function sourcesFor(sources: ChatSource[]): Promise<ChatSource[]> {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Das Sommerfest beginnt um 15 Uhr, das steht im Kita-Brief." },
+      ]),
+    );
+    const lines = await readNdjsonStream(
+      await streamAgenticAnswer("Wann ist das Sommerfest?", [], makeToolContext(sources)),
+    );
+    return lines.find((line) => line.type === "sources")?.sources as ChatSource[];
+  }
+
+  it("drops graph rows and generated questions while a real passage remains", async () => {
+    const shown = await sourcesFor([
+      passage,
+      {
+        document_id: "doc-2",
+        title: "Kita-Brief",
+        excerpt: "Person: Emma",
+        score: 0.8,
+        origin: "graph",
+      },
+      {
+        document_id: "doc-3",
+        title: "Elternbrief",
+        excerpt: "Wann beginnt das Sommerfest?",
+        score: 0.7,
+        origin: "semantic",
+      },
+    ]);
+
+    expect(shown).toEqual([passage]);
+  });
+
+  it("shows the same passage once", async () => {
+    const shown = await sourcesFor([passage, { ...passage }]);
+    expect(shown).toEqual([passage]);
+  });
+
+  it("keeps a graph row when the answer rests on nothing else", async () => {
+    const graphOnly: ChatSource = {
+      document_id: "doc-2",
+      title: "Kita-Brief",
+      excerpt: "Person: Emma",
+      score: 0.8,
+      origin: "graph",
+    };
+    expect(await sourcesFor([graphOnly])).toEqual([graphOnly]);
   });
 });

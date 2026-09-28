@@ -55,6 +55,23 @@ describe("document answer evidence", () => {
       quote: "Dann kündigen Sie bis spätestens 30. November 2026 telefonisch.", highlight: "30. November 2026" }], state: "answered" }, letter);
     expect(invented).toHaveProperty("error");
   });
+  it("accepts a highlight that spans OCR Markdown formatting", () => {
+    const ocr = "Monatlicher Grundbeitrag **49** €";
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Der monatliche Grundbeitrag beträgt 49 €.",
+        document_id: id,
+        page_number: 1,
+        quote: ocr,
+        highlight: "49 €",
+      }],
+    }, [{ documentId: id, title: "Mitgliedschaft", page: 1, text: ocr }]);
+    expect(result).toMatchObject({
+      state: "answered",
+      sources: [{ highlight: "49 €", cited: true }],
+    });
+  });
   it("rejects a quote that is only markup", () => {
     const letter = [{ documentId: id, title: "Handyvertrag", page: 1, text: "Sie können jederzeit kündigen." }];
     for (const quote of ["<br><br><br>", "**  **  ** __"]) {

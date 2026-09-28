@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { documentPrefetchQuery } from '../document-intent';
 describe('document prefetch intent', () => {
-  it.each(['Wann läuft Hannahs Bahnding ab?', 'Was sollen wir fürs Buffet einpacken?', 'Was braucht Emma für den Sporttag?'])('retrieves a casually worded question: %s', question => {
+  it.each(['Wann läuft Hannahs Bahnding ab?', 'Was sollen wir fürs Buffet einpacken?', 'Was braucht Emma für den Sporttag?', 'Wer hat die Academy-Mitgliedschaft?', 'Was kostet die Mitgliedschaft?'])('retrieves a casually worded question: %s', question => {
     expect(documentPrefetchQuery(question, [])).toBe(question);
   });
   it('carries the subject into a follow-up about another child', () => {

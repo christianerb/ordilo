@@ -1,4 +1,4 @@
-const topic = /ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|befund|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad/iu;
+const topic = /ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad/iu;
 
 function excluded(query: string): boolean {
   return /^(?:bitte\s+)?(?:leg|lege|erstell|erstelle|lösch|lösche|speicher|speichere|schreib|schreibe|markier|markiere|füg|füge)\b/iu.test(query.trim())
