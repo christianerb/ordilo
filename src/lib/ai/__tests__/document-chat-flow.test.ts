@@ -207,4 +207,54 @@ describe("real document tools through the chat orchestration", () => {
     expect(result.find(event => event.type === 'sources').sources).toEqual(expect.arrayContaining([expect.objectContaining({document_id:'web-price'})]));
   });
 
+  it('ends an action turn with the card ask instead of a document fallback', async () => {
+    const cardAsk = "Bitte bestätige: Soll ich die Aufgabe 'Fahrradkette ölen' anlegen?";
+    create.mockResolvedValueOnce(round('add_task',{title:'Fahrradkette ölen',confirmed:false}))
+      .mockImplementation(async () => finalAnswer('Ich sehe in euren Unterlagen nach.'));
+    const result = await events(context(),'Richte eine Erinnerung ein: Fahrradkette ölen.');
+    // The first round still grounds in the documents; once the write card
+    // is pending, forcing another tool call would only make the model
+    // circle a verification its answer does not need.
+    expect(create.mock.calls[0][0].tool_choice).toBe('required');
+    expect(create.mock.calls[1][0].tool_choice).toBe('auto');
+    expect(result.find(event => event.type === 'confirmation_request')).toMatchObject({
+      tool_name:'add_task',
+      needs_confirmation:true,
+      task_title:'Fahrradkette ölen',
+      message:cardAsk,
+    });
+    expect(result.find(event => event.type === 'confirmation_request').action_args).toMatchObject({ title:'Fahrradkette ölen', confirmed:false });
+    expect(result).toContainEqual({type:'text',content:cardAsk});
+    expect(result.filter(event => event.type === 'text').map(event => event.content).join('')).not.toContain('eindeutig zuordnen');
+    expect(result).toContainEqual({type:'sources',sources:[]});
+    expect(result).toContainEqual({type:'response_state',state:'answered'});
+    expect(result.some(event => event.type === 'error')).toBe(false);
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('keeps the found evidence when a round degenerates without a card', async () => {
+    create.mockResolvedValueOnce((async function* () {
+      yield { type:'response.incomplete', response:{ incomplete_details:{ reason:'max_messages' }, usage:{}, output:[] } };
+    })());
+    const result = await events(context(),'Verschieb Hannahs Elternabend auf nächsten Montag.');
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).toContain('Unterlagen');
+    expect(result.some(event => event.type === 'error')).toBe(false);
+    expect(result).toContainEqual({type:'response_state',state:'partial'});
+    expect(result.find(event => event.type === 'sources').sources.length).toBeGreaterThan(0);
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('keeps a pending write card usable when the next model round degenerates', async () => {
+    create.mockResolvedValueOnce(round('add_task',{title:'Fahrradkette ölen',confirmed:false}))
+      .mockResolvedValueOnce((async function* () {
+        yield { type:'response.incomplete', response:{ incomplete_details:{ reason:'max_messages' }, usage:{}, output:[] } };
+      })());
+    const result = await events(context(),'Richte eine Erinnerung ein: Fahrradkette ölen.');
+    expect(result).toContainEqual({type:'text',content:"Bitte bestätige: Soll ich die Aufgabe 'Fahrradkette ölen' anlegen?"});
+    expect(result).toContainEqual({type:'response_state',state:'answered'});
+    expect(result.some(event => event.type === 'error')).toBe(false);
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
 });

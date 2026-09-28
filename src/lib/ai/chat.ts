@@ -1053,7 +1053,26 @@ export async function streamAgenticAnswer(
       // misleading bubble behind (the route only persists complete
       // answers, so a partial one would be wrong AND unpersisted).
       let answerTextVisible = false;
+      // The confirmation message of the newest pending write card, if any
+      // (add_task & co. called with confirmed=false). Once a card is
+      // pending, the model's natural completion is text, not another tool
+      // call: forcing one via tool_choice "required" can degenerate into
+      // a reasoning loop the API cuts off (incomplete_details:
+      // "max_messages"), which used to kill the whole turn after the card.
+      let pendingConfirmationMessage: string | null = null;
       const calledTools = new Set<string>();
+
+      // A pending write card is the turn's real outcome. Where the answer
+      // text would otherwise be a fallback about a document search the
+      // family never asked for, the card's own ask is what belongs next
+      // to it — and it needs no sources, because it claims nothing.
+      const closeWithPendingCard = (message: string) => {
+        send({ type: answerTextVisible ? "replace" : "text", content: message });
+        send({ type: "sources", sources: [] });
+        send({ type: "response_state", state: "answered" });
+        send({ type: "done" });
+        controller.close();
+      };
 
       try {
         const prefetchQuery = familyContext.documentCount > 0 ? documentPrefetchQuery(query, truncatedHistory) : null;
@@ -1085,7 +1104,7 @@ export async function streamAgenticAnswer(
             tools: round < MAX_TOOL_ROUNDS ? (toolContext.documentEvidence?.length
               ? TOOL_DEFINITIONS.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : TOOL_DEFINITIONS) :
               (toolContext.documentEvidence?.length && !toolContext.documentAnswer ? TOOL_DEFINITIONS.filter((tool) => tool.name === "answer_from_documents") : []),
-            tool_choice: toolContext.documentEvidence?.length && !toolContext.documentAnswer ? "required" : "auto",
+            tool_choice: toolContext.documentEvidence?.length && !toolContext.documentAnswer && pendingConfirmationMessage === null ? "required" : "auto",
             stream: true,
             reasoning: { effort: reasoningEffort },
             // Family documents and conversations must not be retained by
@@ -1138,6 +1157,22 @@ export async function streamAgenticAnswer(
               );
             }
             if (event.type === "response.incomplete") {
+              // The model can circle without ever finishing — the API then
+              // cuts the response off (incomplete_details "max_messages").
+              // Whatever the turn already established is worth more than a
+              // bare error after half a minute of waiting.
+              if (pendingConfirmationMessage) {
+                closeWithPendingCard(pendingConfirmationMessage);
+                return;
+              }
+              if (toolContext.documentEvidence?.length) {
+                send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext, calledTools) });
+                send({ type: "sources", sources: documentResponseSources(toolContext) });
+                send({ type: "response_state", state: toolContext.responseState ?? "partial" });
+                send({ type: "done" });
+                controller.close();
+                return;
+              }
               throw new ChatError(
                 "OpenAI hat die Antwort nicht vollständig erstellt.",
                 "OPENAI_INCOMPLETE_RESPONSE",
@@ -1459,6 +1494,9 @@ export async function streamAgenticAnswer(
                       // reload all share one idempotency key.
                       action_id: crypto.randomUUID(),
                     });
+                    if (typeof parsed.message === "string" && parsed.message) {
+                      pendingConfirmationMessage = parsed.message;
+                    }
                   }
                 } catch {
                   // Ignore parse errors — the tool result is still fed
@@ -1712,6 +1750,14 @@ export async function streamAgenticAnswer(
 
         // Preserve usable evidence when the bounded correction budget is exhausted.
         if (toolContext.documentEvidence?.length) {
+          if (pendingConfirmationMessage && !toolContext.documentAnswer) {
+            // Nothing was verified in the documents because the turn was
+            // never about them: the family asked for a task, the prefetch
+            // searched anyway. Telling them a passage could not be placed
+            // would answer a question nobody asked.
+            closeWithPendingCard(pendingConfirmationMessage);
+            return;
+          }
           send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext, calledTools) });
           send({ type: "sources", sources: documentResponseSources(toolContext) });
           send({ type: "response_state", state: toolContext.responseState ?? "partial" });
