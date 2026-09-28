@@ -225,6 +225,63 @@ describe("form documents", () => {
     expect(result).toMatchObject({ state: "answered" });
   });
 
+  it("binds a field to the amount that follows it on a crowded row", () => {
+    const crowded: DocumentEvidence[] = [{
+      documentId: id, title: "ACADEMY Anmeldung Emma", page: 1,
+      text: "Monatlicher Grundbeitrag 01.10.26 49 € Folgeabbuchungen = 92,17 €",
+    }];
+    const claim = (text: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text, document_id: id, page_number: 1,
+        quote: "Monatlicher Grundbeitrag 01.10.26 49 € Folgeabbuchungen = 92,17 €",
+        highlight: text.includes("92,17") ? "92,17 €" : "49 €",
+      }],
+    }, crowded);
+    expect(claim("Die Folgeabbuchungen betragen 49 €.")).toHaveProperty("error");
+    expect(claim("Die Folgeabbuchungen betragen 92,17 €.")).toMatchObject({ state: "answered" });
+  });
+
+  it("keeps a joined quote from swapping the labels of two dates", () => {
+    const letter: DocumentEvidence[] = [{
+      documentId: id, title: "Vertrag", page: 1,
+      text: "Kündigungsfrist 31.07.2027\n\nGültigkeitsende 31.08.2027",
+    }];
+    const claim = (text: string, quote: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text, document_id: id, page_number: 1, quote }],
+    }, letter);
+    expect(claim("Die Kündigungsfrist endet am 31.08.2027.", "Kündigungsfrist ... Gültigkeitsende 31.08.2027")).toHaveProperty("error");
+    expect(claim("Die Kündigungsfrist endet am 31.07.2027.", "Kündigungsfrist 31.07.2027 ... Gültigkeitsende 31.08.2027")).toMatchObject({ state: "answered" });
+    expect(claim("Die Kündigungsfrist endet am 31.07.2027.", "Kündigungsfrist 31.07.2027")).toMatchObject({ state: "answered" });
+  });
+
+  it("reads a date with and without leading zeros as the same day", () => {
+    const letter: DocumentEvidence[] = [{
+      documentId: id, title: "Vertrag", page: 1,
+      text: "Kündigungsfrist 01.07.27\n\nGültigkeitsende 1.7.27",
+    }];
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text: "Die Kündigungsfrist endet am 1.7.27.", document_id: id, page_number: 1,
+        quote: "Kündigungsfrist ... Gültigkeitsende 1.7.27" }],
+    }, letter);
+    expect(result).toMatchObject({ state: "answered" });
+  });
+
+  it("rejects a quote joined across a source without page numbers", () => {
+    const legacy: DocumentEvidence[] = [{
+      documentId: id, title: "Alter Brief", page: null,
+      text: "Marie zahlt 20 € Taschengeld.\n\nLaura zahlt 15 € Taschengeld.",
+    }];
+    const claim = (quote: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text: "Marie zahlt 20 € Taschengeld.", document_id: id, page_number: null, quote }],
+    }, legacy);
+    expect(claim("Marie zahlt 20 € Taschengeld.")).toMatchObject({ state: "answered" });
+    expect(claim("Marie zahlt 20 € Taschengeld.\n\nLaura zahlt 15 € Taschengeld.")).toHaveProperty("error");
+  });
+
   it("shows an identical claim once while keeping both page citations", () => {
     const second = { ...form[0]!, page: 2, text: pageText.replace("EMMA", "HANNAH") };
     const sentence = "Der Grundbeitrag beträgt 49 €.";
@@ -294,6 +351,8 @@ it("allows a specific missing-information answer without invented facts", () => 
 });
 it("allows page references in a gap but keeps other numbers out", () => {
   expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Die Anmeldungen auf Seite 1 und 2 nennen keine Gesamtsumme für beide Kinder." }, pages)).toMatchObject({ state: "not_found", sources: [] });
+  expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Ich habe die Seiten 3 bis 5 gelesen, dort fehlt der Preis." }, pages)).toMatchObject({ state: "not_found", sources: [] });
+  expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Auf Seite 1, 500 Euro fehlt eine Erklärung." }, pages)).toHaveProperty("error");
   expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Es fehlt der Preis für das Jahr 2027." }, pages)).toHaveProperty("error");
 });
 

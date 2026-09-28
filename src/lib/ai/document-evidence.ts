@@ -194,6 +194,7 @@ export function numbersAreSupported(answer: string, quote: string): boolean {
 }
 
 const CURRENCY_AMOUNT = /(\d+(?:[.,]\d+)?)\s*(?:€|euros?\b)/giu;
+const FACT_DATE = /(?<![\d.])(\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2}))(?!\d)/gu;
 
 function escapeForRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -203,34 +204,107 @@ function amountValue(raw: string): number {
   return Number(raw.replace(",", "."));
 }
 
-/** Currency amounts one passage shows within a field name's reach. The
- * "…" between joined passages means "not adjacent": an amount from a
- * different passage never counts as belonging to the field. */
-function amountsAtField(passages: string[], field: string): string[] {
+/** Dates compare as the family reads them: a leading zero is decoration,
+ * "01.10.26" and "1.10.26" are the same day. */
+function dateValue(raw: string): string {
+  return raw.replace(/(^|[./-])0+(\d)/gu, "$1$2");
+}
+
+function fieldPattern(field: string, flags: string): RegExp {
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, flags);
+}
+
+/**
+ * The one value a text pairs with this occurrence of a field. A form row
+ * carries several values, and a window that accepts any of them lets the
+ * neighbouring field's amount stand in for this one — the exact swap this
+ * guard exists to catch. The form's own reading order decides: the value
+ * after the label is the label's, and only when none follows may one
+ * before it claim the field. The claim itself is prose, so there the
+ * nearest value in either direction is the one it names.
+ */
+function nearestValue(
+  text: string,
+  values: RegExp,
+  start: number,
+  end: number,
+  reach: number,
+  direction: "any" | "after" = "any",
+): string | null {
+  let nearest: string | null = null;
+  let bestDistance = Infinity;
+  for (const match of text.matchAll(values)) {
+    const from = match.index!;
+    if (direction === "after" && from < end) continue;
+    const distance = from >= end ? from - end : start - (from + match[0].length);
+    if (distance < 0 || distance > reach || distance >= bestDistance) continue;
+    bestDistance = distance;
+    nearest = match[1]!;
+  }
+  return nearest;
+}
+
+/** The value each quoted passage shows at the field. The "…" between
+ * joined passages means "not adjacent": a value from a different passage
+ * never counts as belonging to the field. */
+function valuesAtField(passages: string[], field: string, values: RegExp, reach = 30): string[] {
   const found: string[] = [];
   for (const passage of passages) {
-    for (const occurrence of passage.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, "giu"))) {
-      const from = Math.max(0, occurrence.index! - 30);
-      for (const amount of passage.slice(from, occurrence.index! + occurrence[0].length + 30).matchAll(CURRENCY_AMOUNT)) {
-        found.push(amount[1]!);
-      }
+    for (const occurrence of passage.matchAll(fieldPattern(field, "giu"))) {
+      const fieldStart = occurrence.index!;
+      const fieldEnd = fieldStart + occurrence[0].length;
+      const value = nearestValue(passage, values, fieldStart, fieldEnd, reach, "after")
+        ?? nearestValue(passage, values, fieldStart, fieldEnd, reach);
+      if (value) found.push(value);
     }
   }
   return found;
 }
 
-/** The amounts the page itself puts in the field's row. A form pairs a
- * label with its value on one line, so the line — not a character window
- * — is the honest boundary for "these two belong together". */
-function amountsOnPageRow(pageText: string, field: string): string[] {
-  const atField = new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, "iu");
-  const found: string[] = [];
-  for (const line of pageText.split(/\r?\n/)) {
-    const row = comparableEvidence(line);
-    if (!row || !atField.test(row)) continue;
-    for (const amount of row.matchAll(CURRENCY_AMOUNT)) found.push(amount[1]!);
+/** The page's own rows. A form pairs a label with its value on one line,
+ * so the line — not a character window — is the honest boundary for
+ * "these two belong together". */
+function pageRows(pageText: string, prepare: (text: string) => string): string[] {
+  return pageText.split(/\r?\n/).map(prepare).filter(Boolean);
+}
+
+/** Capitalized words that could name a form field. A person is never one. */
+function claimFields(claimText: string, people: string[]): string[] {
+  return [...new Set([...claimText.matchAll(/\p{Lu}\p{Ll}{4,}/gu)].map((match) => match[0]!))]
+    .filter((field) => !people.some((person) => matchesPersonName(field, person)));
+}
+
+/**
+ * A claim pairs a named field with a value; the evidence has to show that
+ * same pair. The page's own rows decide the pairing, and the quote only
+ * testifies where the rows cannot — when the row keeps its value on the
+ * next line, or when no page text was given at all. A joined quote must
+ * not create a pairing the page never made.
+ */
+function fieldValueMismatch(
+  claim: string,
+  passages: string[],
+  rows: string[],
+  fields: string[],
+  values: RegExp,
+  same: (left: string, right: string) => boolean,
+): { field: string; claimed: string; shown: string } | null {
+  for (const field of fields) {
+    if (!passages.some((passage) => fieldPattern(field, "iu").test(passage))) continue;
+    const bound = rows.length
+      ? rows.flatMap((row) => valuesAtField([row], field, values, row.length))
+      : [];
+    const shown = bound.length ? bound : valuesAtField(passages, field, values);
+    if (!shown.length) continue;
+    const occurrence = claim.match(fieldPattern(field, "iu"));
+    if (!occurrence || occurrence.index === undefined) continue;
+    const claimed = nearestValue(claim, values, occurrence.index, occurrence.index + occurrence[0].length, 60);
+    if (claimed === null) continue;
+    if (shown.every((value) => !same(value, claimed))) {
+      return { field, claimed, shown: shown[0]! };
+    }
   }
-  return found;
+  return null;
 }
 
 /**
@@ -238,15 +312,7 @@ function amountsOnPageRow(pageText: string, field: string): string[] {
  * Folgeabbuchungen") must not quote a page that pairs that same field with
  * a different amount. On a form the amount fields sit close together, and
  * a swapped pair passes every other check while saying the opposite of
- * what the page says. A field only counts with the amount the claim
- * itself places nearest to it, so a sentence listing several fields with
- * their amounts does not cross-match them. Only capitalized field names
- * the quote itself contains count; person names never do.
- *
- * Where the quote names the field but leaves its value in another passage,
- * the pairing is decided on the page, not in the quote: joining
- * "Vorabnutzung ab dem …" to a later "92,17 €" must not create a pairing
- * the form never made.
+ * what the page says.
  */
 export function amountFieldMismatch(
   claimText: string,
@@ -254,38 +320,44 @@ export function amountFieldMismatch(
   people: string[] = [],
   pageText = "",
 ): { field: string; claimed: string; shown: string } | null {
-  const passages = quotePassages(quote).map(comparableEvidence);
-  const claimAmounts = [...claimText.matchAll(CURRENCY_AMOUNT)];
-  if (!claimAmounts.length) return null;
-  for (const fieldMatch of claimText.matchAll(/\p{Lu}\p{Ll}{4,}/gu)) {
-    const field = fieldMatch[0]!;
-    if (people.some((person) => matchesPersonName(field, person))) continue;
-    const atField = new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, "iu");
-    if (!passages.some((passage) => atField.test(passage))) continue;
-    const quoted = amountsAtField(passages, field);
-    const shown = quoted.length || !pageText
-      ? quoted
-      : amountsOnPageRow(pageText, field);
-    if (!shown.length) continue;
-    const start = fieldMatch.index!;
-    const end = start + field.length;
-    let claimed: string | null = null;
-    let bestDistance = Infinity;
-    for (const amount of claimAmounts) {
-      const distance = amount.index! >= end
-        ? amount.index! - end
-        : start - (amount.index! + amount[0].length);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        claimed = amount[1]!;
-      }
-    }
-    if (claimed === null || bestDistance > 60) continue;
-    if (shown.every((amount) => amountValue(amount) !== amountValue(claimed))) {
-      return { field, claimed, shown: shown[0]! };
-    }
-  }
-  return null;
+  const fields = claimFields(claimText, people);
+  if (!fields.length) return null;
+  return fieldValueMismatch(
+    claimText,
+    quotePassages(quote).map(comparableEvidence),
+    pageText ? pageRows(pageText, comparableEvidence) : [],
+    fields,
+    CURRENCY_AMOUNT,
+    (left, right) => amountValue(left) === amountValue(right),
+  );
+}
+
+/**
+ * The same rule for dates, and only for a quote assembled from several
+ * passages. A page that labels two dates ("Kündigungsfrist 31.07.2027",
+ * "Gültigkeitsende 31.08.2027") reads unambiguously in its own order; a
+ * joined quote can put either label next to either date, and nothing else
+ * in the chain would notice, because both dates do stand on that page.
+ * A contiguous passage needs no such proof — it is the page's own order.
+ */
+export function dateFieldMismatch(
+  claimText: string,
+  quote: string,
+  people: string[] = [],
+  pageText = "",
+): { field: string; claimed: string; shown: string } | null {
+  const passages = quotePassages(quote);
+  if (passages.length < 2) return null;
+  const fields = claimFields(claimText, people);
+  if (!fields.length) return null;
+  return fieldValueMismatch(
+    normalizeFactText(claimText),
+    passages.map(normalizeFactText),
+    pageText ? pageRows(pageText, normalizeFactText) : [],
+    fields,
+    FACT_DATE,
+    (left, right) => dateValue(left) === dateValue(right),
+  );
 }
 
 export const documentAnswerSchema = z.object({
@@ -372,6 +444,12 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
       && pageCarriesQuote(item.text, passages));
     if (!page) return { error: "Die zitierte Stelle wurde so noch nicht gelesen. Lies die passende Seite mit read_document und übernimm das Zitat wörtlich. Bei einem Formular darfst du Feldbeschriftung und Wert mit '...' verbinden, solange beide wörtlich auf derselben Seite stehen." };
+    // A source without a page number is one aggregate text: joining
+    // passages across it could pair a person or an amount from one letter
+    // with the words of another. Only a real page may be quoted in parts.
+    if (page.page === null && passages.length > 1) {
+      return { error: "Für diese Fundstelle liegen keine Seitenzahlen vor. Zitiere eine einzelne zusammenhängende Stelle statt mehrerer Stellen." };
+    }
     for (const person of people) {
       if (matchesPersonName(claim.text, person) && !matchesPersonName(`${page.title ?? ""} ${page.text}`, person)) {
         return { error: "Die genannte Person gehört nicht zu dieser Fundstelle. Lies die Unterlage der richtigen Person." };
@@ -381,6 +459,8 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     if (!numbersAreSupported(claim.text, claim.quote)) return { error: "Ein Datum oder eine Zahl der Aussage steht nicht in ihrem Beleg. Prüfe die Gültigkeit bzw. Frist auf der Originalseite und korrigiere die Aussage." };
     const mismatch = amountFieldMismatch(claim.text, claim.quote, people, page.text);
     if (mismatch) return { error: `Die Aussage nennt bei „${mismatch.field}“ den Betrag ${mismatch.claimed} €, der Beleg zeigt dort ${mismatch.shown} €. Übernimm Feldname und Betrag so, wie sie auf der Seite zusammenstehen.` };
+    const wrongDate = dateFieldMismatch(claim.text, claim.quote, people, page.text);
+    if (wrongDate) return { error: `Die Aussage nennt bei „${wrongDate.field}“ das Datum ${wrongDate.claimed}, der Beleg zeigt dort ${wrongDate.shown}. Übernimm Beschriftung und Datum so, wie sie auf der Seite zusammenstehen.` };
     const normalizedHighlight = claim.highlight
       ? normalizeFactText(readableQuote(claim.highlight))
       : null;
@@ -400,9 +480,11 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
   const gap = parsed.data.gap;
   // Naming where the model looked ("Seite 1 und 2") is navigation, not a
   // fact; every other digit in a gap could smuggle an unproven number past
-  // the claims check.
+  // the claims check. The grammar stays narrow on purpose: a comma or a
+  // spaced dash does not continue a page reference, so "Auf Seite 1, 500
+  // Euro" keeps the number the guard has to see.
   const gapWithoutPageReferences = gap?.replace(
-    /\b(?:seite|s\.)\s*\d+(?:\s*(?:und|bis|,|–|-)\s*\d+)*/giu, " ",
+    /\b(?:seiten?|s\.)\s*\d{1,4}(?!\d)(?:(?:\s*(?:und|bis)\s*\d{1,3}|\s*[-–]\s*\d{1,2}|[-–]\d{1,3})(?!\d))*/giu, " ",
   );
   if (gapWithoutPageReferences && /\d/.test(gapWithoutPageReferences)) return { error: "In gap nur die fehlende Information benennen. Konkrete Zahlen gehören in belegte claims." };
   // Two registrations often warrant one identical sentence per page. The

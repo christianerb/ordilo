@@ -2371,6 +2371,40 @@ describe("unsupportedAnswerNumbers", () => {
       ),
     ).toEqual(["88,20"]);
   });
+
+  it("does not let a rejected round's error text vouch for its wrong number", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Die Folgeabbuchung beträgt 44,10 €.",
+        [
+          { role: "user" as const, content: "Was kostet die Vorabnutzung?" },
+          {
+            type: "function_call_output" as const,
+            call_id: "call-1",
+            output: JSON.stringify({
+              error: "Die Aussage nennt bei „Folgeabbuchungen“ den Betrag 44,10 €, der Beleg zeigt dort 92,17 €.",
+            }),
+          },
+          {
+            type: "function_call_output" as const,
+            call_id: "call-2",
+            output: JSON.stringify({ pages: [{ page_number: 1, text: "Folgeabbuchungen = 92,17 €" }] }),
+          },
+        ],
+        "",
+      ),
+    ).toEqual(["44,10"]);
+  });
+
+  it("splits only dates into their parts, never amounts", () => {
+    const evidence = [{ type: "function_call_output" as const, call_id: "call-1", output: "Gültig ab 01.10.26, Betrag 92,17 €" }];
+    expect(
+      unsupportedAnswerNumbers("Das Abo läuft im Monat 10, das Jahr 26 ist belegt.", evidence, ""),
+    ).toEqual([]);
+    expect(
+      unsupportedAnswerNumbers("Der offene Restbetrag von 17 € fehlt.", evidence, ""),
+    ).toEqual(["17"]);
+  });
 });
 
 describe("streamAgenticAnswer — spoken answers", () => {
