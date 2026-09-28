@@ -39,6 +39,7 @@ import {
   filterByRelevanceThreshold,
   plainVoiceText,
   streamAgenticAnswer,
+  unsupportedAnswerNumbers,
   ChatError,
 } from "@/lib/ai/chat";
 import {
@@ -2295,6 +2296,114 @@ describe("plainVoiceText", () => {
     expect(plainVoiceText("Der Beitrag ist *") + plainVoiceText("*49 Euro**.")).toBe(
       "Der Beitrag ist 49 Euro.",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unproven numbers in document answers
+// ---------------------------------------------------------------------------
+
+describe("unsupportedAnswerNumbers", () => {
+  const input = [
+    { role: "user" as const, content: "Was kostet die Mitgliedschaft pro Kind?" },
+    {
+      type: "function_call_output" as const,
+      call_id: "call-1",
+      output: "Monatlicher Grundbeitrag 01.10.26 49 €, Folgeabbuchungen 92,17 €",
+    },
+  ];
+
+  it("flags a sum the model computed itself", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Je Kind sind das 49 € — zusammen 98 € im Monat.",
+        input,
+        "Der Grundbeitrag beträgt 49 € je Kind.",
+      ),
+    ).toEqual(["98"]);
+  });
+
+  it("accepts numbers from the tool results and reworded dates", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Der Grundbeitrag von 49 € gilt je Kind ab dem 1.10.26, die Folgeabbuchung beträgt 92,17 €.",
+        input,
+        "Der Grundbeitrag beträgt 49 € je Kind.",
+      ),
+    ).toEqual([]);
+  });
+
+  it("accepts a year the evidence writes as a full date", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Der Vertrag läuft noch bis 2027.",
+        [{ type: "function_call_output" as const, call_id: "call-1", output: "Gültig bis 31.08.2027" }],
+        "Das Ticket gilt bis zum 31. August 2027.",
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not let a larger quoted number cover a smaller invented one", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Der Kurs kostet 49 €.",
+        [{ type: "function_call_output" as const, call_id: "call-1", output: "Kursgebühr 149 €" }],
+        "Die Kursgebühr beträgt 149 €.",
+      ),
+    ).toEqual(["49"]);
+  });
+
+  it("does not treat the model's own rejected tool arguments as evidence", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Die Folgeabbuchung beträgt 88,20 €.",
+        [
+          { role: "user" as const, content: "Was zahlen wir monatlich?" },
+          {
+            type: "function_call" as const,
+            call_id: "call-1",
+            name: "answer_from_documents",
+            arguments: JSON.stringify({ claims: [{ text: "Zusammen 88,20 € im Monat." }] }),
+          },
+          { type: "function_call_output" as const, call_id: "call-1", output: "{\"error\":\"Beleg abgelehnt\"}" },
+        ],
+        "Der Grundbeitrag beträgt 44,10 € je Kind.",
+      ),
+    ).toEqual(["88,20"]);
+  });
+
+  it("does not let a rejected round's error text vouch for its wrong number", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Die Folgeabbuchung beträgt 44,10 €.",
+        [
+          { role: "user" as const, content: "Was kostet die Vorabnutzung?" },
+          {
+            type: "function_call_output" as const,
+            call_id: "call-1",
+            output: JSON.stringify({
+              error: "Die Aussage nennt bei „Folgeabbuchungen“ den Betrag 44,10 €, der Beleg zeigt dort 92,17 €.",
+            }),
+          },
+          {
+            type: "function_call_output" as const,
+            call_id: "call-2",
+            output: JSON.stringify({ pages: [{ page_number: 1, text: "Folgeabbuchungen = 92,17 €" }] }),
+          },
+        ],
+        "",
+      ),
+    ).toEqual(["44,10"]);
+  });
+
+  it("splits only dates into their parts, never amounts", () => {
+    const evidence = [{ type: "function_call_output" as const, call_id: "call-1", output: "Gültig ab 01.10.26, Betrag 92,17 €" }];
+    expect(
+      unsupportedAnswerNumbers("Das Abo läuft im Monat 10, das Jahr 26 ist belegt.", evidence, ""),
+    ).toEqual([]);
+    expect(
+      unsupportedAnswerNumbers("Der offene Restbetrag von 17 € fehlt.", evidence, ""),
+    ).toEqual(["17"]);
   });
 });
 

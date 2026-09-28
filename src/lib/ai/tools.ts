@@ -106,7 +106,7 @@ export interface ToolContext {
   readPageTexts?: string[];
   documentQuestion?: string;
   documentSearchCount?: number;
-  documentAnswer?: { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found" };
+  documentAnswer?: { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found"; gap?: string };
   signal?: AbortSignal;
   timings?: Array<{ phase: string; ms: number }>;
   /** "voice": the answer is read aloud in a Live conversation. */
@@ -144,13 +144,13 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
     type: "function",
     function: {
       name: "answer_from_documents",
-      description: "Prüft und merkt belegte Dokumentaussagen für die abschließende Antwort. Beendet das Gespräch NICHT: Bearbeite danach alle übrigen Teile der Nutzerfrage, etwa aktuelle Webinformationen oder Aufgaben. Jede Aussage muss in ihrem wörtlichen Zitat aus gelesenen Seiten stehen. Prüfe Person, Bedeutung der Frist und Widersprüche. Kein bloßer Titelbezug. Für eine konkrete Zahl/Datum highlight mitgeben. Keine Berechnungen oder nicht belegten Schlussfolgerungen. Wenn eine Angabe nach dem Nachlesen fehlt: claims leer, state not_found und konkrete Lücke in gap. Bei Fehler gezielt nachlesen/korrigieren.",
+      description: "Prüft und merkt belegte Dokumentaussagen für die abschließende Antwort. Beendet das Gespräch NICHT: Bearbeite danach alle übrigen Teile der Nutzerfrage, etwa aktuelle Webinformationen oder Aufgaben. Jede Aussage muss in ihrem wörtlichen Zitat aus gelesenen Seiten stehen. Ein Zitat darf bei Formularen Feldbeschriftung und Wert mit '...' verbinden (höchstens 6 Teile), solange jeder Teil wörtlich auf derselben Seite steht und die Reihenfolge der Seite einhält. Ordne jeden Betrag genau dem Feld zu, in dem die Seite ihn zeigt: Feldname und Betrag gehören in die Aussage so zusammen, wie sie auf der Seite zusammenstehen. Prüfe Person, Bedeutung der Frist und Widersprüche. Kein bloßer Titelbezug. Für eine konkrete Zahl/Datum highlight mitgeben. Keine Berechnungen oder nicht belegten Schlussfolgerungen. Wenn eine Angabe nach dem Nachlesen fehlt: claims leer, state not_found und konkrete Lücke in gap. Bei Fehler gezielt nachlesen/korrigieren.",
       parameters: { type: "object", properties: {
         claims: { type: "array", minItems: 0, maxItems: 5, items: {
           type: "object", properties: {
             text: { type: "string", description: "Ein vollstaendiger, natuerlicher deutscher Antwortsatz, der mit der konkreten Antwort beginnt. Nur Belegtes: keine Zahl, die nicht im Zitat steht, und keine Beruhigung oder Einordnung — die kommt erst in der Endantwort." },
             document_id: { type: "string" }, page_number: { type: ["integer", "null"] },
-            quote: { type: "string", description: "Wörtlicher Originaltext inklusive Kontext, der Person und Aussage belegt." },
+            quote: { type: "string", description: "Wörtlicher Originaltext inklusive Kontext, der Person und Aussage belegt. Bei Formularen dürfen Feld und Wert mit '...' verbunden werden, wenn beide wörtlich auf derselben Seite stehen." },
             highlight: { type: "string", description: "Optional: zentraler Wert, der im Antwortsatz und Zitat steht, z.B. 31.08.2027." },
           }, required: ["text", "document_id", "page_number", "quote"],
         } },

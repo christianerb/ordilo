@@ -1,6 +1,6 @@
 import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
-import { comparableEvidence, readableQuote } from "./document-evidence";
+import { comparableEvidence, normalizeFactText, readableQuote } from "./document-evidence";
 import { documentPrefetchQuery } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
@@ -251,6 +251,73 @@ export function includesVerifiedDocumentAnswer(text: string, context: ToolContex
     .every(sentence => !sentence || answer.includes(sentence));
 }
 
+/** Numbers as the text writes them, with leading zeros dropped after a
+ * date separator so "01.10.26" and "1.10.26" are one number — but never
+ * after a decimal comma, where 1,05 € and 1,5 € are different amounts. */
+function numericTokens(text: string): string[] {
+  return (normalizeFactText(text).match(/\d+(?:[.,:/-]\d+)*/gu) ?? [])
+    .map((token) => token.replace(/(^|[./-])0+(\d)/g, "$1$2"));
+}
+
+/**
+ * A rejected round is not evidence. A validation error names the very
+ * numbers it rejected — "der Beleg zeigt dort 92,17 €" — and a final
+ * answer must never be allowed to lean on a number that only a refusal
+ * ever mentioned.
+ */
+function isRejectedOutput(output: string): boolean {
+  try {
+    return "error" in (JSON.parse(output) as Record<string, unknown>);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Numbers the final answer states that nothing the model worked from
+ * contains. A sum the model computed itself ("2 × 44,10 € = 88,20 €")
+ * reads like a verified fact, so it is rejected like any other unproven
+ * sentence.
+ *
+ * The corpus is what the turn actually established: the conversation, the
+ * successful tool results and the verified document claims. The system
+ * prompt is instruction, not evidence — its example dates must never
+ * vouch for an answer — a function call's arguments are the model's own
+ * proposal, and a tool output that reports an error has established the
+ * opposite of a fact.
+ *
+ * Whole numbers are compared, not substrings, so a quoted 149 € does not
+ * cover an invented 49 €. Only a date supports its parts — an answer may
+ * say "2027" where the evidence writes "31.08.2027" — because a part of
+ * an amount ("17" out of "92,17 €") is never an amount anyone was told.
+ */
+export function unsupportedAnswerNumbers(
+  answer: string,
+  input: OpenAI.Responses.ResponseInput,
+  documentAnswerText: string,
+): string[] {
+  const evidence = input.flatMap((item) => {
+    const entry = item as { type?: unknown; content?: unknown; output?: unknown };
+    if (entry.type === "function_call") return [];
+    return [entry.content, entry.output].filter(
+      (value): value is string => typeof value === "string" && !isRejectedOutput(value),
+    );
+  });
+  const supported = new Set<string>();
+  for (const token of numericTokens([...evidence, documentAnswerText].join("\n"))) {
+    supported.add(token);
+    if (/^\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?$/u.test(token)) {
+      for (const part of token.split(/[./-]/)) {
+        const plain = part.replace(/^0+(\d)/u, "$1");
+        if (plain) supported.add(plain);
+      }
+    }
+  }
+  return [...new Set(numericTokens(answer))].filter(
+    (number) => !supported.has(number),
+  );
+}
+
 /** Tools that only serve the document answer itself. Anything else means
  * the question had another part that the fallback cannot vouch for. */
 const DOCUMENT_ANSWER_TOOLS = new Set([
@@ -282,6 +349,12 @@ export function incompleteDocumentAnswer(context: ToolContext, calledTools: Read
     // A state the model set explicitly after verifying (partial, conflict)
     // still stands.
     context.responseState = context.responseState ?? context.documentAnswer.state;
+    return context.documentAnswer.text;
+  }
+  if (context.documentAnswer?.gap) {
+    // The model already named what is missing; the generic tail would
+    // only repeat that in vaguer words.
+    context.responseState = context.responseState ?? context.documentAnswer.state ?? "partial";
     return context.documentAnswer.text;
   }
   context.responseState = "partial";
@@ -567,7 +640,7 @@ DOKUMENTFRAGEN UND ZUSAMMENHAENGE:
 - Verstehe auch ungenaue, umgangssprachliche Fragen, Tippfehler und Bezüge wie "das von unserer Großen" oder "und von Emma?". Nutze Sprecher, Familienrollen, Beziehungen und den Verlauf, um die wahrscheinlich gemeinte Frage zu erschließen. Bewahre Person und Thema in Suchanfragen. Erfinde keine Beziehung. Sind mehrere Deutungen wirklich gleich plausibel, stelle genau eine konkrete Rückfrage mit den gefundenen Möglichkeiten.
 - Quellen mit dem Titel „Familienkorrektur:“ sind ausdrücklich von der Familie gespeicherte Angaben, keine Originalzitate. Beziehe sie ein, kennzeichne sie als Familienkorrektur und benenne Abweichungen vom Original transparent. Behaupte niemals, dass eine Korrektur so im Original steht.
 - graph_query und list_family_members helfen, Personen, Organisationen und Beziehungen zu finden. search_documents sucht den Inhalt; die besten Treffer enthalten bereits gelesene Originalseiten (pages). Bei fehlendem Kontext lies mit read_document gezielt nach. Bei schwachem Treffer einmal sinnvoll umformulieren, nicht dieselbe Suche wiederholen.
-- Beantworte konkrete Fakten aus Unterlagen IMMER mit answer_from_documents: kurze claims mit wörtlichem Zitat und page_number aus pages. Dieses Werkzeug prüft und merkt die Dokumentaussagen, beendet aber NICHT die Antwort. Bearbeite anschließend ALLE weiteren Teile der Nutzerfrage mit den passenden Werkzeugen, auch aktuelle öffentliche Preise oder Aufgaben. Übernimm die geprüften Sätze wortgleich in deine vollständige Textantwort und ergänze die Ergebnisse der anderen Werkzeuge mit deren Quellen. Der verbindende und abschließende Text um sie herum ist deiner und folgt der STIMME unten — er darf keinen neuen Fakt und keine gerechnete Zahl enthalten. Jede Aussage muss durch IHR Zitat gedeckt sein: richtige Person, richtige Unterlage, richtige Bedeutung. Ticketgültigkeit ist weder Kündigungsfrist noch Abolaufzeit. Bei genau einem Datum/Betrag gib highlight mit. Lies bei einem Validierungsfehler die richtige Stelle nach oder korrigiere den claim.
+- Beantworte konkrete Fakten aus Unterlagen IMMER mit answer_from_documents: kurze claims mit wörtlichem Zitat und page_number aus pages. Dieses Werkzeug prüft und merkt die Dokumentaussagen, beendet aber NICHT die Antwort. Bearbeite anschließend ALLE weiteren Teile der Nutzerfrage mit den passenden Werkzeugen, auch aktuelle öffentliche Preise oder Aufgaben. Übernimm die geprüften Sätze wortgleich in deine vollständige Textantwort und ergänze die Ergebnisse der anderen Werkzeuge mit deren Quellen. Der verbindende und abschließende Text um sie herum ist deiner und folgt der STIMME unten — er darf keinen neuen Fakt und keine gerechnete Zahl enthalten. Jede Aussage muss durch IHR Zitat gedeckt sein: richtige Person, richtige Unterlage, richtige Bedeutung. Bei Formularen (Anmeldungen, Verträge, Bescheide) liegen Beschriftung und Wert oft weit auseinander: verbinde die wörtlichen Feldinhalte derselben Seite mit '...' zu einem Zitat, statt etwas umzuformulieren oder wegzulassen. Ticketgültigkeit ist weder Kündigungsfrist noch Abolaufzeit. Bei genau einem Datum/Betrag gib highlight mit. Lies bei einem Validierungsfehler die richtige Stelle nach oder korrigiere den claim.
 - Keine Rechenaufgaben in answer_from_documents: nutze query_payments für Summen; kennzeichne andere Ableitungen ausdrücklich. Unterscheide Originalfakten und Interpretation. Ein späterer Upload beweist nicht, dass ein älterer Vertrag ungültig ist.
 - Wenn eine Unterlage ausdrücklich sagt, dass die gesuchte Angabe noch nicht feststeht, zitiere genau diesen Satz als claim und verwende state not_found. Ohne gegenteiligen Beleg keine Uhrzeit/Frist erfinden. Ein leerer Kalender bedeutet nicht, dass es keine Einladung oder Dokumentangabe gibt. Suche dann in den Unterlagen.
 - Wenn der Beleg fehlt, sage konkret, welche Information du gefunden hast und welche fehlt. Bitte den Nutzer NIEMALS, seine Frage erneut zu stellen oder eine Quelle zu zitieren, nur weil deine eigene Prüfung gescheitert ist.
@@ -1598,6 +1671,9 @@ export async function streamAgenticAnswer(
           // is not enough to substantiate a current claim.
           const citationSources = requiredCitationSources(toolContext);
           const documentClaimsMissing = !includesVerifiedDocumentAnswer(fullAnswer, toolContext);
+          const unsupportedNumbers = toolContext.documentAnswer
+            ? unsupportedAnswerNumbers(fullAnswer, input, toolContext.documentAnswer.text)
+            : [];
           const citationMissing =
             citationSources.length > 0 &&
             !answerCitesSources(fullAnswer, citationSources);
@@ -1605,7 +1681,7 @@ export async function streamAgenticAnswer(
           if (
             hedgingDetected ||
             containsHedgingLanguage(fullAnswer) ||
-            citationMissing || documentClaimsMissing
+            citationMissing || documentClaimsMissing || unsupportedNumbers.length > 0
           ) {
             // A hedged or uncited answer gets exactly one non-streaming
             // correction. If part of the draft already reached the client,
@@ -1614,6 +1690,8 @@ export async function streamAgenticAnswer(
             const correction =
               documentClaimsMissing
                 ? `Übernimm diese geprüften Dokumentaussagen unverändert und beantworte auch alle übrigen Teile der Nutzerfrage: ${toolContext.documentAnswer!.text}`
+                : unsupportedNumbers.length
+                ? `Deine Antwort nennt Zahlen, die in keinem Beleg oder Werkzeugergebnis stehen: ${unsupportedNumbers.join(", ")}. Lass sie weg oder stütze jede Zahl auf ein Werkzeugergebnis.`
                 : citationMissing
                 ? "Deine Antwort war nicht klar mit den gefundenen Belegen verbunden. Nenne die passende Unterlage oder öffentliche Quelle kurz und beantworte die Frage direkt."
                 : "Deine Antwort enthielt verbotene Formulierungen. Formuliere unbedingt, direkt und bestimmt. Verwende keine unsicheren Ausdrücke.";
@@ -1631,11 +1709,14 @@ export async function streamAgenticAnswer(
             const retryHasHedging =
               !retryContent || containsHedgingLanguage(retryContent);
             const retryMissingDocument = !includesVerifiedDocumentAnswer(retryContent, toolContext);
+            const retryUnsupportedNumbers = toolContext.documentAnswer
+              ? unsupportedAnswerNumbers(retryContent, input, toolContext.documentAnswer.text)
+              : [];
             const retryMissingCitation =
               citationSources.length > 0 &&
               !answerCitesSources(retryContent, citationSources);
             const finalText =
-              !retryHasHedging && !retryMissingCitation && !retryMissingDocument
+              !retryHasHedging && !retryMissingCitation && !retryMissingDocument && retryUnsupportedNumbers.length === 0
                 ? retryContent
                 : toolContext.documentAnswer
                   ? incompleteDocumentAnswer(toolContext, calledTools)

@@ -100,6 +100,227 @@ describe("document answer evidence", () => {
   });
 });
 
+describe("form documents", () => {
+  const pageText = [
+    "Mitglieds-ID: 1-3082",
+    "Vorname **EMMA** Nachname **MUSTER**",
+    "## Mitgliedschaft",
+    "Monatlicher Grundbeitrag **01.10.26** **49** €",
+    "ggf. abzgl. 10 % Studenten/Familien-Rabatt **-** **4,90** €",
+    "Vorabnutzung ab dem **23.09** anteilig **=** **44,10** €",
+    "**Folgeabbuchungen** **=** **92,17** €",
+    "Familien-mitglied",
+    "**HANNAH MUSTER**",
+  ].join("\n\n");
+  const form: DocumentEvidence[] = [{ documentId: id, title: "ACADEMY Anmeldung Emma", page: 1, text: pageText }];
+
+  it.each(["...", "…", "[…]", "\n\n"])("accepts a form quote that joins distant fields with %j", (join) => {
+    const quote = ["Vorname **EMMA** Nachname **MUSTER**", "Monatlicher Grundbeitrag **01.10.26** **49** €"].join(join);
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Für Emma ist ein monatlicher Grundbeitrag von 49 € angegeben.",
+        document_id: id, page_number: 1, quote, highlight: "49 €",
+      }],
+    }, form, ["Emma", "Hanna"]);
+    expect(result).toMatchObject({ state: "answered", sources: [{ cited: true, page_number: 1 }] });
+  });
+
+  it("keeps the skip between joined fields visible in the displayed quote", () => {
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Für Emma ist ein monatlicher Grundbeitrag von 49 € angegeben.",
+        document_id: id, page_number: 1,
+        quote: "Vorname **EMMA** Nachname **MUSTER**\n\nMonatlicher Grundbeitrag **01.10.26** **49** €",
+      }],
+    }, form);
+    expect(result).toMatchObject({
+      sources: [{ quote: "Vorname EMMA Nachname MUSTER … Monatlicher Grundbeitrag 01.10.26 49 €" }],
+    });
+  });
+
+  it("rejects joined passages quoted against the page order", () => {
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Für Emma ist ein monatlicher Grundbeitrag von 49 € angegeben.",
+        document_id: id, page_number: 1,
+        quote: "Monatlicher Grundbeitrag **01.10.26** **49** € ... Vorname **EMMA** Nachname **MUSTER**",
+        highlight: "49 €",
+      }],
+    }, form);
+    expect(result).toHaveProperty("error");
+  });
+
+  it("accepts a form chain of six fields and rejects a seventh passage", () => {
+    const claim = (quote: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text: "Für Emma ist ein monatlicher Grundbeitrag von 49 € angegeben.", document_id: id, page_number: 1, quote }],
+    }, form);
+    expect(claim("Vorname **EMMA** Nachname **MUSTER** ... Grundbeitrag laut Tabelle 49 €")).toHaveProperty("error");
+    expect(claim(["Mitglieds-ID: 1-3082", "Vorname **EMMA** Nachname **MUSTER**", "## Mitgliedschaft",
+      "Monatlicher Grundbeitrag **01.10.26** **49** €", "Familien-mitglied", "**HANNAH MUSTER**"].join(" ... ")))
+      .toMatchObject({ state: "answered" });
+    expect(claim(["Mitglieds-ID: 1-3082", "Vorname **EMMA** Nachname **MUSTER**", "## Mitgliedschaft",
+      "Monatlicher Grundbeitrag **01.10.26**", "**49** €", "Familien-mitglied", "**HANNAH MUSTER**"].join(" ... ")))
+      .toHaveProperty("error");
+  });
+
+  it("rejects an amount assigned to the wrong form field", () => {
+    const wrong = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Für Emma nennt die Anmeldung 44,10 € für die Folgeabbuchungen.",
+        document_id: id, page_number: 1,
+        quote: "Vorname **EMMA** Nachname **MUSTER** ... Vorabnutzung ab dem **23.09** anteilig **=** **44,10** € ... **Folgeabbuchungen** **=** **92,17** €",
+        highlight: "44,10 €",
+      }],
+    }, form, ["Emma", "Hannah"]);
+    expect(wrong).toHaveProperty("error");
+    const right = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Die Folgeabbuchungen betragen 92,17 €.",
+        document_id: id, page_number: 1,
+        quote: "**Folgeabbuchungen** **=** **92,17** €",
+        highlight: "92,17 €",
+      }],
+    }, form, ["Emma", "Hannah"]);
+    expect(right).toMatchObject({ state: "answered" });
+  });
+
+  it("decides on the page when a joined quote leaves the field's own amount out", () => {
+    const quote = "Vorabnutzung ab dem ... **92,17** €";
+    const wrong = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Die Vorabnutzung beträgt 92,17 €.",
+        document_id: id, page_number: 1, quote, highlight: "92,17 €",
+      }],
+    }, form, ["Emma", "Hannah"]);
+    expect(wrong).toHaveProperty("error");
+    const right = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Die Vorabnutzung beträgt 44,10 €.",
+        document_id: id, page_number: 1,
+        quote: "Vorabnutzung ab dem ... **44,10** €",
+        highlight: "44,10 €",
+      }],
+    }, form, ["Emma", "Hannah"]);
+    expect(right).toMatchObject({ state: "answered" });
+  });
+
+  it("keeps each field with its own amount when a sentence lists several", () => {
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Für Emma ist ein monatlicher Grundbeitrag von 49 € und ein Familienrabatt von 4,90 € aufgeführt.",
+        document_id: id, page_number: 1,
+        quote: "Monatlicher Grundbeitrag **01.10.26** **49** € ... ggf. abzgl. 10 % Studenten/Familien-Rabatt **-** **4,90** €",
+        highlight: "49 €",
+      }],
+    }, form, ["Emma", "Hannah"]);
+    expect(result).toMatchObject({ state: "answered" });
+  });
+
+  it("binds a field to the amount that follows it on a crowded row", () => {
+    const crowded: DocumentEvidence[] = [{
+      documentId: id, title: "ACADEMY Anmeldung Emma", page: 1,
+      text: "Monatlicher Grundbeitrag 01.10.26 49 € Folgeabbuchungen = 92,17 €",
+    }];
+    const claim = (text: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text, document_id: id, page_number: 1,
+        quote: "Monatlicher Grundbeitrag 01.10.26 49 € Folgeabbuchungen = 92,17 €",
+        highlight: text.includes("92,17") ? "92,17 €" : "49 €",
+      }],
+    }, crowded);
+    expect(claim("Die Folgeabbuchungen betragen 49 €.")).toHaveProperty("error");
+    expect(claim("Die Folgeabbuchungen betragen 92,17 €.")).toMatchObject({ state: "answered" });
+  });
+
+  it("keeps a joined quote from swapping the labels of two dates", () => {
+    const letter: DocumentEvidence[] = [{
+      documentId: id, title: "Vertrag", page: 1,
+      text: "Kündigungsfrist 31.07.2027\n\nGültigkeitsende 31.08.2027",
+    }];
+    const claim = (text: string, quote: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text, document_id: id, page_number: 1, quote }],
+    }, letter);
+    expect(claim("Die Kündigungsfrist endet am 31.08.2027.", "Kündigungsfrist ... Gültigkeitsende 31.08.2027")).toHaveProperty("error");
+    expect(claim("Die Kündigungsfrist endet am 31.07.2027.", "Kündigungsfrist 31.07.2027 ... Gültigkeitsende 31.08.2027")).toMatchObject({ state: "answered" });
+    expect(claim("Die Kündigungsfrist endet am 31.07.2027.", "Kündigungsfrist 31.07.2027")).toMatchObject({ state: "answered" });
+  });
+
+  it("does not hand a label the date of the sentence before it", () => {
+    const strom: DocumentEvidence[] = [{
+      documentId: id, title: "Kündigungsbestätigung Strom", page: 1,
+      text: "Stromvertrag der Familie. Vertragsende: 31.12.2027. Kündigung eingegangen am 05.08.2027.",
+    }];
+    const quote = "Vertragsende: 31.12.2027 ... Kündigung eingegangen am 05.08.2027.";
+    const attempt = (text: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text, document_id: id, page_number: 1, quote, highlight: "31.12.2027" }],
+    }, strom);
+    // Both dates stand on the page beside their own label. A claim that keeps
+    // them that way is right even where the other label happens to sit closer
+    // to a date than its own does.
+    expect(attempt("Entscheidend ist das Vertragsende: Der Vertrag endet am 31.12.2027, nicht der Eingang der Kündigung."))
+      .toMatchObject({ state: "answered" });
+    expect(attempt("Der Stromvertrag endet am 31.12.2027. Die Kündigung ging am 05.08.2027 ein, entscheidend ist aber das Vertragsende."))
+      .toMatchObject({ state: "answered" });
+    expect(attempt("Die Kündigung ging am 31.12.2027 ein.")).toHaveProperty("error");
+  });
+
+  it("reads a date with and without leading zeros as the same day", () => {
+    const letter: DocumentEvidence[] = [{
+      documentId: id, title: "Vertrag", page: 1,
+      text: "Kündigungsfrist 01.07.27\n\nGültigkeitsende 1.7.27",
+    }];
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text: "Die Kündigungsfrist endet am 1.7.27.", document_id: id, page_number: 1,
+        quote: "Kündigungsfrist ... Gültigkeitsende 1.7.27" }],
+    }, letter);
+    expect(result).toMatchObject({ state: "answered" });
+  });
+
+  it("rejects a quote joined across a source without page numbers", () => {
+    const legacy: DocumentEvidence[] = [{
+      documentId: id, title: "Alter Brief", page: null,
+      text: "Marie zahlt 20 € Taschengeld.\n\nLaura zahlt 15 € Taschengeld.",
+    }];
+    const claim = (quote: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text: "Marie zahlt 20 € Taschengeld.", document_id: id, page_number: null, quote }],
+    }, legacy);
+    expect(claim("Marie zahlt 20 € Taschengeld.")).toMatchObject({ state: "answered" });
+    expect(claim("Marie zahlt 20 € Taschengeld.\n\nLaura zahlt 15 € Taschengeld.")).toHaveProperty("error");
+  });
+
+  it("shows an identical claim once while keeping both page citations", () => {
+    const second = { ...form[0]!, page: 2, text: pageText.replace("EMMA", "HANNAH") };
+    const sentence = "Der Grundbeitrag beträgt 49 €.";
+    const result = verifyDocumentAnswer({
+      state: "answered",
+      claims: [
+        { text: sentence, document_id: id, page_number: 1, quote: "Monatlicher Grundbeitrag **01.10.26** **49** €" },
+        { text: sentence, document_id: id, page_number: 2, quote: "Monatlicher Grundbeitrag **01.10.26** **49** €" },
+      ],
+    }, [...form, second], ["Emma", "Hannah"]);
+    expect(result).not.toHaveProperty("error");
+    if (!("error" in result)) {
+      expect(result.text).toBe(sentence);
+      expect(result.sources).toHaveLength(2);
+      expect(result.sources.map((source) => source.page_number)).toEqual([1, 2]);
+    }
+  });
+});
+
 function database(doc: unknown, pages: unknown[] = []) {
   const filters: Array<[string, unknown]> = [];
   const from = vi.fn((table: string) => {
@@ -147,6 +368,12 @@ it("rejects credentials appended to an otherwise valid ticket line", async () =>
 it("allows a specific missing-information answer without invented facts", () => {
   expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "In den gelesenen Unterlagen steht kein Kündigungstermin." }, pages)).toMatchObject({ state: "not_found", sources: [] });
   expect(verifyDocumentAnswer({ claims: [], state: "answered", gap: "Fehlt." }, pages)).toHaveProperty("error");
+});
+it("allows page references in a gap but keeps other numbers out", () => {
+  expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Die Anmeldungen auf Seite 1 und 2 nennen keine Gesamtsumme für beide Kinder." }, pages)).toMatchObject({ state: "not_found", sources: [] });
+  expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Ich habe die Seiten 3 bis 5 gelesen, dort fehlt der Preis." }, pages)).toMatchObject({ state: "not_found", sources: [] });
+  expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Auf Seite 1, 500 Euro fehlt eine Erklärung." }, pages)).toHaveProperty("error");
+  expect(verifyDocumentAnswer({ claims: [], state: "not_found", gap: "Es fehlt der Preis für das Jahr 2027." }, pages)).toHaveProperty("error");
 });
 
 it("does not turn a validity start into the end of a ticket", () => {
