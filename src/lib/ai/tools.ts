@@ -1262,7 +1262,7 @@ async function executeAddContact(
       role: contact.role || null,
       phone: contact.phone || null,
       email: contact.email || null,
-      message: `Bitte bestaetige: Soll der Kontakt '${contact.name}' angelegt werden?`,
+      message: `Bitte bestätige: Soll der Kontakt '${contact.name}' angelegt werden?`,
     });
   }
 
@@ -2025,7 +2025,7 @@ async function executeAddTask(
       needs_confirmation: true,
       task_title: title,
       due_date: dueDate,
-      message: `Bitte bestaetige: Soll ich die Aufgabe '${title}'${dueDate ? ` (faellig ${dueDate})` : ""} anlegen?`,
+      message: `Bitte bestätige: Soll ich die Aufgabe '${title}'${dueDate ? ` (fällig ${dueDate})` : ""} anlegen?`,
     });
   }
 
@@ -2474,7 +2474,7 @@ async function executeMarkTaskDone(
       needs_confirmation: true,
       task_id: task.id,
       task_title: task.title,
-      message: `Bitte bestaetige: Soll die Aufgabe '${task.title}' als erledigt markiert werden?`,
+      message: `Bitte bestätige: Soll die Aufgabe '${task.title}' als erledigt markiert werden?`,
     } as unknown as ConfirmationRequest);
   }
 
@@ -2766,7 +2766,7 @@ async function executeAddFamilyMember(
     return JSON.stringify({
       needs_confirmation: true,
       member_name: name,
-      message: `Bitte bestaetige: Soll '${name}' als neues Familienmitglied hinzugefuegt werden?`,
+      message: `Bitte bestätige: Soll '${name}' als neues Familienmitglied hinzugefügt werden?`,
     });
   }
 
@@ -2823,7 +2823,7 @@ async function executeAddFamilyMember(
     success: true,
     member_id: member.id,
     name: member.name,
-    message: `'${member.name}' wurde als Familienmitglied hinzugefuegt.`,
+    message: `'${member.name}' wurde als Familienmitglied hinzugefügt.`,
   });
 }
 
@@ -2885,7 +2885,7 @@ async function executeMoveDocumentToCollection(
       document_id: doc.id,
       document_title: documentTitle,
       collection_name: match.name,
-      message: `Bitte bestaetige: Soll '${documentTitle}' in die Sammlung '${match.name}' verschoben werden?`,
+      message: `Bitte bestätige: Soll '${documentTitle}' in die Sammlung '${match.name}' verschoben werden?`,
     });
   }
 
@@ -2949,7 +2949,7 @@ async function executeAddDocumentTags(
       document_id: doc.id,
       document_title: documentTitle,
       tags: newTags,
-      message: `Bitte bestaetige: Sollen dem Dokument '${documentTitle}' die Schlagworte ${newTags.join(", ")} hinzugefuegt werden?`,
+      message: `Bitte bestätige: Sollen dem Dokument '${documentTitle}' die Schlagworte ${newTags.join(", ")} hinzugefügt werden?`,
     });
   }
 
@@ -2968,7 +2968,7 @@ async function executeAddDocumentTags(
     document_id: doc.id,
     document_title: documentTitle,
     tags: mergedTags,
-    message: `Dem Dokument '${documentTitle}' wurden die Schlagworte ${newTags.join(", ")} hinzugefuegt.`,
+    message: `Dem Dokument '${documentTitle}' wurden die Schlagworte ${newTags.join(", ")} hinzugefügt.`,
   });
 }
 
@@ -3043,8 +3043,8 @@ async function executeSaveDocumentFact(
       value,
       existing_value: existing ? existing.value : null,
       message: existing
-        ? `Bitte bestaetige: Soll die ${factLabel} von '${documentTitle}' von '${existing.value}' zu '${value}' korrigiert werden?`
-        : `Bitte bestaetige: Soll die ${factLabel} '${value}' bei '${documentTitle}' hinterlegt werden?`,
+        ? `Bitte bestätige: Soll die ${factLabel} von '${documentTitle}' von '${existing.value}' zu '${value}' korrigiert werden?`
+        : `Bitte bestätige: Soll die ${factLabel} '${value}' bei '${documentTitle}' hinterlegt werden?`,
     });
   }
 
@@ -3195,7 +3195,7 @@ async function executeUpdateTask(
       task_id: task.id,
       task_title: task.title,
       aenderungen: changes,
-      message: `Bitte bestaetige: Soll ich die Aufgabe '${task.title}' aendern (${changes.join(", ")})?`,
+      message: `Bitte bestätige: Soll ich die Aufgabe '${task.title}' ändern (${changes.join(", ")})?`,
     });
   }
 
@@ -3250,7 +3250,7 @@ async function executeCreateCollection(
     return JSON.stringify({
       needs_confirmation: true,
       collection_name: name,
-      message: `Bitte bestaetige: Soll ich die Sammlung '${name}' anlegen?`,
+      message: `Bitte bestätige: Soll ich die Sammlung '${name}' anlegen?`,
     });
   }
 
@@ -3353,8 +3353,8 @@ async function executeCreateNote(
       needs_confirmation: true,
       note_title: title,
       message: isCredentials
-        ? `Bitte bestaetige: Soll ich die Zugangsdaten '${title}' anlegen?`
-        : `Bitte bestaetige: Soll ich die Notiz '${title}' speichern?`,
+        ? `Bitte bestätige: Soll ich die Zugangsdaten '${title}' anlegen?`
+        : `Bitte bestätige: Soll ich die Notiz '${title}' speichern?`,
     });
   }
 
