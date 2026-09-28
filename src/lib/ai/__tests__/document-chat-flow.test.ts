@@ -127,6 +127,30 @@ describe("real document tools through the chat orchestration", () => {
     expect(result).toContainEqual({type:'response_state',state:'answered'});
   });
 
+  it('does not let final synthesis add a sum the model computed itself', async () => {
+    const computed = `${claim.text}\n\nBeide Tickets zusammen kosten 62,34 € im Monat.`;
+    create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'}))
+      .mockResolvedValueOnce(finalAnswer(computed)).mockResolvedValueOnce({output_text:computed});
+    const result = await events(context());
+    const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
+    expect(answer).toContain(claim.text);
+    expect(answer).not.toContain('62,34');
+    expect(result).toContainEqual({type:'response_state',state:'answered'});
+  });
+
+  it('shows the gap the model named instead of the generic partial tail', async () => {
+    const gap = 'Eine Gesamtsumme für beide Anmeldungen steht nicht in der Unterlage.';
+    const computed = `${claim.text}\n\nBeide Tickets zusammen kosten 62,34 € im Monat.`;
+    create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'partial',gap}))
+      .mockResolvedValueOnce(finalAnswer(computed)).mockResolvedValueOnce({output_text:computed});
+    const result = await events(context(),'Wie lange gilt Hannahs Ticket und was kostet die Verlängerung zusammen?');
+    const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
+    expect(answer).toContain(claim.text);
+    expect(answer).toContain(gap);
+    expect(answer).not.toContain('Den weiteren Teil deiner Frage konnte ich noch nicht verlässlich beantworten');
+    expect(result).toContainEqual({type:'response_state',state:'partial'});
+  });
+
   it('accepts a final answer that joins the verified fact to its closing beat with a dash', async () => {
     const voiced = 'Hannahs Ticket gilt bis zum **31. August 2027** — das steht so auf der Abo-Bestätigung. Bis dahin hast du also noch Zeit.';
     create.mockResolvedValueOnce(round('answer_from_documents',{claims:[claim],state:'answered'})).mockResolvedValueOnce(finalAnswer(voiced));

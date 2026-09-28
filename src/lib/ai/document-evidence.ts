@@ -193,6 +193,78 @@ export function numbersAreSupported(answer: string, quote: string): boolean {
   return facts.every((fact) => evidence.has(fact));
 }
 
+const CURRENCY_AMOUNT = /(\d+(?:[.,]\d+)?)\s*(?:€|euros?\b)/giu;
+
+function escapeForRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function amountValue(raw: string): number {
+  return Number(raw.replace(",", "."));
+}
+
+/** Currency amounts one passage shows within a field name's reach. The
+ * "…" between joined passages means "not adjacent": an amount from a
+ * different passage never counts as belonging to the field. */
+function amountsAtField(passages: string[], field: string): string[] {
+  const found: string[] = [];
+  for (const passage of passages) {
+    for (const occurrence of passage.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, "giu"))) {
+      const from = Math.max(0, occurrence.index! - 30);
+      for (const amount of passage.slice(from, occurrence.index! + occurrence[0].length + 30).matchAll(CURRENCY_AMOUNT)) {
+        found.push(amount[1]!);
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * A claim that assigns an amount to a named field ("44,10 € für die
+ * Folgeabbuchungen") must not quote a page that pairs that same field with
+ * a different amount. On a form the amount fields sit close together, and
+ * a swapped pair passes every other check while saying the opposite of
+ * what the page says. A field only counts with the amount the claim
+ * itself places nearest to it, so a sentence listing several fields with
+ * their amounts does not cross-match them. Only capitalized field names
+ * the quote itself contains count; person names never do.
+ */
+export function amountFieldMismatch(
+  claimText: string,
+  quote: string,
+  people: string[] = [],
+): { field: string; claimed: string; shown: string } | null {
+  const passages = quotePassages(quote).map(comparableEvidence);
+  const claimAmounts = [...claimText.matchAll(CURRENCY_AMOUNT)];
+  if (!claimAmounts.length) return null;
+  for (const fieldMatch of claimText.matchAll(/\p{Lu}\p{Ll}{4,}/gu)) {
+    const field = fieldMatch[0]!;
+    if (people.some((person) => matchesPersonName(field, person))) continue;
+    const atField = new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, "iu");
+    if (!passages.some((passage) => atField.test(passage))) continue;
+    const shown = amountsAtField(passages, field);
+    if (!shown.length) continue;
+    const start = fieldMatch.index!;
+    const end = start + field.length;
+    let claimed: string | null = null;
+    let bestDistance = Infinity;
+    for (const amount of claimAmounts) {
+      const distance = amount.index! >= end
+        ? amount.index! - end
+        : start - (amount.index! + amount[0].length);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        claimed = amount[1]!;
+      }
+    }
+    if (claimed === null || bestDistance > 60) continue;
+    if (shown.every((amount) => amountValue(amount) !== amountValue(claimed))) {
+      return { field, claimed, shown: shown[0]! };
+    }
+  }
+  return null;
+}
+
 export const documentAnswerSchema = z.object({
   claims: z.array(z.object({
     text: z.string().trim().min(1).max(700),
@@ -205,8 +277,53 @@ export const documentAnswerSchema = z.object({
   gap: z.string().trim().max(350).optional(),
 });
 
+/**
+ * How many passages one quote may be assembled from. A form chains the
+ * name to the base amount, the discount and the result — five or six
+ * fields; more than this stops being a quotation and starts being a
+ * sentence built out of scattered words.
+ */
+const MAX_QUOTE_PASSAGES = 6;
+
+/** An explicit gap in a quotation: "…", "...", "[…]", or a blank line. */
+const QUOTE_GAP = /\s*(?:\[\s*(?:…|\.\.\.)\s*\]|…|\.\.\.)\s*|\n\s*\n/u;
+
+/**
+ * A form spreads one fact across fields that are far apart: the name at the
+ * top of the page, the amount thirty lines below. Such a fact cannot be
+ * proven by a single contiguous passage, so a quote may skip — but every
+ * passage it does contain must still stand verbatim on that one page, in
+ * the order quoted.
+ */
+export function quotePassages(quote: string): string[] {
+  return quote
+    .split(QUOTE_GAP)
+    .map((passage) => passage.trim())
+    .filter(
+      (passage) =>
+        comparableEvidence(passage).replace(/[^\p{L}\p{N}]/gu, "").length > 0,
+    );
+}
+
+/** Every passage present on the page, in the order the quote gives them. */
+export function pageCarriesQuote(pageText: string, passages: string[]): boolean {
+  if (!passages.length) return false;
+  return [normalizeEvidence, comparableEvidence].some((normalize) => {
+    const page = normalize(pageText);
+    let cursor = 0;
+    return passages.every((passage) => {
+      const needle = normalize(passage);
+      if (!needle) return false;
+      const found = page.indexOf(needle, cursor);
+      if (found < 0) return false;
+      cursor = found + needle.length;
+      return true;
+    });
+  });
+}
+
 export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[], people: string[] = [], question = ""):
-  | { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found" }
+  | { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found"; gap?: string }
   | { error: string } {
   const parsed = documentAnswerSchema.safeParse(args);
   if (!parsed.success) return { error: "Nutze claims mit Text, document_id, page_number und wörtlichem Zitat, sowie state." };
@@ -225,11 +342,13 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     if (comparableEvidence(claim.quote).replace(/[^\p{L}\p{N}]/gu, "").length < 8) {
       return { error: "Zitiere eine zusammenhängende Originalstelle mit echtem Text aus der Unterlage." };
     }
+    const passages = quotePassages(claim.quote);
+    if (passages.length > MAX_QUOTE_PASSAGES) {
+      return { error: `Ein Beleg darf aus höchstens ${MAX_QUOTE_PASSAGES} Stellen derselben Seite bestehen. Zitiere weniger, dafür zusammenhängende Ausschnitte.` };
+    }
     const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
-      && (normalizeEvidence(item.text).includes(normalizeEvidence(claim.quote))
-        || comparableEvidence(item.text).includes(comparableEvidence(claim.quote))));
-    if (!page) return { error: "Die zitierte Stelle wurde so noch nicht gelesen. Lies die passende Seite mit read_document und übernimm das Zitat wörtlich." };
-    if (claim.quote.includes("[…]")) return { error: "Zitiere eine zusammenhängende Originalstelle, nicht mehrere zusammengefügte Ausschnitte." };
+      && pageCarriesQuote(item.text, passages));
+    if (!page) return { error: "Die zitierte Stelle wurde so noch nicht gelesen. Lies die passende Seite mit read_document und übernimm das Zitat wörtlich. Bei einem Formular darfst du Feldbeschriftung und Wert mit '...' verbinden, solange beide wörtlich auf derselben Seite stehen." };
     for (const person of people) {
       if (matchesPersonName(claim.text, person) && !matchesPersonName(`${page.title ?? ""} ${page.text}`, person)) {
         return { error: "Die genannte Person gehört nicht zu dieser Fundstelle. Lies die Unterlage der richtigen Person." };
@@ -237,6 +356,8 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     }
     if (validityDateConflict(claim.text, claim.quote)) return { error: "Die Ticketgültigkeit wurde mit einem anderen Datum verwechselt. Zitiere das Gültigkeitsende, nicht die Kündigungsfrist." };
     if (!numbersAreSupported(claim.text, claim.quote)) return { error: "Ein Datum oder eine Zahl der Aussage steht nicht in ihrem Beleg. Prüfe die Gültigkeit bzw. Frist auf der Originalseite und korrigiere die Aussage." };
+    const mismatch = amountFieldMismatch(claim.text, claim.quote, people);
+    if (mismatch) return { error: `Die Aussage nennt bei „${mismatch.field}“ den Betrag ${mismatch.claimed} €, der Beleg zeigt dort ${mismatch.shown} €. Übernimm Feldname und Betrag so, wie sie auf der Seite zusammenstehen.` };
     const normalizedHighlight = claim.highlight
       ? normalizeFactText(readableQuote(claim.highlight))
       : null;
@@ -246,15 +367,26 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     )) {
       return { error: "Die Hervorhebung muss sowohl in der Antwort als auch im Beleg stehen." };
     }
-    const shownQuote = readableQuote(claim.quote);
+    // A form quote skips between fields; keep the skip visible to the family
+    // instead of showing distant fields as one continuous passage.
+    const shownQuote = readableQuote(passages.length > 1 ? passages.join(" … ") : claim.quote);
     sources.push({ document_id: page.documentId, title: page.title, excerpt: shownQuote,
       score: 1, origin: "semantic", page_number: page.page ?? undefined,
       quote: shownQuote, highlight: claim.highlight && readableQuote(claim.highlight), cited: true, has_original: page.hasOriginal });
   }
   const gap = parsed.data.gap;
-  if (gap && /\d/.test(gap)) return { error: "In gap nur die fehlende Information benennen. Konkrete Zahlen gehören in belegte claims." };
-  return { text: parsed.data.claims.map((claim) => claim.text).join("\n\n") + (gap ? `${parsed.data.claims.length ? "\n\n" : ""}${gap}` : ""),
-    sources, state: parsed.data.state };
+  // Naming where the model looked ("Seite 1 und 2") is navigation, not a
+  // fact; every other digit in a gap could smuggle an unproven number past
+  // the claims check.
+  const gapWithoutPageReferences = gap?.replace(
+    /\b(?:seite|s\.)\s*\d+(?:\s*(?:und|bis|,|–|-)\s*\d+)*/giu, " ",
+  );
+  if (gapWithoutPageReferences && /\d/.test(gapWithoutPageReferences)) return { error: "In gap nur die fehlende Information benennen. Konkrete Zahlen gehören in belegte claims." };
+  // Two registrations often warrant one identical sentence per page. The
+  // family reads that sentence once; both page citations stay attached.
+  const claimTexts = [...new Set(parsed.data.claims.map((claim) => claim.text))];
+  return { text: claimTexts.join("\n\n") + (gap ? `${claimTexts.length ? "\n\n" : ""}${gap}` : ""),
+    sources, state: parsed.data.state, gap: gap || undefined };
 }
 
 /** Distinguish the common, high-risk validity/cancellation pair within one quote. */

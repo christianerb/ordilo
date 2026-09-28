@@ -39,6 +39,7 @@ import {
   filterByRelevanceThreshold,
   plainVoiceText,
   streamAgenticAnswer,
+  unsupportedAnswerNumbers,
   ChatError,
 } from "@/lib/ai/chat";
 import {
@@ -2295,6 +2296,44 @@ describe("plainVoiceText", () => {
     expect(plainVoiceText("Der Beitrag ist *") + plainVoiceText("*49 Euro**.")).toBe(
       "Der Beitrag ist 49 Euro.",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unproven numbers in document answers
+// ---------------------------------------------------------------------------
+
+describe("unsupportedAnswerNumbers", () => {
+  const prompt = "Regel 1. Regel 2. Familie: Hannah, Emma.";
+  const input = [
+    { role: "user" as const, content: "Was kostet die Mitgliedschaft pro Kind?" },
+    {
+      type: "function_call_output" as const,
+      call_id: "call-1",
+      output: "Monatlicher Grundbeitrag 01.10.26 49 €, Folgeabbuchungen 92,17 €",
+    },
+  ];
+
+  it("flags a sum the model computed itself", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Je Kind sind das 49 € — zusammen 98 € im Monat.",
+        prompt,
+        input,
+        "Der Grundbeitrag beträgt 49 € je Kind.",
+      ),
+    ).toEqual(["98"]);
+  });
+
+  it("accepts numbers from the tool results and reworded dates", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Der Grundbeitrag von 49 € gilt je Kind ab dem 1.10.26, die Folgeabbuchung beträgt 92,17 €.",
+        prompt,
+        input,
+        "Der Grundbeitrag beträgt 49 € je Kind.",
+      ),
+    ).toEqual([]);
   });
 });
 
