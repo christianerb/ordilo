@@ -260,21 +260,36 @@ function numericTokens(text: string): string[] {
 }
 
 /**
+ * A rejected round is not evidence. A validation error names the very
+ * numbers it rejected — "der Beleg zeigt dort 92,17 €" — and a final
+ * answer must never be allowed to lean on a number that only a refusal
+ * ever mentioned.
+ */
+function isRejectedOutput(output: string): boolean {
+  try {
+    return "error" in (JSON.parse(output) as Record<string, unknown>);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Numbers the final answer states that nothing the model worked from
  * contains. A sum the model computed itself ("2 × 44,10 € = 88,20 €")
  * reads like a verified fact, so it is rejected like any other unproven
  * sentence.
  *
  * The corpus is what the turn actually established: the conversation, the
- * tool results and the verified document claims. The system prompt is
- * instruction, not evidence — its example dates must never vouch for an
- * answer — and a function call's arguments are the model's own proposal,
- * which a rejected answer_from_documents round would otherwise smuggle
- * back into the final text.
+ * successful tool results and the verified document claims. The system
+ * prompt is instruction, not evidence — its example dates must never
+ * vouch for an answer — a function call's arguments are the model's own
+ * proposal, and a tool output that reports an error has established the
+ * opposite of a fact.
  *
  * Whole numbers are compared, not substrings, so a quoted 149 € does not
- * cover an invented 49 €. A compound number does support its parts: an
- * answer may say "2027" where the evidence writes "31.08.2027".
+ * cover an invented 49 €. Only a date supports its parts — an answer may
+ * say "2027" where the evidence writes "31.08.2027" — because a part of
+ * an amount ("17" out of "92,17 €") is never an amount anyone was told.
  */
 export function unsupportedAnswerNumbers(
   answer: string,
@@ -285,14 +300,17 @@ export function unsupportedAnswerNumbers(
     const entry = item as { type?: unknown; content?: unknown; output?: unknown };
     if (entry.type === "function_call") return [];
     return [entry.content, entry.output].filter(
-      (value): value is string => typeof value === "string",
+      (value): value is string => typeof value === "string" && !isRejectedOutput(value),
     );
   });
   const supported = new Set<string>();
   for (const token of numericTokens([...evidence, documentAnswerText].join("\n"))) {
     supported.add(token);
-    for (const part of token.split(/[.,:/-]/)) {
-      if (part) supported.add(part);
+    if (/^\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?$/u.test(token)) {
+      for (const part of token.split(/[./-]/)) {
+        const plain = part.replace(/^0+(\d)/u, "$1");
+        if (plain) supported.add(plain);
+      }
     }
   }
   return [...new Set(numericTokens(answer))].filter(
