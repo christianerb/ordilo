@@ -219,6 +219,20 @@ function amountsAtField(passages: string[], field: string): string[] {
   return found;
 }
 
+/** The amounts the page itself puts in the field's row. A form pairs a
+ * label with its value on one line, so the line — not a character window
+ * — is the honest boundary for "these two belong together". */
+function amountsOnPageRow(pageText: string, field: string): string[] {
+  const atField = new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, "iu");
+  const found: string[] = [];
+  for (const line of pageText.split(/\r?\n/)) {
+    const row = comparableEvidence(line);
+    if (!row || !atField.test(row)) continue;
+    for (const amount of row.matchAll(CURRENCY_AMOUNT)) found.push(amount[1]!);
+  }
+  return found;
+}
+
 /**
  * A claim that assigns an amount to a named field ("44,10 € für die
  * Folgeabbuchungen") must not quote a page that pairs that same field with
@@ -228,11 +242,17 @@ function amountsAtField(passages: string[], field: string): string[] {
  * itself places nearest to it, so a sentence listing several fields with
  * their amounts does not cross-match them. Only capitalized field names
  * the quote itself contains count; person names never do.
+ *
+ * Where the quote names the field but leaves its value in another passage,
+ * the pairing is decided on the page, not in the quote: joining
+ * "Vorabnutzung ab dem …" to a later "92,17 €" must not create a pairing
+ * the form never made.
  */
 export function amountFieldMismatch(
   claimText: string,
   quote: string,
   people: string[] = [],
+  pageText = "",
 ): { field: string; claimed: string; shown: string } | null {
   const passages = quotePassages(quote).map(comparableEvidence);
   const claimAmounts = [...claimText.matchAll(CURRENCY_AMOUNT)];
@@ -242,7 +262,10 @@ export function amountFieldMismatch(
     if (people.some((person) => matchesPersonName(field, person))) continue;
     const atField = new RegExp(`(?<![\\p{L}\\p{N}])${escapeForRegex(field)}(?![\\p{L}])`, "iu");
     if (!passages.some((passage) => atField.test(passage))) continue;
-    const shown = amountsAtField(passages, field);
+    const quoted = amountsAtField(passages, field);
+    const shown = quoted.length || !pageText
+      ? quoted
+      : amountsOnPageRow(pageText, field);
     if (!shown.length) continue;
     const start = fieldMatch.index!;
     const end = start + field.length;
@@ -356,7 +379,7 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     }
     if (validityDateConflict(claim.text, claim.quote)) return { error: "Die Ticketgültigkeit wurde mit einem anderen Datum verwechselt. Zitiere das Gültigkeitsende, nicht die Kündigungsfrist." };
     if (!numbersAreSupported(claim.text, claim.quote)) return { error: "Ein Datum oder eine Zahl der Aussage steht nicht in ihrem Beleg. Prüfe die Gültigkeit bzw. Frist auf der Originalseite und korrigiere die Aussage." };
-    const mismatch = amountFieldMismatch(claim.text, claim.quote, people);
+    const mismatch = amountFieldMismatch(claim.text, claim.quote, people, page.text);
     if (mismatch) return { error: `Die Aussage nennt bei „${mismatch.field}“ den Betrag ${mismatch.claimed} €, der Beleg zeigt dort ${mismatch.shown} €. Übernimm Feldname und Betrag so, wie sie auf der Seite zusammenstehen.` };
     const normalizedHighlight = claim.highlight
       ? normalizeFactText(readableQuote(claim.highlight))

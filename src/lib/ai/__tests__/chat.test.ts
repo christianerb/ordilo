@@ -2304,7 +2304,6 @@ describe("plainVoiceText", () => {
 // ---------------------------------------------------------------------------
 
 describe("unsupportedAnswerNumbers", () => {
-  const prompt = "Regel 1. Regel 2. Familie: Hannah, Emma.";
   const input = [
     { role: "user" as const, content: "Was kostet die Mitgliedschaft pro Kind?" },
     {
@@ -2318,7 +2317,6 @@ describe("unsupportedAnswerNumbers", () => {
     expect(
       unsupportedAnswerNumbers(
         "Je Kind sind das 49 € — zusammen 98 € im Monat.",
-        prompt,
         input,
         "Der Grundbeitrag beträgt 49 € je Kind.",
       ),
@@ -2329,11 +2327,49 @@ describe("unsupportedAnswerNumbers", () => {
     expect(
       unsupportedAnswerNumbers(
         "Der Grundbeitrag von 49 € gilt je Kind ab dem 1.10.26, die Folgeabbuchung beträgt 92,17 €.",
-        prompt,
         input,
         "Der Grundbeitrag beträgt 49 € je Kind.",
       ),
     ).toEqual([]);
+  });
+
+  it("accepts a year the evidence writes as a full date", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Der Vertrag läuft noch bis 2027.",
+        [{ type: "function_call_output" as const, call_id: "call-1", output: "Gültig bis 31.08.2027" }],
+        "Das Ticket gilt bis zum 31. August 2027.",
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not let a larger quoted number cover a smaller invented one", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Der Kurs kostet 49 €.",
+        [{ type: "function_call_output" as const, call_id: "call-1", output: "Kursgebühr 149 €" }],
+        "Die Kursgebühr beträgt 149 €.",
+      ),
+    ).toEqual(["49"]);
+  });
+
+  it("does not treat the model's own rejected tool arguments as evidence", () => {
+    expect(
+      unsupportedAnswerNumbers(
+        "Die Folgeabbuchung beträgt 88,20 €.",
+        [
+          { role: "user" as const, content: "Was zahlen wir monatlich?" },
+          {
+            type: "function_call" as const,
+            call_id: "call-1",
+            name: "answer_from_documents",
+            arguments: JSON.stringify({ claims: [{ text: "Zusammen 88,20 € im Monat." }] }),
+          },
+          { type: "function_call_output" as const, call_id: "call-1", output: "{\"error\":\"Beleg abgelehnt\"}" },
+        ],
+        "Der Grundbeitrag beträgt 44,10 € je Kind.",
+      ),
+    ).toEqual(["88,20"]);
   });
 });
 
