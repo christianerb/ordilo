@@ -93,6 +93,12 @@ export interface ToolContext {
     role: string | null;
   }>;
   preloadedFamilyMembersPrivacyReady?: boolean;
+  /**
+   * Documents list_documents put in front of the family as an answer of
+   * its own. They stay in the source list even when a verified passage
+   * from another document answers a different part of the same question.
+   */
+  listedDocumentIds?: Set<string>;
   documentEvidence?: DocumentEvidence[];
   /** Raw page text the model has read. Source excerpts are cleaned for
    * display and drop link destinations, so the web-search privacy guard
@@ -1836,7 +1842,9 @@ async function executeListDocuments(
   // Surface every listed document as a tappable source. The mobile source
   // section collapses long lists itself, so capping at ten here would make
   // a result that claims to be complete impossible to open past item ten.
+  ctx.listedDocumentIds ??= new Set<string>();
   for (const doc of docs) {
+    ctx.listedDocumentIds.add(doc.id);
     if (!ctx.sources.find((x) => x.document_id === doc.id)) {
       ctx.sources.push({
         document_id: doc.id,

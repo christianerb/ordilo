@@ -131,14 +131,6 @@ function requiredCitationSources(toolContext: ToolContext): ChatSource[] {
   return webSources.length > 0 || toolContext.documentAnswer ? webSources : toolContext.sources;
 }
 
-/**
- * Strips Markdown from a spoken answer. The voice rules already forbid it,
- * but a model that ignores them would have the speech layer read the
- * asterisks out loud, so the transport enforces what the prompt asks for.
- *
- * Only removes characters, never reorders them: it runs per streamed chunk,
- * where a marker pair can be split across two chunks.
- */
 function isAnswerTextEvent(
   event: unknown,
 ): event is { type: "text" | "replace"; content: string } {
@@ -150,6 +142,16 @@ function isAnswerTextEvent(
   );
 }
 
+/**
+ * Strips Markdown from a spoken answer. The voice rules already forbid it,
+ * but a model that ignores them would have the speech layer read the
+ * asterisks out loud, so the transport enforces what the prompt asks for.
+ *
+ * Markup goes, words stay: a table keeps its cells as a spoken list and a
+ * link keeps its label. Voice rounds are buffered before release, so this
+ * always sees a whole answer rather than a chunk with a marker pair torn
+ * in half.
+ */
 export function plainVoiceText(text: string): string {
   return text
     .replace(/```+[a-z]*/gi, "")
@@ -157,9 +159,22 @@ export function plainVoiceText(text: string): string {
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "")
     .replace(/^[ \t]{0,3}>[ \t]?/gm, "")
     .replace(/^[ \t]{0,3}[-*+][ \t]+/gm, "")
-    .replace(/^[ \t]*\|.*$/gm, "")
+    // A row of dashes carries no words, so it is the one table line that
+    // may go. Every other row keeps its cells, separated for reading.
+    .replace(
+      /^[ \t]*\|?[ \t]*:?-{2,}:?[ \t]*(?:\|[ \t]*:?-{2,}:?[ \t]*)*\|?[ \t]*$/gm,
+      "",
+    )
+    .replace(/^[ \t]*\|(.+)\|[ \t]*$/gm, (_match, row: string) =>
+      row
+        .split("|")
+        .map((cell) => cell.trim())
+        .filter(Boolean)
+        .join(", "),
+    )
     .replace(/[*_`#|]/g, "")
-    .replace(/[ \t]{2,}/g, " ");
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 /**
@@ -181,9 +196,11 @@ function isRetrievalArtefact(source: ChatSource): boolean {
 
 /**
  * The sources shown under an answer. A verified document answer supplies
- * its own cited passages, so the other documents the search happened to
- * touch are dropped; public sources always stay, because a claim taken
- * from the web must keep its citation.
+ * its own cited passages, so the documents the search merely touched on
+ * the way there are dropped. Two kinds survive that: public sources,
+ * because a claim taken from the web must keep its citation, and the
+ * documents list_documents named to answer another part of the same
+ * question, which the family must still be able to open.
  *
  * Artefacts are only removed while something else is left to show — an
  * answer that genuinely rests on a graph match still points somewhere.
@@ -192,12 +209,22 @@ function documentResponseSources(context: ToolContext): ChatSource[] {
   const sources = context.documentAnswer
     ? [
         ...context.documentAnswer.sources,
-        ...context.sources.filter((source) => source.origin === "web"),
+        ...context.sources.filter(
+          (source) =>
+            source.origin === "web" ||
+            context.listedDocumentIds?.has(source.document_id),
+        ),
       ]
     : context.sources;
 
+  // A document whose passage is quoted above does not need a second,
+  // quoteless entry from the listing that also found it.
+  const quoted = new Set(
+    sources.filter((source) => source.cited).map((source) => source.document_id),
+  );
   const seen = new Set<string>();
   const deduped = sources.filter((source) => {
+    if (!source.cited && quoted.has(source.document_id)) return false;
     const key = `${source.document_id}:${source.page_number ?? ""}:${source.quote ?? source.excerpt}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -1055,7 +1082,13 @@ export async function streamAgenticAnswer(
           // a round buffers its text instead of streaming it. Sources only
           // accumulate while tools run, so the requirement is stable for
           // the whole round.
+          //
+          // A spoken answer buffers too: it is stripped of Markdown on its
+          // way out, and a link or table split across two deltas would slip
+          // through a check that only ever sees half of it. Voice answers
+          // are one to three sentences, so nothing waits long.
           const bufferAnswerText =
+            voice ||
             Boolean(toolContext.documentAnswer) || requiredCitationSources(toolContext).length > 0;
 
           for await (const event of openaiStream) {

@@ -2276,6 +2276,21 @@ describe("plainVoiceText", () => {
     );
   });
 
+  it("keeps the cells of a table and drops only the dashed row", () => {
+    expect(
+      plainVoiceText(
+        "Das steht an:\n\n| Aufgabe | Frist |\n|---|---|\n| Fahrkarte kündigen | 10. August |",
+      ),
+    ).toBe("Das steht an:\n\nAufgabe, Frist\n\nFahrkarte kündigen, 10. August");
+  });
+
+  it("never turns a table-only answer into blank text", () => {
+    const spoken = plainVoiceText("| Aufgabe | Frist |\n| --- | --- |\n| Obst | Montag |");
+    expect(spoken.trim()).not.toBe("");
+    expect(spoken).toContain("Obst");
+    expect(spoken).toContain("Montag");
+  });
+
   it("works when a marker pair is split across two streamed chunks", () => {
     expect(plainVoiceText("Der Beitrag ist *") + plainVoiceText("*49 Euro**.")).toBe(
       "Der Beitrag ist 49 Euro.",
@@ -2305,6 +2320,29 @@ describe("streamAgenticAnswer — spoken answers", () => {
     expect(spoken).toBe(
       "Der Grundbeitrag ist 49 € pro Monat. Das steht so im Vertrag.",
     );
+  });
+
+  it("sanitizes a link that arrives split across two deltas", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Das steht in [den Kita-" },
+        { content: "Brief](https://example.org/brief)." },
+      ]),
+    );
+
+    const lines = await readNdjsonStream(
+      await streamAgenticAnswer("Wo steht das?", [], {
+        ...makeToolContext(),
+        responseMode: "voice",
+      }),
+    );
+
+    const spoken = lines
+      .filter((line) => line.type === "text")
+      .map((line) => line.content)
+      .join("");
+    expect(spoken).toBe("Das steht in den Kita-Brief.");
+    expect(spoken).not.toContain("https://");
   });
 
   it("leaves Markdown intact for the written answer", async () => {
