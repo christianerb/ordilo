@@ -256,6 +256,26 @@ describe("form documents", () => {
     expect(claim("Die Kündigungsfrist endet am 31.07.2027.", "Kündigungsfrist 31.07.2027")).toMatchObject({ state: "answered" });
   });
 
+  it("does not hand a label the date of the sentence before it", () => {
+    const strom: DocumentEvidence[] = [{
+      documentId: id, title: "Kündigungsbestätigung Strom", page: 1,
+      text: "Stromvertrag der Familie. Vertragsende: 31.12.2027. Kündigung eingegangen am 05.08.2027.",
+    }];
+    const quote = "Vertragsende: 31.12.2027 ... Kündigung eingegangen am 05.08.2027.";
+    const attempt = (text: string) => verifyDocumentAnswer({
+      state: "answered",
+      claims: [{ text, document_id: id, page_number: 1, quote, highlight: "31.12.2027" }],
+    }, strom);
+    // Both dates stand on the page beside their own label. A claim that keeps
+    // them that way is right even where the other label happens to sit closer
+    // to a date than its own does.
+    expect(attempt("Entscheidend ist das Vertragsende: Der Vertrag endet am 31.12.2027, nicht der Eingang der Kündigung."))
+      .toMatchObject({ state: "answered" });
+    expect(attempt("Der Stromvertrag endet am 31.12.2027. Die Kündigung ging am 05.08.2027 ein, entscheidend ist aber das Vertragsende."))
+      .toMatchObject({ state: "answered" });
+    expect(attempt("Die Kündigung ging am 31.12.2027 ein.")).toHaveProperty("error");
+  });
+
   it("reads a date with and without leading zeros as the same day", () => {
     const letter: DocumentEvidence[] = [{
       documentId: id, title: "Vertrag", page: 1,

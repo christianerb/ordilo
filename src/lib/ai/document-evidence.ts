@@ -274,12 +274,66 @@ function claimFields(claimText: string, people: string[]): string[] {
     .filter((field) => !people.some((person) => matchesPersonName(field, person)));
 }
 
+type Span = { text: string; start: number; end: number };
+
+function spans(text: string, pattern: RegExp): Span[] {
+  return [...text.matchAll(pattern)].map((match) => ({
+    text: match[1] ?? match[0]!,
+    start: match.index!,
+    end: match.index! + match[0].length,
+  }));
+}
+
+/** Characters between two spans, 0 where they touch. */
+function between(left: Span, right: Span): number {
+  if (right.start >= left.end) return right.start - left.end;
+  if (left.start >= right.end) return left.start - right.end;
+  return 0;
+}
+
+function closest<T extends Span>(candidates: T[], target: Span, reach: number): T | null {
+  let nearest: T | null = null;
+  let shortest = Infinity;
+  for (const candidate of candidates) {
+    const distance = between(candidate, target);
+    if (distance > reach || distance >= shortest) continue;
+    shortest = distance;
+    nearest = candidate;
+  }
+  return nearest;
+}
+
+/**
+ * What the claim itself pairs with each field. Proximity alone reads a
+ * sentence backwards: "Der Vertrag endet am 31.12.2027. Die Kündigung
+ * ging am 05.08.2027 ein" puts the first date six characters from
+ * "Kündigung" and its own date eight. So a label and a value belong
+ * together only within one sentence, and only when each is the other's
+ * nearest — a value the neighbouring label owns is not this label's.
+ */
+function claimedValues(claim: string, fields: string[], values: RegExp, reach: number): Map<string, string> {
+  const pairs = new Map<string, string>();
+  for (const sentence of claim.split(/(?<=[.!?])\s+|\n+/u)) {
+    const labels = fields.flatMap((field) =>
+      spans(sentence, fieldPattern(field, "giu")).map((span) => ({ ...span, field })));
+    const found = spans(sentence, values);
+    for (const label of labels) {
+      const value = closest(found, label, reach);
+      if (!value || closest(labels, value, reach) !== label) continue;
+      if (!pairs.has(label.field)) pairs.set(label.field, value.text);
+    }
+  }
+  return pairs;
+}
+
 /**
  * A claim pairs a named field with a value; the evidence has to show that
- * same pair. The page's own rows decide the pairing, and the quote only
- * testifies where the rows cannot — when the row keeps its value on the
- * next line, or when no page text was given at all. A joined quote must
- * not create a pairing the page never made.
+ * same pair. Only fields the evidence itself names take part — a word the
+ * page never uses must not win the pairing away from the field it does.
+ * The page's own rows then decide, and the quote testifies only where the
+ * rows cannot: when the row keeps its value on the next line, or when no
+ * page text was given at all. A joined quote must not create a pairing
+ * the page never made.
  */
 function fieldValueMismatch(
   claim: string,
@@ -289,17 +343,14 @@ function fieldValueMismatch(
   values: RegExp,
   same: (left: string, right: string) => boolean,
 ): { field: string; claimed: string; shown: string } | null {
-  for (const field of fields) {
-    if (!passages.some((passage) => fieldPattern(field, "iu").test(passage))) continue;
+  const named = fields.filter((field) =>
+    passages.some((passage) => fieldPattern(field, "iu").test(passage)));
+  for (const [field, claimed] of claimedValues(claim, named, values, 60)) {
     const bound = rows.length
       ? rows.flatMap((row) => valuesAtField([row], field, values, row.length))
       : [];
     const shown = bound.length ? bound : valuesAtField(passages, field, values);
     if (!shown.length) continue;
-    const occurrence = claim.match(fieldPattern(field, "iu"));
-    if (!occurrence || occurrence.index === undefined) continue;
-    const claimed = nearestValue(claim, values, occurrence.index, occurrence.index + occurrence[0].length, 60);
-    if (claimed === null) continue;
     if (shown.every((value) => !same(value, claimed))) {
       return { field, claimed, shown: shown[0]! };
     }
@@ -323,7 +374,9 @@ export function amountFieldMismatch(
   const fields = claimFields(claimText, people);
   if (!fields.length) return null;
   return fieldValueMismatch(
-    claimText,
+    // "am 31. Dezember" would otherwise look like the end of a sentence
+    // and cut a label away from the amount that belongs to it.
+    normalizeFactText(claimText),
     quotePassages(quote).map(comparableEvidence),
     pageText ? pageRows(pageText, comparableEvidence) : [],
     fields,
