@@ -251,30 +251,53 @@ export function includesVerifiedDocumentAnswer(text: string, context: ToolContex
     .every(sentence => !sentence || answer.includes(sentence));
 }
 
+/** Numbers as the text writes them, with leading zeros dropped after a
+ * date separator so "01.10.26" and "1.10.26" are one number — but never
+ * after a decimal comma, where 1,05 € and 1,5 € are different amounts. */
+function numericTokens(text: string): string[] {
+  return (normalizeFactText(text).match(/\d+(?:[.,:/-]\d+)*/gu) ?? [])
+    .map((token) => token.replace(/(^|[./-])0+(\d)/g, "$1$2"));
+}
+
 /**
  * Numbers the final answer states that nothing the model worked from
  * contains. A sum the model computed itself ("2 × 44,10 € = 88,20 €")
  * reads like a verified fact, so it is rejected like any other unproven
- * sentence. The corpus is the prompt, the conversation, tool calls and
- * tool results, plus the verified document claims. A number counts as
- * supported when its normalized form appears anywhere in that corpus, so a
- * date the model reworded ("31. August 2027" for "31.08.2027") still passes.
+ * sentence.
+ *
+ * The corpus is what the turn actually established: the conversation, the
+ * tool results and the verified document claims. The system prompt is
+ * instruction, not evidence — its example dates must never vouch for an
+ * answer — and a function call's arguments are the model's own proposal,
+ * which a rejected answer_from_documents round would otherwise smuggle
+ * back into the final text.
+ *
+ * Whole numbers are compared, not substrings, so a quoted 149 € does not
+ * cover an invented 49 €. A compound number does support its parts: an
+ * answer may say "2027" where the evidence writes "31.08.2027".
  */
 export function unsupportedAnswerNumbers(
   answer: string,
-  systemPrompt: string,
   input: OpenAI.Responses.ResponseInput,
   documentAnswerText: string,
 ): string[] {
-  const messages = input.map((item) => {
-    const message = item as { content?: unknown; output?: unknown; arguments?: unknown };
-    return [message.content, message.output, message.arguments]
-      .filter((value): value is string => typeof value === "string")
-      .join("\n");
+  const evidence = input.flatMap((item) => {
+    const entry = item as { type?: unknown; content?: unknown; output?: unknown };
+    if (entry.type === "function_call") return [];
+    return [entry.content, entry.output].filter(
+      (value): value is string => typeof value === "string",
+    );
   });
-  const corpus = normalizeFactText([systemPrompt, ...messages, documentAnswerText].join("\n"));
-  return [...new Set(normalizeFactText(answer).match(/\d+(?:[.,:/-]\d+)*/gu) ?? [])]
-    .filter((number) => !corpus.includes(number));
+  const supported = new Set<string>();
+  for (const token of numericTokens([...evidence, documentAnswerText].join("\n"))) {
+    supported.add(token);
+    for (const part of token.split(/[.,:/-]/)) {
+      if (part) supported.add(part);
+    }
+  }
+  return [...new Set(numericTokens(answer))].filter(
+    (number) => !supported.has(number),
+  );
 }
 
 /** Tools that only serve the document answer itself. Anything else means
@@ -1631,7 +1654,7 @@ export async function streamAgenticAnswer(
           const citationSources = requiredCitationSources(toolContext);
           const documentClaimsMissing = !includesVerifiedDocumentAnswer(fullAnswer, toolContext);
           const unsupportedNumbers = toolContext.documentAnswer
-            ? unsupportedAnswerNumbers(fullAnswer, systemPrompt, input, toolContext.documentAnswer.text)
+            ? unsupportedAnswerNumbers(fullAnswer, input, toolContext.documentAnswer.text)
             : [];
           const citationMissing =
             citationSources.length > 0 &&
@@ -1669,7 +1692,7 @@ export async function streamAgenticAnswer(
               !retryContent || containsHedgingLanguage(retryContent);
             const retryMissingDocument = !includesVerifiedDocumentAnswer(retryContent, toolContext);
             const retryUnsupportedNumbers = toolContext.documentAnswer
-              ? unsupportedAnswerNumbers(retryContent, systemPrompt, input, toolContext.documentAnswer.text)
+              ? unsupportedAnswerNumbers(retryContent, input, toolContext.documentAnswer.text)
               : [];
             const retryMissingCitation =
               citationSources.length > 0 &&

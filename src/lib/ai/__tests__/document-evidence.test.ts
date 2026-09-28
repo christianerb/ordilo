@@ -190,6 +190,28 @@ describe("form documents", () => {
     expect(right).toMatchObject({ state: "answered" });
   });
 
+  it("decides on the page when a joined quote leaves the field's own amount out", () => {
+    const quote = "Vorabnutzung ab dem ... **92,17** €";
+    const wrong = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Die Vorabnutzung beträgt 92,17 €.",
+        document_id: id, page_number: 1, quote, highlight: "92,17 €",
+      }],
+    }, form, ["Emma", "Hannah"]);
+    expect(wrong).toHaveProperty("error");
+    const right = verifyDocumentAnswer({
+      state: "answered",
+      claims: [{
+        text: "Die Vorabnutzung beträgt 44,10 €.",
+        document_id: id, page_number: 1,
+        quote: "Vorabnutzung ab dem ... **44,10** €",
+        highlight: "44,10 €",
+      }],
+    }, form, ["Emma", "Hannah"]);
+    expect(right).toMatchObject({ state: "answered" });
+  });
+
   it("keeps each field with its own amount when a sentence lists several", () => {
     const result = verifyDocumentAnswer({
       state: "answered",
