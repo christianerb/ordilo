@@ -373,6 +373,32 @@ describe("reading original pages", () => {
   });
 });
 
+describe("hand-written notes", () => {
+  const note = { id, title: "Code Stromzähler", document_type: "note", source: "manual" };
+
+  it("lets a note whose text is only the value be answered through its title", async () => {
+    const db = database(note, [{ page_number: 1, ocr_markdown: "8341" }]);
+    const evidence = await readDocumentEvidence(db.client, "family-a", id, "wie ist der code vom stromzähler");
+    expect(evidence).toMatchObject([{ page: 1, text: "Code Stromzähler\n8341", hasOriginal: false }]);
+    expect(verifyDocumentAnswer({ state: "answered", claims: [{ text: "Der Code vom Stromzähler ist 8341.",
+      document_id: id, page_number: 1, quote: "Code Stromzähler 8341", highlight: "8341" }] }, evidence))
+      .toMatchObject({ state: "answered", sources: [{ quote: "Code Stromzähler 8341", cited: true }] });
+  });
+  it("does not repeat a title the note text already opens with", async () => {
+    const text = "Code Stromzähler\nArt: Zählercode";
+    const db = database(note, [{ page_number: 1, ocr_markdown: text }]);
+    expect(await readDocumentEvidence(db.client, "family-a", id, "Stromzähler")).toMatchObject([{ text }]);
+  });
+  it("adds the title to a note that only has its combined text", async () => {
+    const db = database({ ...note, ocr_text: "8341" });
+    expect(await readDocumentEvidence(db.client, "family-a", id, "Stromzähler")).toMatchObject([{ page: null, text: "Code Stromzähler\n8341" }]);
+  });
+  it("keeps a scanned page exactly as printed, since its title is generated", async () => {
+    const db = database({ ...note, source: "upload" }, [{ page_number: 1, ocr_markdown: "8341" }]);
+    expect(await readDocumentEvidence(db.client, "family-a", id, "Stromzähler")).toMatchObject([{ text: "8341" }]);
+  });
+});
+
 it("reads only a strict validity line from a misclassified ticket, never adjacent credentials", async () => {
   const line = "**Gültig 03.09.2026 bis 30.09.2026**";
   const db = database({ id, title: "Deutschlandticket Hanna", document_type: "credentials" }, [{ page_number: 1, ocr_markdown: "Passwort: NEVER-EXPOSE\n" + line + "\nBenutzername: private@example.test" }]);

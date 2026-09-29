@@ -149,6 +149,13 @@ export async function readDocumentEvidence(
   const misclassifiedTravel = doc.source !== "manual" && isTravelTicket(doc.ocr_text ?? "");
   const safeText = (text: string) => doc.document_type === "credentials" && !misclassifiedTravel
     ? ticketValidityEvidence(doc.title, text) : text;
+  // A hand-written note is often a title and a bare value ("Code
+  // Stromzähler" / "8341"). The title is the family's own words (analysis
+  // never rewrites it), and without it the value alone is too short to
+  // quote, so the note could be found but never answered from.
+  const noteTitle = doc.source === "manual" && doc.document_type !== "credentials" ? doc.title?.trim() ?? "" : "";
+  const withNoteTitle = (text: string) => noteTitle && !normalizeEvidence(text).startsWith(normalizeEvidence(noteTitle))
+    ? `${noteTitle}\n${text}` : text;
   let pagesQuery = client.from("document_pages").select("page_number, ocr_markdown")
     .eq("document_id", documentId).order("page_number", { ascending: true });
   if (page !== undefined) pagesQuery = pagesQuery.eq("page_number", page);
@@ -163,7 +170,10 @@ export async function readDocumentEvidence(
     text: redactPII(selectEvidenceWindow(correctionResult.data, query)),
   }] : [];
   const words = normalizeEvidence(query).match(/[\p{L}\p{N}]{3,}/gu) ?? [];
-  const readable = (pages ?? []).map((row) => ({ ...row, ocr_markdown: safeText(row.ocr_markdown ?? "") })).filter((row) => row.ocr_markdown.trim());
+  const readable = (pages ?? []).map((row) => {
+    const text = safeText(row.ocr_markdown ?? "");
+    return { ...row, ocr_markdown: row.page_number === 1 && text.trim() ? withNoteTitle(text) : text };
+  }).filter((row) => row.ocr_markdown.trim());
   const selected = readable.map((row) => ({ row, score: words.reduce((score, word) =>
     score + Number(normalizeEvidence(row.ocr_markdown!).includes(word)), 0) }))
     .sort((a, b) => b.score - a.score || a.row.page_number - b.row.page_number).slice(0, 4);
@@ -174,7 +184,7 @@ export async function readDocumentEvidence(
   // A legacy combined OCR field has no trustworthy page attribution.
   if (page !== undefined || !safeText(doc.ocr_text ?? "").trim()) return corrections;
   return [...corrections, { documentId: doc.id, title: doc.title, page: null, hasOriginal: Boolean(doc.file_url),
-    text: redactPII(selectEvidenceWindow(safeText(doc.ocr_text!), query)) }];
+    text: redactPII(selectEvidenceWindow(withNoteTitle(safeText(doc.ocr_text!)), query)) }];
 }
 
 const months = ["januar", "februar", "märz", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "dezember"];
