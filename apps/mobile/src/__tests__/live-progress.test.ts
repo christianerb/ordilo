@@ -1,5 +1,8 @@
+import { LIVE_PROGRESS_TAG } from "@ordilo/chat-contract";
+
 import {
   createLiveTurnCollector,
+  LIVE_SPOKEN_PROGRESS_DELAYS_MS,
   speakAnswerCard,
   splitForCommentary,
   spokenProgress,
@@ -36,10 +39,14 @@ describe("Live turn collector", () => {
         documentTitle: "Handyvertrag",
       }),
     ).toEqual({ progress: "Gefunden in: Handyvertrag" });
-    expect(collector.foundTitle).toBe("Handyvertrag");
+    expect(collector.stage).toEqual({
+      foundTitle: "Handyvertrag",
+      preparingAction: false,
+    });
     expect(
       collector.apply({ type: "tool", toolName: "add_task", state: "start" }),
     ).toEqual({ progress: "Ich bereite einen Vorschlag vor …" });
+    expect(collector.stage.preparingAction).toBe(true);
     expect(
       collector.apply({ type: "tool", toolName: "something_new", state: "start" }),
     ).toEqual({ progress: "Ich schaue nach …" });
@@ -89,10 +96,53 @@ describe("Live speech helpers", () => {
     expect(login).not.toContain("familie@example.de");
   });
 
-  it("marks spoken progress as progress, never as a result", () => {
-    expect(spokenProgress(null)).toContain("noch ohne Ergebnis");
-    expect(spokenProgress("Kita-Brief")).toContain("„Kita-Brief“");
-    expect(spokenProgress("Kita-Brief")).toContain("noch ohne Ergebnis");
+  it("tags spoken progress and speaks it in Ordilo's own voice", () => {
+    const searching = spokenProgress(
+      { foundTitle: null, preparingAction: false },
+      new Set(),
+    );
+    expect(searching).toBe(`${LIVE_PROGRESS_TAG} Ich suche noch, einen kleinen Moment.`);
+
+    const reading = spokenProgress(
+      { foundTitle: "Kita-Brief", preparingAction: false },
+      new Set(),
+    );
+    expect(reading).toBe(
+      `${LIVE_PROGRESS_TAG} Ich habe „Kita-Brief“ gefunden und lese kurz nach.`,
+    );
+    // No third-person "Ordilo hat …" and no prompt wording to read aloud.
+    expect(reading).not.toContain("Ordilo");
+    expect(reading).not.toContain("noch ohne Ergebnis");
+  });
+
+  it("does not claim to search while a change is being prepared", () => {
+    expect(
+      spokenProgress({ foundTitle: null, preparingAction: true }, new Set()),
+    ).toBe(`${LIVE_PROGRESS_TAG} Ich bereite das gerade vor.`);
+  });
+
+  it("never says the same update twice in one turn", () => {
+    const stage = { foundTitle: null, preparingAction: false };
+    const said = new Set<string>();
+    const first = spokenProgress(stage, said);
+    said.add(first!);
+    const second = spokenProgress(stage, said);
+    expect(second).toBe(`${LIVE_PROGRESS_TAG} Dauert noch einen kleinen Moment.`);
+    said.add(second!);
+    expect(spokenProgress(stage, said)).toBeNull();
+  });
+
+  it("names a document found between two updates", () => {
+    const said = new Set([
+      `${LIVE_PROGRESS_TAG} Ich suche noch, einen kleinen Moment.`,
+    ]);
+    expect(
+      spokenProgress({ foundTitle: "Handyvertrag", preparingAction: false }, said),
+    ).toBe(`${LIVE_PROGRESS_TAG} Ich habe „Handyvertrag“ gefunden und lese kurz nach.`);
+  });
+
+  it("waits past a typical answer before the first spoken update", () => {
+    expect(LIVE_SPOKEN_PROGRESS_DELAYS_MS[0]).toBeGreaterThanOrEqual(7_000);
   });
 
   it("keeps short answers whole and splits long ones at sentence ends", () => {

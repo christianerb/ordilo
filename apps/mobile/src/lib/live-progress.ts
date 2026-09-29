@@ -1,16 +1,21 @@
-import { isChatActionToolName } from "@ordilo/chat-contract";
+import { isChatActionToolName, LIVE_PROGRESS_TAG } from "@ordilo/chat-contract";
 
 import type { AnswerCard, ChatStreamEvent } from "./chat";
 
-/** Shown the moment a Live question reaches the backend. */
-export const LIVE_PROGRESS_START = "Ich schaue in euren Unterlagen nach …";
+/**
+ * Shown the moment a Live question reaches the backend. Neutral on
+ * purpose: the question may be a change request, not a search.
+ */
+export const LIVE_PROGRESS_START = "Einen Moment …";
 
 /**
  * When Ordilo speaks a short "still working" update while the backend is
- * busy. GPT Live already restates the question as it delegates, so the
- * first update only comes once that sentence is over.
+ * busy. A typical answer arrives after about six seconds; an update before
+ * that only delays it, so the first one is reserved for waits that are
+ * noticeably longer than usual.
  */
-export const LIVE_SPOKEN_PROGRESS_DELAYS_MS = [5_000, 12_000] as const;
+export const LIVE_SPOKEN_PROGRESS_DELAYS_MS = [8_000, 16_000] as const;
+
 
 /**
  * GPT Live accepts at most 500 tokens per append. German runs at roughly
@@ -53,11 +58,32 @@ export function speakAnswerCard(card: AnswerCard): string {
     .concat(".");
 }
 
-/** A "still working" update; it never contains a result. */
-export function spokenProgress(foundTitle: string | null): string {
-  return foundTitle
-    ? `Zwischenstand, noch ohne Ergebnis: Ordilo hat die Unterlage „${foundTitle}“ gefunden und liest gerade nach.`
-    : "Zwischenstand, noch ohne Ergebnis: Ordilo sucht noch in den Unterlagen der Familie.";
+/** What the running turn is doing, as far as the stream has told us. */
+export interface LiveTurnStage {
+  foundTitle: string | null;
+  preparingAction: boolean;
+}
+
+/**
+ * The next "still working" update, or null when there is nothing left
+ * worth saying. It never contains a result and never repeats a sentence
+ * already spoken in this turn: hearing the same line twice is what makes
+ * a wait feel mechanical.
+ */
+export function spokenProgress(
+  stage: LiveTurnStage,
+  alreadySaid: ReadonlySet<string>,
+): string | null {
+  const now = stage.foundTitle
+    ? `Ich habe „${stage.foundTitle}“ gefunden und lese kurz nach.`
+    : stage.preparingAction
+      ? "Ich bereite das gerade vor."
+      : "Ich suche noch, einen kleinen Moment.";
+  const candidates = [now, "Dauert noch einen kleinen Moment."];
+  const next = candidates
+    .map((sentence) => `${LIVE_PROGRESS_TAG} ${sentence}`)
+    .find((update) => !alreadySaid.has(update));
+  return next ?? null;
 }
 
 /**
@@ -106,16 +132,18 @@ export function createLiveTurnCollector() {
   let text = "";
   let card: AnswerCard | null = null;
   let foundTitle: string | null = null;
+  let preparingAction = false;
   let finished = false;
 
   return {
-    get foundTitle() {
-      return foundTitle;
+    get stage(): LiveTurnStage {
+      return { foundTitle, preparingAction };
     },
     apply(event: ChatStreamEvent): LiveTurnUpdate {
       switch (event.type) {
         case "tool":
           if (event.state !== "start") return {};
+          if (isChatActionToolName(event.toolName)) preparingAction = true;
           if (event.documentTitle) {
             foundTitle = event.documentTitle;
             return { progress: `Gefunden in: ${event.documentTitle}` };
