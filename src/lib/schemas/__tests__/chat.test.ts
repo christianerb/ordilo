@@ -404,6 +404,24 @@ describe("answerCitesSources", () => {
     ).toBe(true);
   });
 
+  it("matches a title split across the sentence by German word order", () => {
+    // "Deutschlandticket Hannah" named as "Hannahs Deutschlandticket" —
+    // every title token is in the answer, so the citation stands.
+    const answer = "Hannahs Deutschlandticket gilt noch bis zum August.";
+    expect(
+      answerCitesSources(answer, [source("Deutschlandticket Hannah")]),
+    ).toBe(true);
+  });
+
+  it("does not match on a single shared title token alone", () => {
+    // "Rechnung" alone names neither the dentist nor Mira — a partial
+    // token overlap is not a citation.
+    const answer = "Ich habe die Rechnung geprüft.";
+    expect(
+      answerCitesSources(answer, [source("Rechnung Zahnarzt Mira")]),
+    ).toBe(false);
+  });
+
   it("returns false when none of multiple checkable titles are referenced", () => {
     const answer = "Der Termin ist am 15. August.";
     expect(

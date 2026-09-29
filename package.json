@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:chat-quality": "vitest run src/lib/ai/__tests__/chat-quality-eval.test.ts src/lib/ai/__tests__/web-search.test.ts src/lib/ai/__tests__/chat-contract.test.ts",
-    "eval:chat:live": "node --experimental-strip-types scripts/live-chat-eval.ts",
+    "eval:chat:live": "node --experimental-strip-types scripts/live-chat-eval.ts docs/quality/chat-cases.json docs/quality/chat-edge-cases.json docs/quality/chat-experience-cases.json",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "dev:mobile": "npm run start --workspace @ordilo/mobile",

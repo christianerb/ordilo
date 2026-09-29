@@ -7,6 +7,12 @@ describe('document prefetch intent', () => {
   it('carries the subject into a follow-up about another child', () => {
     expect(documentPrefetchQuery('Und von Emma?', [{role:'user',content:'Wann läuft Hannahs Ticket ab?'}])).toContain('Aktuelle Folgefrage: Und von Emma?');
   });
+  it('prefetches for a deictic "und wann …" continuation of the last turn', () => {
+    expect(documentPrefetchQuery('Und wann fährt der Zug dann ab?', [{role:'user',content:'Wann muss Emma für die Klassenfahrt am Treffpunkt sein?'}])).toContain('Klassenfahrt');
+  });
+  it('prefetches for a bare "haben wir die …" about the last turn\'s thing', () => {
+    expect(documentPrefetchQuery('Haben wir die schon bezahlt?', [{role:'user',content:'Was hat Emmas Fahrradreparatur gekostet?'}])).toContain('Fahrradreparatur');
+  });
   it('retains the document topic across several short follow-ups', () => {
     expect(documentPrefetchQuery('Wann dort sein?', [{role:'user',content:'Wann fährt Emmas Klassenfahrt los?'},{role:'assistant',content:'08:40 Uhr'},{role:'user',content:'Und wo treffen?'}])).toContain('Emmas Klassenfahrt');
   });

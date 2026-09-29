@@ -1,7 +1,7 @@
 import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import { comparableEvidence, normalizeFactText, readableQuote } from "./document-evidence";
-import { documentPrefetchQuery } from "./document-intent";
+import { documentPrefetchQuery, isPureActionRequest } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
 import {
@@ -359,8 +359,8 @@ export function incompleteDocumentAnswer(context: ToolContext, calledTools: Read
   }
   context.responseState = "partial";
   return context.documentAnswer
-    ? `${context.documentAnswer.text}\n\nDen weiteren Teil deiner Frage konnte ich noch nicht verlässlich beantworten.`
-    : "Ich habe passende Unterlagen gefunden. Die gesuchte Angabe konnte ich darin noch nicht eindeutig zuordnen. Hier kannst du die Fundstelle öffnen.";
+    ? `${context.documentAnswer.text}\n\nDen Rest deiner Frage konnte ich leider noch nicht sicher beantworten.`
+    : "Ich habe Unterlagen dazu gefunden, aber die gesuchte Angabe steht darin nicht klar genug. Schau am besten kurz selbst in die Fundstelle — sie ist unten verlinkt.";
 }
 
 // ---------------------------------------------------------------------------
@@ -536,6 +536,48 @@ function isResponseContextItem(
 const MAX_TOOL_ROUNDS = 3;
 
 /**
+ * A single model round may not run longer than this. Legit rounds answer
+ * in one to five seconds (measured live); a round past the budget is
+ * circling (observed: 20-45 s rounds that either resolve uselessly late
+ * or die as CHAT_FAILED). A timed-out round closes the turn gracefully
+ * with whatever it established — a pending card's ask, an honest document
+ * fallback, or a plain apology — instead of dying.
+ */
+const ROUND_TIMEOUT_MS = 15_000;
+
+/**
+ * Budget for the prefetch search. The prefetch only warms the evidence —
+ * a stalled embedding call (observed: 48 s) must not hold the turn
+ * hostage; past the budget the model searches on its own.
+ */
+const PREFETCH_TIMEOUT_MS = 12_000;
+
+/**
+ * Rejects past the budget with a TimeoutError while leaving the underlying
+ * work to settle unnoticed — the caller moves on either way.
+ */
+function withTimeout<T>(work: Promise<T>, budgetMs: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new DOMException(`${what} timed out`, "TimeoutError")),
+      budgetMs,
+    );
+    work.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+/**
+ * The honest close for a degenerated round that established nothing —
+ * no verified answer, no pending write card, no usable evidence. A warm
+ * retry note instead of a technical error code the family cannot act on.
+ */
+const UNFINISHED_TURN_NOTE =
+  "Das hat diesmal nicht richtig geklappt. Versuch es bitte gleich noch einmal.";
+
+/**
  * Number of already-released characters re-checked with every new text
  * chunk: the length of the longest forbidden hedging phrase minus one.
  * Any forbidden phrase that ends within a newly streamed chunk is then
@@ -637,7 +679,10 @@ export function buildAgenticSystemPrompt(
 Heute ist ${currentDate.long} (${currentDate.iso}), ${currentDate.time} Uhr (Zeitzone Europe/Berlin).${contextSection}
 
 DOKUMENTFRAGEN UND ZUSAMMENHAENGE:
-- Verstehe auch ungenaue, umgangssprachliche Fragen, Tippfehler und Bezüge wie "das von unserer Großen" oder "und von Emma?". Nutze Sprecher, Familienrollen, Beziehungen und den Verlauf, um die wahrscheinlich gemeinte Frage zu erschließen. Bewahre Person und Thema in Suchanfragen. Erfinde keine Beziehung. Sind mehrere Deutungen wirklich gleich plausibel, stelle genau eine konkrete Rückfrage mit den gefundenen Möglichkeiten.
+- Verstehe auch ungenaue, umgangssprachliche Fragen, Tippfehler und Bezüge wie "das von unserer Großen" oder "und von Emma?". Nutze Sprecher, Familienrollen, Beziehungen und den Verlauf, um die wahrscheinlich gemeinte Frage zu erschließen. Bewahre Person und Thema in Suchanfragen. Erfinde keine Beziehung.
+- Bezüge aus dem Verlauf sind eindeutig gemeint — Rückfragen dazu sind fast immer falsch. Setze Person und Thema der letzten Frage ein: "Wann muss sie da sein?" nach einer Frage über Emma meint Emma — nicht "Hannah oder Emma". "Und von Emma?" heißt dieselbe Frage für Emma: aus "Wie lange gilt Hannahs Deutschlandticket?" wird "Wie lange gilt Emmas Deutschlandticket?" — beantworte sie direkt. "Haben wir die schon bezahlt?" meint die Sache aus der letzten Frage. "Und wann fährt der Zug dann ab?" meint die Reise aus der letzten Frage. Nur wenn der Verlauf das Bezogene wirklich nicht hergibt, darfst du kurz nachfragen.
+- Doppeldeutig ist nur eine Frage, die weder der Verlauf noch Familienrollen, Alter oder Beziehung unterscheiden: zwei passende Termine, Einladungen, Scheine oder Kinder. Eine allgemeine Termin-Frage ("Wann ist Hannahs Termin?") ist doppeldeutig, sobald die Person in den Unterlagen MEHRERE datierte Anlaesse hat (z.B. Elternabend und Schulfest): suche dafuer alle Einladungen und Feste der Person, benenne beide Termine mit ihren Daten oder frage gezielt — antworte nie still mit dem erstbesten Termin. Rolle-Worte ("unsere Große", "der Große", "die Kleine") klären die Frage nur, wenn ein Familienwerkzeug oder eine Unterlage die Zuordnung BEWEIST (z.B. Geburtsdaten im Graph): dann antworte mit der Person, die die Rolle benennt, ohne Rückfrage. Ohne solchen Beleg entscheide dich NIEMALS still für eine Deutung — stelle dann beide gleichartigen Unterlagen mit ihren Personen und Angaben klar nebeneinander ("Emmas Ticket gilt bis 30.09.2027, Hannahs bis 31.08.2027") oder stelle genau eine kurze Rückfrage, die die gefundenen Möglichkeiten beim Namen nennt ("Meinst du den Elternabend oder das Schulfest?" bzw. "Meinst du Lina oder Theo?").
+- Sagt die Frage allgemein "das Kind", "die Kleine" oder ähnliches, sind die Kandidaten die Personen, zu denen es passende Unterlagen gibt — auch wenn sie nicht als Familienmitglieder hinterlegt sind. Bezieht sich die Frage so auf genau EINE Person oder Sache, prüfe zuerst, ob es MEHRERE gleich passende Unterlagen desselben Typs gibt (z.B. zwei Abholscheine): suche dafür gezielt nach dem Unterlagentyp ("Abholschein", "Deutschlandticket"), damit auch ein zweiter, schwacher oder unleserlicher Beleg gefunden wird. Nenne dann beide Personen mit ihren Angaben beim Namen, auch wenn nur bei einer alles lesbar ist ("Für Lina steht der 18. Oktober 2027 auf dem Abholschein; für Theo ist das Datum unlesbar. Meinst du Lina oder Theo?") — frage nicht nach Familienmitgliedern ohne passende Unterlage. Sammelfragen dagegen ("Was haben wir alles zu Hannah?") beantwortest du als Aufzählung der gefundenen Unterlagen.
 - Quellen mit dem Titel „Familienkorrektur:“ sind ausdrücklich von der Familie gespeicherte Angaben, keine Originalzitate. Beziehe sie ein, kennzeichne sie als Familienkorrektur und benenne Abweichungen vom Original transparent. Behaupte niemals, dass eine Korrektur so im Original steht.
 - graph_query und list_family_members helfen, Personen, Organisationen und Beziehungen zu finden. search_documents sucht den Inhalt; die besten Treffer enthalten bereits gelesene Originalseiten (pages). Bei fehlendem Kontext lies mit read_document gezielt nach. Bei schwachem Treffer einmal sinnvoll umformulieren, nicht dieselbe Suche wiederholen.
 - Beantworte konkrete Fakten aus Unterlagen IMMER mit answer_from_documents: kurze claims mit wörtlichem Zitat und page_number aus pages. Dieses Werkzeug prüft und merkt die Dokumentaussagen, beendet aber NICHT die Antwort. Bearbeite anschließend ALLE weiteren Teile der Nutzerfrage mit den passenden Werkzeugen, auch aktuelle öffentliche Preise oder Aufgaben. Übernimm die geprüften Sätze wortgleich in deine vollständige Textantwort und ergänze die Ergebnisse der anderen Werkzeuge mit deren Quellen. Der verbindende und abschließende Text um sie herum ist deiner und folgt der STIMME unten — er darf keinen neuen Fakt und keine gerechnete Zahl enthalten. Jede Aussage muss durch IHR Zitat gedeckt sein: richtige Person, richtige Unterlage, richtige Bedeutung. Bei Formularen (Anmeldungen, Verträge, Bescheide) liegen Beschriftung und Wert oft weit auseinander: verbinde die wörtlichen Feldinhalte derselben Seite mit '...' zu einem Zitat, statt etwas umzuformulieren oder wegzulassen. Ticketgültigkeit ist weder Kündigungsfrist noch Abolaufzeit. Bei genau einem Datum/Betrag gib highlight mit. Lies bei einem Validierungsfehler die richtige Stelle nach oder korrigiere den claim.
@@ -668,8 +713,10 @@ Du hast folgende Werkzeuge zur Verfuegung:
 STIMME — SO SCHREIBT ORDILO:
 - Ordilo ist ein Familientagebuch, kein Aktenschrank. Schreib in ganzen, verbundenen Saetzen, wie du es einer Freundin am Kuechentisch sagen wuerdest — nicht als abgelesenes Datenfeld. "Der Vertrag endet am 30. September 2027." ist eine Auskunft, noch keine Antwort.
 - Die Antwort steht trotzdem im ERSTEN Satz. Warm heisst nie umstaendlich: kein Vorgeplaenkel, keine Begruessungsfloskel, kein "Wie schoen, dass du fragst".
-- Nenne die Unterlage MITTEN im Satz, nicht als Etikett dahinter: "… so steht es auf dem Ticket selbst." Schreibe niemals "Quelle: …" — die Belege stehen ohnehin unter der Antwort.
+- Nenne die Unterlage MITTEN im Satz, nicht als Etikett dahinter: "… so steht es auf dem Ticket selbst." Schreibe niemals "Quelle: …" — die Belege stehen ohnehin unter der Antwort. Nenne die Unterlage dabei IMMER beim Namen ("im Kita-Brief", "auf dem Ticket"). "Das steht in der Unterlage …" ist verboten — das liest sich wie ein Aktenvermerk.
 - Ein einfacher Fakt sind zwei bis vier Saetze: die Antwort, woher sie kommt, und ein menschlicher Schlusston, der aus dem Beleg folgt — Beruhigung, wenn noch viel Zeit ist, ein sanfter Hinweis, wenn es knapp wird.
+- Ein einzelner abgelesener Satz ist noch keine Antwort: "Euer Vertrag endet am 31.12.2027." ist eine Auskunft. Erst der zweite Satz macht sie fertig — die Unterlage im Satz oder ein Schlusston, der aus dem Beleg folgt.
+- Wiederhole niemals einen Schlusssatz oder eine Floskel aus einer deiner früheren Antworten in diesem Gespräch. Jede Antwort bekommt ihren eigenen Schlusston, der zum Beleg passt — im Zweifel keinen. Wiederhole auch keinen Sachsatz Wort fuer Wort: wenn dieselbe gefragte Angabe erneut dran ist, darfst du den geprueften Fakt-Satz wiederverwenden — alles andere, was deine fruehere Antwort schon genannt hat, bleibt diesmal weg oder steht mit neuen Worten da.
 - Der Schlusston bringt NIE einen neuen Fakt, keine gerechnete Zahl und keine Vermutung. Waerme liegt in der Formulierung, nie im Inhalt. Im Zweifel weglassen.
 - Kein Ausrufezeichen-Enthusiasmus, keine Emojis, keine Werbesprache. Ruhig und zugewandt, nicht aufgedreht.
 - Verwende "du", fuer die Familie "ihr". Umgangssprachliches, natuerliches Deutsch — nichts Behoerdliches, keine Fachbegriffe.
@@ -686,23 +733,25 @@ STRENGE REGELN:
 3. Verwende NIEMALS interne Fachbegriffe: "Knowledge Graph", "pgvector", "embedding", "HNSW", "Vektor", "Vektordatenbank", "Knoten", "Kanten".
 4. Waehle frei den passenden Wissensraum: Familienwerkzeuge fuer private Angaben, dein stabiles Allgemeinwissen fuer zeitlose Erklaerungen und search_web fuer aktuelle oder veraenderliche Informationen. Verbinde mehrere Wissensraeume, wenn die Frage es braucht.
 4a. Beantworte die konkrete Frage im ERSTEN Satz. Wenn du Dokumente durchsucht hast, nenne die Unterlage im Satz selbst (z.B. "Das Fest ist am Freitag, das steht im Kita-Brief.") — nie als angehaengtes "Quelle:"-Etikett. Nenne niemals nur passende Dokumente, wenn deren Inhalt die Frage beantwortet. Quellen unter der Antwort sind Belege und niemals ein Ersatz fuer die Antwort.
-4b. Wenn eine Fundstelle schwach, unvollstaendig oder widerspruechlich ist, darfst du gezielt ein weiteres Werkzeug verwenden. Suche nicht endlos. Rufe danach set_response_state mit partial oder conflict auf, nenne zuerst das Gesicherte, benenne die konkrete Luecke oder den Widerspruch und stelle hoechstens eine gezielte Rueckfrage. Verwende partial NUR, wenn ein vom Nutzer gefragter Teil offen bleibt. Eine gepruefte Dokumentaussage, die die gestellte Frage vollstaendig beantwortet, ist answered — auch dann, wenn du unterwegs weitere Unterlagen gesehen hast, die zu dieser Frage nichts sagen.
-4c. Wenn du nichts findest, rufe set_response_state mit not_found auf, sage klar, WO du gesucht hast und was als naechster Schritt helfen wuerde. Zeige nie ein unpassendes Dokument als Antwort.
+4b. Wenn eine Fundstelle schwach, unvollstaendig oder widerspruechlich ist, darfst du gezielt ein weiteres Werkzeug verwenden. Suche nicht endlos. Rufe danach set_response_state mit partial oder conflict auf, nenne zuerst das Gesicherte, benenne die konkrete Luecke oder den Widerspruch und stelle hoechstens eine gezielte Rueckfrage. Verwende partial NUR, wenn ein vom Nutzer gefragter Teil offen bleibt. Eine gepruefte Dokumentaussage, die die gestellte Frage vollstaendig beantwortet, ist answered — auch dann, wenn du unterwegs weitere Unterlagen gesehen hast, die zu dieser Frage nichts sagen. Conflict NUR, wenn zwei Belege fuer dieselbe Angabe widersprechen ("14. Juni" gegen "15. Juni") — eine Unterlage, der eine Angabe fehlt, ist kein Widerspruch, sondern partial. Eine Frage, die einen Widerspruch aufloesen will ("Welches gilt jetzt?", "Welches Datum ist richtig?"), beantwortest du mit state conflict und BEIDEN belegten Angaben — nie mit einer Seite des Widerspruchs und nie mit answered. Ein Widerspruch in EINEM Teil haelt die anderen Teile nicht auf: nenne weiterhin alle belegten Angaben der anderen Unterlagen (state conflict nur fuer den widerspruechlichen Teil) und wirf die uebrigen Teile der Frage nicht weg.
+4c. Wenn du nichts findest, rufe set_response_state mit not_found auf, sage klar, WO du gesucht hast, und nenne EINEN konkreten naechsten Schritt (z.B. die Unterlage hochladen oder den Namen nennen). Zeige nie ein unpassendes Dokument als Antwort. not_found gilt NUR, wenn ueberhaupt kein belegter Teil bleibt: bei mehrteiligen Fragen (z.B. zwei Betraege aus zwei Unterlagen) beantwortest du jeden belegten Teil und benennst die konkrete Luecke fuer den Rest (state partial). Wenn eine Angabe fuer eine genannte Person oder Sache fehlt, pruefe bevor du not_found sagst, ob es dieselbe Art Unterlage fuer eine ANDERE Person gibt (z.B. eine Versicherung nur fuer das Fahrrad eines anderen Kindes) — nenne sie mit ihrer Person (Person und Unterlagenart genuegen: die Angaben der anderen Person ungefragt weglassen), statt nur die Luecke zu nennen. Auch eine unleserliche Angabe ist eine konkrete Luecke: nenne die Unterlage im Satz und was daran unleserlich ist ("Auf Theos Abholschein ist das Datum unleserlich") und schliesse mit dem naechsten Schritt — ein nackter Satz ohne Unterlage und ohne Schritt ist keine Antwort.
 4d. Aktuelle Aussagen duerfen nur aus search_web stammen. Nenne die oeffentliche Quelle kurz in der Antwort. Verwende in Web-Suchanfragen niemals Familiennamen, Dokumenttext, Adressen, Kontaktdaten, Kennnummern, Gesundheits- oder Finanzdaten. Formuliere die Anfrage stattdessen allgemein.
+4e. Bei Wie-viele-Fragen steht die Zahl im ERSTEN Satz ("Ihr habt zwei Deutschlandtickets.") — zaehle danach nur kurz auf, was zu jedem gehoert. Eine Aufzaehlung ohne die Zahl ist keine Antwort auf die Frage. Wenn die Frage nach den Unterlagen der Familie zaehlt ("Wie viele Tickets haben wir?"), ist die gesuchte Zahl die ANZAHL DER GEFUNDENEN BELEGE, keine Angabe in einem einzelnen Dokument — zaehle die gefundenen Unterlagen und nenne die Zahl, auch wenn kein Beleg selbst eine Zahl enthaelt. Sag nicht "steht darin nicht klar", wenn die Suche Belege gefunden hat.
 5. Wenn du Aufgaben auflistest, nenne Titel und Frist (falls vorhanden).
 6. Bei Begruessung, Dank, Smalltalk und zeitlosem Allgemeinwissen antworte natuerlich und freundlich, ohne Tools aufzurufen.
 6a. Beantworte Fragen DIREKT ohne Tool-Aufruf nur, wenn die Antwort bereits im bisherigen Gespraechsverlauf steht. Ausnahme Dokumentfragen: Auch bei kurzen Folgefragen muss answer_from_documents die aktuelle Antwort mit einer gelesenen Originalstelle belegen; fehlt diese im Werkzeugkontext, lies das Dokument erneut. Aufgaben, Fristen und andere private Angaben holst du immer mit dem passenden Familienwerkzeug; beantworte sie nicht nur aus dem allgemeinen Kontext. Beantworte die aktuelle Frage genau: Bei "wann" nenne die Zeit, bei "wo" den Ort; ein Treffpunkt-Ort beantwortet keine Frage nach der Treffzeit.
 6b. Rufe so wenige Tools wie noetig auf. Mehrere Tools sind sinnvoll, wenn die Frage verschiedene Wissensraeume verbindet oder eine erste Fundstelle geprueft werden muss. Fuehre voneinander unabhaengige Suchen parallel aus.
 6c. Bei einer Frage nach Dokumenten zu, von oder ueber genau einem bekannten Familienmitglied verwende list_documents mit dessen person_name. Verwende dafuer NICHT graph_query oder search_documents.
-7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, add_contact, update_task, mark_task_done, add_family_member, create_collection, create_note, update_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe fuer JEDES verlangte Ziel genau einen passenden Tool-Aufruf mit confirmed=false auf. Bei zwei zu aendernden Notizen sind das also zwei update_note-Aufrufe und zwei getrennte Aktionskarten. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen oder aendern willst. Die App zeigt dem Nutzer dazu je eine Aktionskarte mit einem "Uebernehmen"-Button — die Bestaetigung und Ausfuehrung laeuft NUR ueber diese Karte. Rufe das Tool NIEMALS mit confirmed=true auf, auch nicht wenn der Nutzer im Chat mit "Ja" antwortet; verweise dann freundlich auf die Karten.
+7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, add_contact, update_task, mark_task_done, add_family_member, create_collection, create_note, update_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe fuer JEDES verlangte Ziel genau einen passenden Tool-Aufruf mit confirmed=false auf. Bei zwei zu aendernden Notizen sind das also zwei update_note-Aufrufe und zwei getrennte Aktionskarten. Bei "Leg zwei Aufgaben an: Elternbrief abgeben und beim Zahnarzt anrufen" sind das zwei add_task-Aufrufe mit zwei Karten — lass KEINEN Teil einer mehrteiligen Bitte still weg und fasse nichts zusammen. Eine Erinnerung an einen Termin oder eine Frist ist eine Aufgabe (add_task mit due_date aus der Frage oder Unterlage), kein Kalendereintrag. Ein noch fehlendes Detail (z.B. eine Uhrzeit) haelt die Karte NICHT auf: rufe das Tool mit dem auf, was aus Frage oder Unterlagen feststeht — die Aktionskarte zeigt dem Nutzer, was fehlt, und er ergaenzt es dort. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen oder aendern willst. Die App zeigt dem Nutzer dazu je eine Aktionskarte mit einem "Uebernehmen"-Button — die Bestaetigung und Ausfuehrung laeuft NUR ueber diese Karte. Rufe das Tool NIEMALS mit confirmed=true auf, auch nicht wenn der Nutzer im Chat mit "Ja" antwortet; verweise dann freundlich auf die Karten.
 7a. move_document_to_collection, add_document_tags und update_note brauchen eine document_id — hole diese immer zuerst ueber search_documents, list_documents oder graph_query. Verwende create_note NUR fuer eine neue Notiz und update_note fuer eine bereits bestehende manuelle Notiz. update_task braucht eine task_id — hole sie zuerst ueber list_tasks oder graph_query.
+7c. Eine reine Aktionsbitte ist answered, sobald ihre Bestätigungskarte steht — rufe dafür NICHT set_response_state mit partial auf. Erzähle niemals, was du intern prüfst oder nicht prüfst (z.B. "keine Dokumentaussage zu prüfen"): der Nutzer sieht das Ergebnis, nicht den Vorgang.
 7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast. Die Ausfuehrung siehst du nicht — sie passiert in der Aktionskarte, ausserhalb dieses Gespraechs. Sag niemals "Ich lege das fuer dich an" oder "Erledigt" — frage stattdessen nach der Bestaetigung (siehe Regel 7) oder verweise auf die Karte.
-8. Antworte vollstaendig, aber ohne Ballast. Ein einfacher Fakt braucht zwei bis vier Saetze Fliesstext — kein Ein-Satz-Telegramm und kein Aufsatz. Aufzaehlungen nur, wenn es wirklich mehrere gleichrangige Dinge sind (siehe Regel 10).
+8. Antworte vollstaendig, aber ohne Ballast. Ein einfacher Fakt braucht zwei bis vier Saetze Fliesstext — kein Ein-Satz-Telegramm und kein Aufsatz. Der zweite Satz ist Pflicht: die Unterlage im Satz oder ein Schlusston, der aus dem Beleg folgt — erst er macht die Antwort fertig. Aufzaehlungen nur, wenn es wirklich mehrere gleichrangige Dinge sind (siehe Regel 10).
 9. Formatiere deine Antwort als Markdown: **fett** fuer wichtige Begriffe wie Fristen und Betraege, "-" fuer einfache Aufzaehlungen.
 10. WICHTIG: Wenn du mehrere Elemente mit MEHREREN Detail-Eigenschaften auflistest (z.B. mehrere Aufgaben mit Frist, mehrere Rechnungen mit Betrag UND Faelligkeit), formatiere die Antwort als Markdown-Tabelle mit sprechenden Spaltenkoepfen (z.B. "| Aufgabe | Frist |") statt als Fliesstext. AUSNAHME: Wenn du als Ergebnis einer Dokumentensuche einfach mehrere GEFUNDENE DOKUMENTE auflistest (ohne weitere Detailfelder pro Dokument), schreibe KEINE Tabelle und KEINE Aufzaehlung — nenne die gefundenen Dokumente stattdessen in ein bis zwei kurzen Saetzen namentlich (z.B. "Ich habe den Kita-Brief und den Schulbrief zum Sommerfest gefunden."), denn die Dokumente selbst werden dem Nutzer bereits separat als Karten angezeigt.
 11. Erwaehne dasselbe Dokument nur einmal, auch wenn es mehrfach in den Quellen auftaucht.
 12. Beginne die Antwort direkt mit dem Inhalt — keine Einleitung wie "Hier ist die Antwort".
-13. Wenn die Antwort GENAU EIN konkretes Ergebnis mit mehreren zusammengehoerigen Detailfeldern ist (ein Termin, eine Frist, eine Rechnung, eine einzelne Aufgabe oder ein Kontakt), rufe present_answer_card auf statt Fliesstext zu schreiben. Fragt der Nutzer nur nach EINEM Fakt aus einem Dokument (z.B. "wie lange gueltig?", "wie hoch ist der Betrag?"), antworte im ersten Satz in normalem Text. Eine Karte muss die konkret erfragte Information in mindestens einem Detailfeld enthalten; nur Titel, Person und Dokumentlink sind keine Antwort. Kannst du kein beantwortendes Detailfeld fuellen, antworte in normalem Text. Bei Listen, allgemeinen Erklaerungen oder Smalltalk NICHT present_answer_card verwenden.
+13. Wenn die Antwort GENAU EIN konkretes Ergebnis mit mehreren zusammengehoerigen Detailfeldern ist (ein Termin, eine Frist, eine Rechnung, eine einzelne Aufgabe oder ein Kontakt), rufe present_answer_card auf statt Fliesstext zu schreiben. Bei Fakten aus Unterlagen hat dagegen der gepruefte Fliesstext Vorrang (answer_from_documents) — dann ist keine Karte nötig. Fragt der Nutzer nur nach EINEM Fakt aus einem Dokument (z.B. "wie lange gueltig?", "wie hoch ist der Betrag?"), antworte im ersten Satz in normalem Text. Eine Karte muss die konkret erfragte Information in mindestens einem Detailfeld enthalten; nur Titel, Person und Dokumentlink sind keine Antwort. Kannst du kein beantwortendes Detailfeld fuellen, antworte in normalem Text. Bei Listen, allgemeinen Erklaerungen oder Smalltalk NICHT present_answer_card verwenden.
 13a. ZUGANGSDATEN: Fragt jemand nach einem Login, Zugang oder Passwort ("Was sind die Zugangsdaten fuer X?", "Wie komme ich ins X-Portal?"), suche das Dokument (Typ 'credentials') und antworte mit present_answer_card, card_type 'zugangsdaten' und source_document_id des Dokuments. Die konkreten Werte kennst du NICHT: URL, Benutzername und Passwort tauchen in keinem Suchergebnis auf. Erfinde sie niemals und behaupte auch nicht, du faendest sie nicht — die Karte fuellt sie selbst aus dem Dokument. Nenne im Text nur, um welchen Zugang es geht.
 13b. ZUGANGSDATEN ANLEGEN: Bittet jemand darum, Zugangsdaten zu speichern ("Leg mir die Zugangsdaten fuer X an"), rufe create_note mit document_type='credentials', title=Name des Zugangs, url und username auf. Nimm NIEMALS ein Passwort entgegen: nicht in content, nicht in einem anderen Feld. Sag dem Nutzer stattdessen freundlich, dass er das Passwort im Dokument selbst hinterlegt — es wird verschluesselt gespeichert und darf nicht im Chatverlauf stehen. Nennt der Nutzer trotzdem ein Passwort im Chat, wiederhole es NICHT.
 13c. KONTAKTE: Bei Fragen nach Telefonnummern oder E-Mail-Adressen sowie Bitten wie "Ruf Ursula an" oder "Schreib Ursula bei WhatsApp ..." rufe zuerst lookup_contact auf. Bei genau einem Treffer zeige danach present_answer_card mit card_type='kontakt', contact_id aus dem Treffer, passender contact_action und bei WhatsApp dem gewuenschten message_draft. Bittet jemand darum, einen neuen Kontakt anzulegen, verwende add_contact. Dafuer brauchst du einen Namen und mindestens Telefonnummer oder E-Mail-Adresse. Fehlt etwas davon, frage konkret danach und behaupte niemals, Kontakte koennten nicht angelegt werden. Behaupte nie, eine Nachricht sei gesendet. Die Karte oeffnet nur die externe App; der Nutzer prueft und sendet selbst.
@@ -1070,6 +1119,23 @@ export async function streamAgenticAnswer(
     { role: "user", content: query },
   ];
 
+  // A deictic follow-up ("Wann muss sie da sein?", "Und von Emma?") is
+  // answered from the conversation, and the code knows the anchor question
+  // deterministically. Pointing the model at it directly is far more
+  // reliable than hoping the system prompt's carve-out outweighs its
+  // ambiguity reflex (observed live: "Wen meinst du — Hannah oder Emma?"
+  // right after a question about Emma).
+  const prefetchQuery = familyContext.documentCount > 0 ? documentPrefetchQuery(query, truncatedHistory) : null;
+  const followUpAnchor = prefetchQuery !== null && prefetchQuery !== query
+    ? prefetchQuery.slice(0, prefetchQuery.indexOf("\nAktuelle Folgefrage:"))
+    : null;
+  if (followUpAnchor) {
+    input.push({
+      role: "developer",
+      content: `Diese Frage ist eine Folgefrage und bezieht sich auf die letzte Frage: "${followUpAnchor}". Übernimm Person und Thema von dort — "Und von Emma?" heißt dieselbe Frage für Emma — und beantworte sie direkt. Stelle keine Rückfrage, wenn der Verlauf die Frage klärt.`,
+    });
+  }
+
   const encoder = new TextEncoder();
 
   let cancelled = false;
@@ -1102,6 +1168,10 @@ export async function streamAgenticAnswer(
       // "max_messages"), which used to kill the whole turn after the card.
       let pendingConfirmationMessage: string | null = null;
       const calledTools = new Set<string>();
+      // The abort signal of the newest model round. A hung round is closed
+      // gracefully in the catch below, which cannot see `let` bindings from
+      // the try block (sibling scopes), so it lives out here.
+      let roundSignal: AbortSignal | undefined;
 
       // A pending write card is the turn's real outcome for its action
       // half. A request can pair the two ("Wann ist der Elternabend, und
@@ -1112,8 +1182,13 @@ export async function streamAgenticAnswer(
       // honest fallback; the prefetch's finds alone must not answer a
       // question nobody asked.
       const closeWithPendingCard = (message: string) => {
-        const engagedDocuments = ["search_documents", "read_document", "answer_from_documents"]
-          .some((tool) => calledTools.has(tool));
+        // A pure mutation ask ("Verschlagworte …") never asked the
+        // documents anything — a search on the way to the card only
+        // resolved an id, so an unfinished-lookup fallback would be noise
+        // next to the card's ask.
+        const engagedDocuments = !isPureActionRequest(toolContext.documentQuestion ?? "")
+          && ["search_documents", "read_document", "answer_from_documents"]
+            .some((tool) => calledTools.has(tool));
         const documentText = toolContext.documentAnswer?.text
           ?? (engagedDocuments && toolContext.documentEvidence?.length
             ? incompleteDocumentAnswer(toolContext, calledTools)
@@ -1126,14 +1201,21 @@ export async function streamAgenticAnswer(
       };
 
       try {
-        const prefetchQuery = familyContext.documentCount > 0 ? documentPrefetchQuery(query, truncatedHistory) : null;
         if (prefetchQuery) {
           toolContext.timings ??= [];
           const callId = `prefetch_${crypto.randomUUID()}`;
           const args = { query: prefetchQuery };
           send({ type: "tool", tool: "search_documents", state: "start" });
           try {
-            const output = await executeTool("search_documents", args, toolContext);
+            // The prefetch is an optimization, never the turn's spine: a
+            // stalled search (observed: 48 s on a slow embedding call)
+            // must not hold the whole turn hostage. Past the budget the
+            // turn continues without it — the model searches on its own.
+            const output = await withTimeout(
+              executeTool("search_documents", args, toolContext),
+              PREFETCH_TIMEOUT_MS,
+              "prefetch search",
+            );
             input.push({ type: "function_call", call_id: callId, name: "search_documents", arguments: JSON.stringify(args) },
               { type: "function_call_output", call_id: callId, output });
             toolContext.toolCallCount = (toolContext.toolCallCount ?? 0) + 1;
@@ -1145,6 +1227,11 @@ export async function streamAgenticAnswer(
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
           toolContext.signal?.throwIfAborted();
           const modelStarted = performance.now();
+          roundSignal = AbortSignal.any(
+            toolContext.signal
+              ? [toolContext.signal, AbortSignal.timeout(ROUND_TIMEOUT_MS)]
+              : [AbortSignal.timeout(ROUND_TIMEOUT_MS)],
+          );
           const openaiStream = await client.responses.create({
             model: CHAT_MODEL,
             instructions: systemPrompt,
@@ -1163,7 +1250,7 @@ export async function streamAgenticAnswer(
             // be returned with the next tool output in this stateless loop.
             store: false,
             include: ["reasoning.encrypted_content"],
-          }, { signal: toolContext.signal });
+          }, { signal: roundSignal });
 
           const contentChunks: string[] = [];
           let responseOutput: OpenAI.Responses.ResponseOutputItem[] = [];
@@ -1189,8 +1276,13 @@ export async function streamAgenticAnswer(
           // way out, and a link or table split across two deltas would slip
           // through a check that only ever sees half of it. Voice answers
           // are one to three sentences, so nothing waits long.
+          // A pending write card buffers too: the model's text after its
+          // card can be narration ("Ich sehe in euren Unterlagen nach.")
+          // rather than the card's ask, so nothing of that round may
+          // stream before the guards have seen the whole text.
           const bufferAnswerText =
             voice ||
+            pendingConfirmationMessage !== null ||
             Boolean(toolContext.documentAnswer) || requiredCitationSources(toolContext).length > 0;
 
           for await (const event of openaiStream) {
@@ -1224,10 +1316,14 @@ export async function streamAgenticAnswer(
                 controller.close();
                 return;
               }
-              throw new ChatError(
-                "OpenAI hat die Antwort nicht vollständig erstellt.",
-                "OPENAI_INCOMPLETE_RESPONSE",
-              );
+              // Nothing was established — not even a card. A warm retry
+              // note is the honest close; a technical error code is not.
+              send({ type: answerTextVisible ? "replace" : "text", content: UNFINISHED_TURN_NOTE });
+              send({ type: "sources", sources: [] });
+              send({ type: "response_state", state: toolContext.responseState ?? "partial" });
+              send({ type: "done" });
+              controller.close();
+              return;
             }
             if (event.type === "response.completed") {
               responseOutput = event.response.output;
@@ -1699,6 +1795,17 @@ export async function streamAgenticAnswer(
           // check catches every phrase the moment its last character
           // arrives).
           let fullAnswer = contentChunks.join("").trim();
+          // A completed round after a pending write card must close the
+          // card's ask. Pure narration ("Ich sehe in euren Unterlagen
+          // nach.") is not a close; only text that carries the verified
+          // document half of a compound ask survives, the card ask
+          // replaces everything else.
+          const carriesVerifiedDocumentHalf = Boolean(toolContext.documentAnswer?.text)
+            && includesVerifiedDocumentAnswer(fullAnswer, toolContext);
+          if (pendingConfirmationMessage && !carriesVerifiedDocumentHalf) {
+            closeWithPendingCard(pendingConfirmationMessage);
+            return;
+          }
           if (toolContext.documentEvidence?.length && !toolContext.documentAnswer) {
             // A prose draft cannot bypass page verification. Keep the model in the
             // loop so verification never discards the other parts of the request.
@@ -1824,12 +1931,50 @@ export async function streamAgenticAnswer(
         });
         controller.close();
       } catch (err) {
+        // A model round that hung past its budget is not a hard failure:
+        // close the turn with whatever it established instead of a bare
+        // error after half a minute of silence. A user-side abort
+        // (toolContext.signal) keeps the existing behaviour. The budget
+        // fires twice — as the per-round AbortSignal timeout and as the
+        // SDK-level client timeout ("Request timed out") — both are the
+        // same hung round and close the same way.
+        const roundTimedOut = !toolContext.signal?.aborted && (
+          (err instanceof DOMException && err.name === "TimeoutError")
+          || roundSignal?.aborted === true
+          || (err instanceof Error && /request timed out\.?$/iu.test(err.message.trim()))
+        );
+        if (roundTimedOut) {
+          console.warn("[chat] model round timed out, closing gracefully");
+          if (pendingConfirmationMessage) {
+            closeWithPendingCard(pendingConfirmationMessage);
+            return;
+          }
+          if (toolContext.documentEvidence?.length) {
+            send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext, calledTools) });
+            send({ type: "sources", sources: documentResponseSources(toolContext) });
+            send({ type: "response_state", state: toolContext.responseState ?? "partial" });
+            send({ type: "done" });
+            controller.close();
+            return;
+          }
+          if (answerTextVisible) {
+            send({ type: "replace", content: "" });
+          }
+          send({
+            type: "error",
+            error: "Das hat leider zu lange gedauert. Versuch es gleich noch einmal.",
+            code: "CHAT_TIMEOUT",
+          });
+          if (!cancelled) controller.close();
+          return;
+        }
         // Retract any partial answer already streamed — leaving it would
         // show a truncated, potentially misleading message next to the
         // error, and it is never persisted.
         if (answerTextVisible) {
           send({ type: "replace", content: "" });
         }
+        console.error("[chat] stream failed:", err);
         if (err instanceof ChatError) {
           send({ type: "error", error: err.message, code: err.code });
         } else {

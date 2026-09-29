@@ -1742,10 +1742,15 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        // Measured live: reasoning-free tool rounds lose the nuanced
+        // document behaviours (deixis, ambiguity, tone) without moving
+        // p50/p95 — the effort stays.
         reasoning: { effort: "low" },
         store: false,
       }),
-      { signal: undefined },
+      // Every round carries its watchdog signal, with or without a
+      // client-side abort signal underneath.
+      { signal: expect.anything() },
     );
   });
 

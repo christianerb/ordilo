@@ -505,6 +505,21 @@ export function answerCitesSources(
       ) {
         return true;
       }
+      // German word order can split a title across the sentence ("Hannahs
+      // Deutschlandticket" names the document "Deutschlandticket Hannah").
+      // Every meaningful title token appearing in the answer — tolerant of
+      // a genitive -s, which the substring check covers — still names the
+      // document, so the citation stands.
+      const titleTokens = normalizedTitle
+        .split(/\s+/)
+        // Shorter tokens ("für", "der") are too generic to carry a name.
+        .filter((token) => token.length >= 4);
+      if (
+        titleTokens.length > 0 &&
+        titleTokens.every((token) => normalizedAnswer.includes(token))
+      ) {
+        return true;
+      }
     }
 
     // --- Content matching ---

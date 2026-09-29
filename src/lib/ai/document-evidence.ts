@@ -424,6 +424,7 @@ export const documentAnswerSchema = z.object({
   state: z.enum(["answered", "partial", "conflict", "not_found"]),
   gap: z.string().trim().max(350).optional(),
 });
+export type DocumentAnswerClaim = z.infer<typeof documentAnswerSchema>["claims"][number];
 
 /**
  * How many passages one quote may be assembled from. A form chains the
@@ -471,7 +472,7 @@ export function pageCarriesQuote(pageText: string, passages: string[]): boolean 
 }
 
 export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[], people: string[] = [], question = ""):
-  | { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found"; gap?: string }
+  | { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found"; gap?: string; unverified_claims?: string[] }
   | { error: string } {
   const parsed = documentAnswerSchema.safeParse(args);
   if (!parsed.success) return { error: "Nutze claims mit Text, document_id, page_number und wörtlichem Zitat, sowie state." };
@@ -484,36 +485,38 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     && !parsed.data.claims.some(claim => clock.test(claim.text) || /\b\d{1,2}\s*Uhr\b/u.test(claim.text) || /\b\d{1,2}\.\d{1,2}\.\d{4}\b/u.test(normalizeFactText(claim.text)))) {
     return { error: "Die Frage fragt nach der Zeit. Nenne die passende Uhrzeit aus dem Beleg; ein Ort allein beantwortet sie nicht." };
   }
-  const sources: ChatSource[] = [];
-  for (const claim of parsed.data.claims) {
+  // One unverifiable claim must not discard the verified ones: a multi-part
+  // question (several documents, a second child's unreadable slip) keeps its
+  // verified parts and reports only the failing claims for correction.
+  const claimProblem = (claim: DocumentAnswerClaim): string | null => {
     // Markup-only quotes ("<br><br>") normalize to "" and would match any page.
     if (comparableEvidence(claim.quote).replace(/[^\p{L}\p{N}]/gu, "").length < 8) {
-      return { error: "Zitiere eine zusammenhängende Originalstelle mit echtem Text aus der Unterlage." };
+      return "Zitiere eine zusammenhängende Originalstelle mit echtem Text aus der Unterlage.";
     }
     const passages = quotePassages(claim.quote);
     if (passages.length > MAX_QUOTE_PASSAGES) {
-      return { error: `Ein Beleg darf aus höchstens ${MAX_QUOTE_PASSAGES} Stellen derselben Seite bestehen. Zitiere weniger, dafür zusammenhängende Ausschnitte.` };
+      return `Ein Beleg darf aus höchstens ${MAX_QUOTE_PASSAGES} Stellen derselben Seite bestehen. Zitiere weniger, dafür zusammenhängende Ausschnitte.`;
     }
     const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
       && pageCarriesQuote(item.text, passages));
-    if (!page) return { error: "Die zitierte Stelle wurde so noch nicht gelesen. Lies die passende Seite mit read_document und übernimm das Zitat wörtlich. Bei einem Formular darfst du Feldbeschriftung und Wert mit '...' verbinden, solange beide wörtlich auf derselben Seite stehen." };
+    if (!page) return "Die zitierte Stelle wurde so noch nicht gelesen. Lies die passende Seite mit read_document und übernimm das Zitat wörtlich. Bei einem Formular darfst du Feldbeschriftung und Wert mit '...' verbinden, solange beide wörtlich auf derselben Seite stehen.";
     // A source without a page number is one aggregate text: joining
     // passages across it could pair a person or an amount from one letter
     // with the words of another. Only a real page may be quoted in parts.
     if (page.page === null && passages.length > 1) {
-      return { error: "Für diese Fundstelle liegen keine Seitenzahlen vor. Zitiere eine einzelne zusammenhängende Stelle statt mehrerer Stellen." };
+      return "Für diese Fundstelle liegen keine Seitenzahlen vor. Zitiere eine einzelne zusammenhängende Stelle statt mehrerer Stellen.";
     }
     for (const person of people) {
       if (matchesPersonName(claim.text, person) && !matchesPersonName(`${page.title ?? ""} ${page.text}`, person)) {
-        return { error: "Die genannte Person gehört nicht zu dieser Fundstelle. Lies die Unterlage der richtigen Person." };
+        return "Die genannte Person gehört nicht zu dieser Fundstelle. Lies die Unterlage der richtigen Person.";
       }
     }
-    if (validityDateConflict(claim.text, claim.quote)) return { error: "Die Ticketgültigkeit wurde mit einem anderen Datum verwechselt. Zitiere das Gültigkeitsende, nicht die Kündigungsfrist." };
-    if (!numbersAreSupported(claim.text, claim.quote)) return { error: "Ein Datum oder eine Zahl der Aussage steht nicht in ihrem Beleg. Prüfe die Gültigkeit bzw. Frist auf der Originalseite und korrigiere die Aussage." };
+    if (validityDateConflict(claim.text, claim.quote)) return "Die Ticketgültigkeit wurde mit einem anderen Datum verwechselt. Zitiere das Gültigkeitsende, nicht die Kündigungsfrist.";
+    if (!numbersAreSupported(claim.text, claim.quote)) return "Ein Datum oder eine Zahl der Aussage steht nicht in ihrem Beleg. Prüfe die Gültigkeit bzw. Frist auf der Originalseite und korrigiere die Aussage.";
     const mismatch = amountFieldMismatch(claim.text, claim.quote, people, page.text);
-    if (mismatch) return { error: `Die Aussage nennt bei „${mismatch.field}“ den Betrag ${mismatch.claimed} €, der Beleg zeigt dort ${mismatch.shown} €. Übernimm Feldname und Betrag so, wie sie auf der Seite zusammenstehen.` };
+    if (mismatch) return `Die Aussage nennt bei „${mismatch.field}“ den Betrag ${mismatch.claimed} €, der Beleg zeigt dort ${mismatch.shown} €. Übernimm Feldname und Betrag so, wie sie auf der Seite zusammenstehen.`;
     const wrongDate = dateFieldMismatch(claim.text, claim.quote, people, page.text);
-    if (wrongDate) return { error: `Die Aussage nennt bei „${wrongDate.field}“ das Datum ${wrongDate.claimed}, der Beleg zeigt dort ${wrongDate.shown}. Übernimm Beschriftung und Datum so, wie sie auf der Seite zusammenstehen.` };
+    if (wrongDate) return `Die Aussage nennt bei „${wrongDate.field}“ das Datum ${wrongDate.claimed}, der Beleg zeigt dort ${wrongDate.shown}. Übernimm Beschriftung und Datum so, wie sie auf der Seite zusammenstehen.`;
     const normalizedHighlight = claim.highlight
       ? normalizeFactText(readableQuote(claim.highlight))
       : null;
@@ -521,8 +524,20 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
       !normalizeFactText(readableQuote(claim.quote)).includes(normalizedHighlight)
       || !normalizeFactText(readableQuote(claim.text)).includes(normalizedHighlight)
     )) {
-      return { error: "Die Hervorhebung muss sowohl in der Antwort als auch im Beleg stehen." };
+      return "Die Hervorhebung muss sowohl in der Antwort als auch im Beleg stehen.";
     }
+    return null;
+  };
+  const sources: ChatSource[] = [];
+  const verifiedTexts: string[] = [];
+  const problems: string[] = [];
+  for (const claim of parsed.data.claims) {
+    const problem = claimProblem(claim);
+    if (problem) { problems.push(problem); continue; }
+    verifiedTexts.push(claim.text);
+    const passages = quotePassages(claim.quote);
+    const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
+      && pageCarriesQuote(item.text, passages))!;
     // A form quote skips between fields; keep the skip visible to the family
     // instead of showing distant fields as one continuous passage.
     const shownQuote = readableQuote(passages.length > 1 ? passages.join(" … ") : claim.quote);
@@ -530,6 +545,9 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
       score: 1, origin: "semantic", page_number: page.page ?? undefined,
       quote: shownQuote, highlight: claim.highlight && readableQuote(claim.highlight), cited: true, has_original: page.hasOriginal });
   }
+  // An empty-claims answer with a named gap is the honest not-found path;
+  // only claims that failed verification justify an error return.
+  if (parsed.data.claims.length && !verifiedTexts.length) return { error: problems[0] ?? "Jede Aussage braucht einen Beleg aus einer gelesenen Seite." };
   const gap = parsed.data.gap;
   // Naming where the model looked ("Seite 1 und 2") is navigation, not a
   // fact; every other digit in a gap could smuggle an unproven number past
@@ -542,9 +560,13 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
   if (gapWithoutPageReferences && /\d/.test(gapWithoutPageReferences)) return { error: "In gap nur die fehlende Information benennen. Konkrete Zahlen gehören in belegte claims." };
   // Two registrations often warrant one identical sentence per page. The
   // family reads that sentence once; both page citations stay attached.
-  const claimTexts = [...new Set(parsed.data.claims.map((claim) => claim.text))];
-  return { text: claimTexts.join("\n\n") + (gap ? `${claimTexts.length ? "\n\n" : ""}${gap}` : ""),
-    sources, state: parsed.data.state, gap: gap || undefined };
+  const claimTexts = [...new Set(verifiedTexts)];
+  const text = claimTexts.join("\n\n") + (gap ? `${claimTexts.length ? "\n\n" : ""}${gap}` : "");
+  if (!problems.length) return { text, sources, state: parsed.data.state, gap: gap || undefined };
+  // Unverified claims remain open parts of the question: the honest state is
+  // partial (or conflict, when the contradiction itself is verified twice).
+  const state = parsed.data.state === "conflict" && verifiedTexts.length >= 2 ? "conflict" : "partial";
+  return { text, sources, state, gap: gap || undefined, unverified_claims: problems };
 }
 
 /** Distinguish the common, high-risk validity/cancellation pair within one quote. */

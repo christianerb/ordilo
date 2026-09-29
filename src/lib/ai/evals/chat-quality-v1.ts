@@ -17,6 +17,13 @@ export type ChatEvalCase = {
   /** Overrides the prose floor where an honest answer is legitimately shorter. */
   minWords?: number;
   referenceAnswer: string;
+  /**
+   * The right behaviour is one concrete follow-up question naming the
+   * genuinely ambiguous options — not a guessed answer. Used for questions
+   * where two documents or readings are equally plausible.
+   */
+  expectsClarification?: boolean;
+  clarificationOptions?: string[];
   /** Synthetic evidence supplied only by the opt-in live model check. */
   liveEvidence?: string;
 };
@@ -41,7 +48,20 @@ const DEFAULT_FORBIDDEN = [
  * and the citations are listed under the answer anyway.
  */
 const MIN_ANSWER_WORDS = 14;
+/**
+ * Even two short sentences are a real answer; a one-sentence field
+ * read-out is not. The prose floor therefore holds per SENTENCE SHAPE:
+ * below the word floor an answer only passes with at least two sentences
+ * and a minimum of substance.
+ */
+const MIN_ANSWER_ABSOLUTE_WORDS = 10;
 const SOURCE_TAG = /\bquellen?\s*:/;
+/**
+ * The disguised source label: a closing sentence that names only "die
+ * Unterlage" instead of the document itself. It circumvents the source-tag
+ * ban with generic wording — the document's name belongs inside the answer.
+ */
+const GENERIC_SOURCE_LABEL = /das steht\b[^.!?]*\bin der unterlage\b/;
 
 function normalized(value: string): string {
   return value.toLocaleLowerCase("de-DE").replace(/\s+/g, " ").trim();
@@ -73,8 +93,39 @@ export function scoreChatAnswer(
   }
   const words = answer.trim().split(/\s+/).filter(Boolean).length;
   if (words > testCase.maxWords) failures.push(`length:${words}`);
-  if (words < (testCase.minWords ?? MIN_ANSWER_WORDS)) failures.push(`terse:${words}`);
+  if (words < (testCase.minWords ?? MIN_ANSWER_WORDS)) {
+    // Sentence shape, not word count alone: a compact two-sentence answer
+    // ("Emmas Ticket gilt bis zum 30.09.2027. Das steht so auf ihrem
+    // Deutschlandticket.") is a real answer; a one-sentence field
+    // read-out is not, whatever its length. A bullet list is judged as a
+    // list, not as sentences.
+    const listLines = answer
+      .split(/\n+/)
+      .filter((line) => /^\s*[-*]\s+\S/.test(line)).length;
+    const sentences = answer
+      // A day-number before a month ("31. August") carries a period that
+      // is not a sentence end — bind both with a word joiner so the split
+      // counts sentences, not dates. A "Quelle:" fragment is a label, not
+      // a closing beat.
+      .replace(/(\d{1,2}\.)\s+(?=(?:Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember))/gu, "$1\u2060")
+      .split(/(?<=[.!?])\s+/)
+      .filter((sentence) =>
+        sentence.split(/\s+/).filter(Boolean).length >= 3
+        && !/^(quellen?|quelle)\s*:/iu.test(sentence.trim())).length;
+    if (listLines < 2 && (sentences < 2 || words < MIN_ANSWER_ABSOLUTE_WORDS)) {
+      failures.push(`terse:${words}`);
+    }
+  }
   if (SOURCE_TAG.test(text)) failures.push("tone:source-tag");
+  if (GENERIC_SOURCE_LABEL.test(text)) failures.push("tone:generic-source");
+  if (testCase.expectsClarification) {
+    const questionCount = (answer.match(/\?/g) ?? []).length;
+    if (questionCount === 0) failures.push("clarify:no-question");
+    else if (questionCount > 1) failures.push("clarify:too-many-questions");
+  }
+  for (const option of testCase.clarificationOptions ?? []) {
+    if (!text.includes(normalized(option))) failures.push(`clarify:missing:${option}`);
+  }
 
   const checkCount =
     1 +
@@ -82,7 +133,9 @@ export function scoreChatAnswer(
     (testCase.requiredSourceNames?.length ?? 0) +
     DEFAULT_FORBIDDEN.length +
     (testCase.forbiddenPhrases?.length ?? 0) +
-    3;
+    4 +
+    (testCase.expectsClarification ? 1 : 0) +
+    (testCase.clarificationOptions?.length ?? 0);
 
   return {
     id: testCase.id,
