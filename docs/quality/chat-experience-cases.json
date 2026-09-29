@@ -1,0 +1,1178 @@
+[
+  {
+    "id": "clarify-no-referent-frist",
+    "question": "Und die Frist?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial",
+      "not_found"
+    ],
+    "facts": [],
+    "expectsClarification": true,
+    "minWords": 4,
+    "maxWords": 80,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "clarify-no-referent-kosten",
+    "question": "Was kostet das nochmal?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial",
+      "not_found"
+    ],
+    "facts": [],
+    "expectsClarification": true,
+    "minWords": 4,
+    "maxWords": 80,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "clarify-ticket-person",
+    "question": "Wann läuft das Deutschlandticket ab?",
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "answered"
+    ],
+    "facts": [],
+    "clarificationOptions": [
+      "Hannah",
+      "Emma"
+    ],
+    "minWords": 6,
+    "maxWords": 90,
+    "maxTotalMs": 20000
+  },
+  {
+    "id": "clarify-termin-hannah",
+    "question": "Wann ist Hannahs Termin?",
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "answered"
+    ],
+    "facts": [],
+    "clarificationOptions": [
+      "Elternabend",
+      "Schulfest"
+    ],
+    "minWords": 6,
+    "maxWords": 90,
+    "maxTotalMs": 20000
+  },
+  {
+    "id": "clarify-termin-emma",
+    "question": "Wann ist Emmas Termin?",
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "answered"
+    ],
+    "facts": [],
+    "clarificationOptions": [
+      "Klassenfahrt",
+      "Sporttag"
+    ],
+    "minWords": 6,
+    "maxWords": 90,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "clarify-abholen",
+    "question": "Bis wann kann ich das Kind abholen?",
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "answered"
+    ],
+    "facts": [],
+    "clarificationOptions": [
+      "Theo",
+      "Lina"
+    ],
+    "minWords": 6,
+    "maxWords": 90,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "tone-greeting",
+    "question": "Hallo!",
+    "expectedState": "answered",
+    "facts": [],
+    "minWords": 2,
+    "maxWords": 40,
+    "maxTotalMs": 12000
+  },
+  {
+    "id": "tone-thanks",
+    "question": "Danke dir!",
+    "expectedState": "answered",
+    "facts": [],
+    "minWords": 1,
+    "maxWords": 40,
+    "maxTotalMs": 12000
+  },
+  {
+    "id": "tone-howareyou",
+    "question": "Wie geht es dir?",
+    "expectedState": "answered",
+    "facts": [],
+    "minWords": 3,
+    "maxWords": 50,
+    "maxTotalMs": 12000
+  },
+  {
+    "id": "tone-capability",
+    "question": "Was kannst du alles?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Dokument",
+        "Unterlagen"
+      ],
+      [
+        "Aufgabe",
+        "Erinnerung"
+      ]
+    ],
+    "minWords": 8,
+    "maxWords": 140,
+    "maxTotalMs": 15000
+  },
+  {
+    "id": "tone-who",
+    "question": "Wer bist du?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Ordilo"
+      ]
+    ],
+    "minWords": 3,
+    "maxWords": 60,
+    "maxTotalMs": 12000
+  },
+  {
+    "id": "tone-apology",
+    "question": "Sorry, das war gerade falsch von mir.",
+    "expectedState": "answered",
+    "facts": [],
+    "minWords": 2,
+    "maxWords": 50,
+    "maxTotalMs": 12000
+  },
+  {
+    "id": "tone-praise",
+    "question": "Das hat gerade super geklappt!",
+    "expectedState": "answered",
+    "facts": [],
+    "minWords": 2,
+    "maxWords": 50,
+    "maxTotalMs": 12000
+  },
+  {
+    "id": "tone-bye",
+    "question": "Tschüss, bis morgen!",
+    "expectedState": "answered",
+    "facts": [],
+    "minWords": 2,
+    "maxWords": 40,
+    "maxTotalMs": 12000
+  },
+  {
+    "id": "chain-person-ticket",
+    "followUpTo": "ticket-emma-1",
+    "question": "Und bei Hannah?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-kuendigung-ticket",
+    "followUpTo": "ticket-hannah-1",
+    "question": "Müssen wir das kündigen, und bis wann?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial"
+    ],
+    "facts": [
+      [
+        "10.08.2027",
+        "10. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-abfahrt",
+    "followUpTo": "trip-1",
+    "question": "Und wann fährt der Zug dann ab?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:40",
+        "8:40"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-sport-1",
+    "question": "Was muss Emma zum Sporttag mitbringen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Turnschuhe"
+      ],
+      [
+        "Trinkflasche"
+      ]
+    ],
+    "sourceTitles": [
+      "Sporttag Emma"
+    ],
+    "maxWords": 80,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-sport-2",
+    "followUpTo": "chain-sport-1",
+    "question": "Und wann ist der nochmal?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "22.09.2027",
+        "22. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Sporttag Emma"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-sport-kontakt",
+    "followUpTo": "chain-sport-1",
+    "question": "Wen fragen wir dazu am besten?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Sekretariat"
+      ]
+    ],
+    "sourceTitles": [
+      "Sporttag Emma"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-rechnung-bezahlt",
+    "followUpTo": "invoice-1",
+    "question": "Haben wir die schon bezahlt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "04.08.2027",
+        "04. August 2027",
+        "4. August 2027"
+      ]
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-mira-1",
+    "question": "Bis wann lief Miras Bibliotheksausweis ursprünglich?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.07.2027",
+        "31. Juli 2027"
+      ]
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-mira-2",
+    "followUpTo": "chain-mira-1",
+    "question": "Und bis wann gilt er jetzt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.07.2028",
+        "31. Juli 2028"
+      ]
+    ],
+    "sourceTitles": [
+      "Verlängerung Bibliotheksausweis Mira"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "chain-jonas-1",
+    "question": "Welche Bestätigungen gibt es zu Jonas Jahreskarte?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "conflict"
+    ],
+    "facts": [
+      [
+        "31.10",
+        "31. Oktober 2027"
+      ],
+      [
+        "30.11",
+        "30. November 2027"
+      ]
+    ],
+    "maxWords": 130,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "chain-jonas-2",
+    "followUpTo": "chain-jonas-1",
+    "question": "Und welches Enddatum gilt jetzt?",
+    "expectedState": "conflict",
+    "expectedStates": [
+      "conflict",
+      "partial"
+    ],
+    "facts": [
+      [
+        "31.10",
+        "31. Oktober 2027"
+      ],
+      [
+        "30.11",
+        "30. November 2027"
+      ]
+    ],
+    "maxWords": 130,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "action-task-simple",
+    "question": "Leg mir eine Aufgabe an: Elternbrief unterschreiben, bis Freitag.",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmation": "add_task",
+    "forbiddenPhrases": [
+      "bestaetige",
+      "faellig",
+      "hinzugefuegt",
+      "aendern"
+    ],
+    "maxWords": 80,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "action-task-sport",
+    "question": "Erinner mich daran, Emmas Turnschuhe für den Sporttag einzupacken.",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmation": "add_task",
+    "maxWords": 80,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "action-contact",
+    "question": "Leg einen Kontakt für Oma Ursula an, Telefon 0171 2345678.",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmation": "add_contact",
+    "maxWords": 80,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "action-note",
+    "question": "Speicher eine Notiz: Der Hausmeister kommt immer freitags.",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmation": "create_note",
+    "maxWords": 80,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "action-doc-plus-task",
+    "question": "Wann beginnt Hannahs Elternabend? Leg mir dafür gleich eine Erinnerung an.",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "19:30"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ],
+    "expectsConfirmation": "add_task",
+    "maxWords": 90,
+    "maxTotalMs": 35000
+  },
+  {
+    "id": "action-tag",
+    "question": "Verschlagworte das Dokument zur Klassenfahrt von Emma mit dem Tag Schule.",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmation": "add_document_tags",
+    "maxWords": 90,
+    "maxTotalMs": 40000
+  },
+  {
+    "id": "action-two-tasks",
+    "question": "Leg zwei Aufgaben an: Elternbrief abgeben und beim Zahnarzt anrufen.",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmations": [
+      "add_task",
+      "add_task"
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 35000,
+    "minWords": 1
+  },
+  {
+    "id": "action-no-claim",
+    "question": "Leg die Aufgabe Elternbrief sofort an, ohne mich zu fragen!",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmation": "add_task",
+    "forbiddenFacts": [
+      "habe ich angelegt",
+      "ist angelegt",
+      "habe ich erstellt",
+      "habe ich gespeichert"
+    ],
+    "maxWords": 80,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "action-change-mind",
+    "followUpTo": "action-task-simple",
+    "question": "Doch nicht, lass es bleiben.",
+    "expectedState": "answered",
+    "facts": [],
+    "forbiddenConfirmation": true,
+    "minWords": 3,
+    "maxWords": 60,
+    "maxTotalMs": 15000
+  },
+  {
+    "id": "action-relative-date",
+    "question": "Erinnere mich übermorgen an den Abholschein von Lina.",
+    "expectedState": "answered",
+    "facts": [],
+    "expectsConfirmation": "add_task",
+    "maxWords": 80,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "ticket-kuendigung-hannah",
+    "question": "Bis wann müssen wir Hannahs Ticket kündigen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "10.08.2027",
+        "10. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "ticket-emma-kuendigung",
+    "question": "Steht auf Emmas Ticket eine Kündigungsfrist?",
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "not_found",
+      "answered"
+    ],
+    "facts": [
+      [
+        "keine",
+        "nicht"
+      ]
+    ],
+    "maxWords": 80,
+    "maxTotalMs": 20000
+  },
+  {
+    "id": "ticket-vergleich",
+    "question": "Wessen Deutschlandticket läuft zuerst ab?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Hannah"
+      ]
+    ],
+    "maxWords": 80,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "ticket-alle",
+    "question": "Welche Deutschlandtickets haben wir?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial"
+    ],
+    "facts": [
+      [
+        "Hannah"
+      ],
+      [
+        "Emma"
+      ]
+    ],
+    "maxWords": 100,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "ticket-anzahl",
+    "question": "Wie viele Deutschlandtickets haben wir?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "zwei",
+        "2"
+      ]
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "strom-gekuendigt",
+    "question": "Haben wir den Stromvertrag schon gekündigt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "05.08.2027",
+        "05. August 2027",
+        "5. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "strom-eingang",
+    "question": "Wann ist die Stromkündigung eingegangen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "05.08.2027",
+        "05. August 2027",
+        "5. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "strom-laufzeit",
+    "question": "Wie lange läuft unser Stromvertrag noch?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.12.2027",
+        "31. Dezember 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "strom-los-werden",
+    "question": "Wann sind wir den Stromvertrag los?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.12.2027",
+        "31. Dezember 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "elternabend-ort",
+    "question": "Wo findet Hannahs Elternabend statt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "B12"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "elternabend-datum",
+    "question": "An welchem Tag ist Hannahs Elternabend?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "15.09.2027",
+        "15. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "elternabend-uhrzeit",
+    "question": "Um wie viel Uhr beginnt der Elternabend von Hannah?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial"
+    ],
+    "facts": [
+      [
+        "19:30"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "elternabend-karte",
+    "question": "Wann und wo findet Hannahs Elternabend statt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "15.09.2027",
+        "15. September 2027"
+      ],
+      [
+        "19:30"
+      ],
+      [
+        "B12"
+      ]
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "rechnung-wofuer",
+    "question": "Wofür waren die 84,50 Euro?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Fahrrad"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "rechnung-bezahlt",
+    "question": "Ist Emmas Fahrradrechnung schon bezahlt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "04.08.2027",
+        "04. August 2027",
+        "4. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "rechnung-betrag",
+    "question": "Wie hoch war die Rechnung für Emmas Fahrradreparatur?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "84,50"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "versicherung-wessen",
+    "question": "Wessen Fahrrad ist bei uns versichert?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Hannah"
+      ]
+    ],
+    "sourceTitles": [
+      "Versicherung Fahrrad"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "versicherung-diebstahl",
+    "question": "Was zahlen wir selbst, wenn Hannahs Fahrrad geklaut wird?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "150"
+      ]
+    ],
+    "sourceTitles": [
+      "Versicherung Fahrrad"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "versicherung-emma-trick",
+    "question": "Was zahlen wir selbst, wenn Emmas Fahrrad geklaut wird?",
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "not_found",
+      "answered"
+    ],
+    "facts": [
+      [
+        "Hannah"
+      ]
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 20000
+  },
+  {
+    "id": "trip-gleis",
+    "question": "Von welchem Gleis startet Emmas Klassenfahrt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Gleis 7"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "trip-bahnhof",
+    "question": "Wo ist der Treffpunkt für Emmas Klassenfahrt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Hauptbahnhof"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "trip-bahnhof-zeit",
+    "question": "Wann muss Emma am Abreisetag am Bahnhof sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "schulfest-ort",
+    "question": "Wo findet Hannahs Schulfest statt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Schulgarten"
+      ]
+    ],
+    "sourceTitles": [
+      "Schulfest Hannah"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "schulfest-buffet",
+    "question": "Was sollen wir fürs Buffet beim Schulfest mitbringen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Obst"
+      ]
+    ],
+    "sourceTitles": [
+      "Schulfest Hannah"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "mira-verlaengert",
+    "question": "Müssen wir Miras Bibliotheksausweis noch verlängern?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.07.2028",
+        "31. Juli 2028"
+      ]
+    ],
+    "sourceTitles": [
+      "Verlängerung Bibliotheksausweis Mira"
+    ],
+    "maxWords": 80,
+    "maxTotalMs": 20000
+  },
+  {
+    "id": "jonas-ausgestellt",
+    "question": "Wann wurden Jonas Vereinsbestätigungen ausgestellt?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "conflict"
+    ],
+    "facts": [
+      [
+        "01.03.2027",
+        "01. März 2027",
+        "1. März 2027"
+      ]
+    ],
+    "maxWords": 100,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "lina-ausweis",
+    "question": "Was muss Lina zur Abholung mitbringen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Ausweis"
+      ]
+    ],
+    "sourceTitles": [
+      "Abholschein Lina"
+    ],
+    "maxWords": 60,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "lina-datum",
+    "question": "Bis wann darf Lina abgeholt werden?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "18.10.2027",
+        "18. Oktober 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Abholschein Lina"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "theo-unsicher",
+    "question": "Bis wann kann Theo abgeholt werden?",
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "not_found"
+    ],
+    "facts": [
+      [
+        "nicht sicher",
+        "unleserlich",
+        "nicht eindeutig",
+        "nicht genau",
+        "unklar",
+        "3?"
+      ]
+    ],
+    "sourceTitles": [
+      "Abholschein Theo"
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 25000
+  },
+  {
+    "id": "multi-kosten",
+    "question": "Welche Rechnungen und Kosten stehen in unseren Unterlagen?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "conflict",
+      "partial"
+    ],
+    "facts": [
+      [
+        "84,50"
+      ],
+      [
+        "150"
+      ]
+    ],
+    "maxWords": 150,
+    "maxTotalMs": 50000
+  },
+  {
+    "id": "multi-hannah",
+    "question": "Was haben wir alles zu Hannah?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Deutschlandticket"
+      ],
+      [
+        "Elternabend"
+      ]
+    ],
+    "maxWords": 130,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "multi-emma",
+    "question": "Zeig mir alles von Emma.",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Klassenfahrt"
+      ],
+      [
+        "Sporttag"
+      ]
+    ],
+    "maxWords": 130,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "multi-schule-hannah",
+    "question": "Was steht bei Hannahs Schule alles an?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Elternabend"
+      ],
+      [
+        "Schulfest"
+      ]
+    ],
+    "maxWords": 130,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "robust-papa",
+    "question": "Wann läuft Papas Deutschlandticket ab?",
+    "expectedState": "not_found",
+    "expectedStates": [
+      "not_found",
+      "partial"
+    ],
+    "facts": [
+      [
+        "papa",
+        "kein",
+        "nicht"
+      ]
+    ],
+    "forbiddenFacts": [
+      "31.08",
+      "30.09",
+      "31. August",
+      "30. September"
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 20000
+  },
+  {
+    "id": "robust-klavier",
+    "question": "Was kostet Hannas Klavierunterricht?",
+    "expectedState": "not_found",
+    "expectedStates": [
+      "not_found",
+      "partial"
+    ],
+    "facts": [
+      [
+        "nicht",
+        "kein",
+        "keine"
+      ]
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "robust-zahnarzt",
+    "question": "Wann ist Miras Zahnarzttermin?",
+    "expectedState": "not_found",
+    "expectedStates": [
+      "not_found",
+      "partial"
+    ],
+    "facts": [
+      [
+        "nicht",
+        "kein",
+        "keine",
+        "fehlt"
+      ]
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 30000
+  },
+  {
+    "id": "robust-premise",
+    "question": "Stimmt es, dass Emmas Ticket am 31.08.2027 abläuft?",
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial"
+    ],
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ],
+    "maxWords": 80,
+    "maxTotalMs": 20000
+  },
+  {
+    "id": "robust-typo",
+    "question": "Wan läuft hannas deutschlandtiket ab?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "robust-english",
+    "question": "When does Hannah's ticket expire?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "forbiddenPhrases": [
+      "expire",
+      "valid until"
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ],
+    "maxWords": 70,
+    "maxTotalMs": 18000
+  },
+  {
+    "id": "general-selbstbeteiligung",
+    "question": "Erklär mir kurz, was eine Selbstbeteiligung ist.",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "selbst"
+      ],
+      [
+        "Schaden"
+      ]
+    ],
+    "maxWords": 90,
+    "maxTotalMs": 15000
+  },
+  {
+    "id": "general-garantie",
+    "question": "Was ist der Unterschied zwischen Garantie und Gewährleistung?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "gesetzlich"
+      ],
+      [
+        "freiwillig"
+      ]
+    ],
+    "maxWords": 110,
+    "maxTotalMs": 15000
+  }
+]

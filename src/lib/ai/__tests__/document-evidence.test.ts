@@ -22,8 +22,27 @@ describe("document answer evidence", () => {
   ])("rejects %s", (_name, changes) => {
     expect(verifyDocumentAnswer({ ...answer, claims: [{ ...answer.claims[0], ...changes }] }, pages, ["Hannah", "Emma"])).toHaveProperty("error");
   });
-  it("requires evidence for every claim, not just one document title", () => {
-    expect(verifyDocumentAnswer({ ...answer, claims: [answer.claims[0], { ...answer.claims[0], text: "Die Kosten betragen 99 Euro." }] }, pages)).toHaveProperty("error");
+  it("keeps the verified claims when another claim fails, and reports it for correction", () => {
+    const result = verifyDocumentAnswer(
+      { ...answer, claims: [answer.claims[0], { ...answer.claims[0], text: "Die Kosten betragen 99 Euro." }] },
+      pages,
+    );
+    // One unverifiable claim must not discard the verified one: the answer
+    // keeps its proven half and the model gets the failing claim back for
+    // correction instead of losing everything.
+    expect(result).not.toHaveProperty("error");
+    expect(result).toMatchObject({
+      text: answer.claims[0].text,
+      state: "partial",
+      unverified_claims: [expect.stringContaining("steht nicht in ihrem Beleg")],
+    });
+  });
+  it("keeps a verified conflict even when a third claim fails", () => {
+    const second = { ...pages[0], page: 3, text: "Hannahs Deutschlandticket: gültig bis 30.09.2027." };
+    const result = verifyDocumentAnswer({ ...answer, state: "conflict", claims: [answer.claims[0], {
+      text: "Die Verlängerung nennt den 30.09.2027.", document_id: id, page_number: 3, quote: second.text,
+    }, { ...answer.claims[0], text: "Die Kosten betragen 99 Euro." }] }, [...pages, second]);
+    expect(result).toMatchObject({ state: "conflict", unverified_claims: [expect.any(String)] });
   });
   it("keeps distinct sources for conflicting records", () => {
     const second = { ...pages[0], page: 3, text: "Hannahs Deutschlandticket: gültig bis 30.09.2027." };

@@ -127,6 +127,19 @@ export interface ToolResult {
 // Tool definitions (OpenAI function-calling format)
 // ---------------------------------------------------------------------------
 
+/**
+ * Final-answer guidance returned with every verified document answer: keep
+ * the verified sentences word for word, cover the remaining parts of the
+ * question, check for a second same-type document for generic references,
+ * and close in the Ordilo voice (document named mid-sentence, no
+ * "Quelle:" label, at least two full sentences).
+ */
+const ANSWER_FROM_DOCUMENTS_INSTRUCTION =
+  "Bearbeite zuerst alle noch offenen Teile der Nutzerfrage mit den passenden Werkzeugen. " +
+  "Bezieht sich die Frage allgemein auf eine Person oder Sache (z.B. \"das Kind\", \"die Rechnung\"), prüfe vor dem Abschluss, ob es noch eine WEITERE gleich passende Unterlage gibt (z.B. einen zweiten Abholschein für ein anderes Kind) — wenn ja, lies sie und nenne beide Personen mit ihren Angaben. " +
+  "Antworte danach vollständig in Textform im Ordilo-Ton (mindestens zwei vollständige Sätze: der Fakt mit der Unterlage im ersten, ein kurzer menschlicher Schlusston im zweiten; verbundene Sätze, Unterlage beim Namen genannt, kein \"Quelle:\"-Etikett, kein \"in der Unterlage\"), mit Quellen für öffentliche Angaben. " +
+  "Der Text um die geprüften Sätze herum darf keinen neuen Fakt enthalten.";
+
 const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
@@ -144,7 +157,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
     type: "function",
     function: {
       name: "answer_from_documents",
-      description: "Prüft und merkt belegte Dokumentaussagen für die abschließende Antwort. Beendet das Gespräch NICHT: Bearbeite danach alle übrigen Teile der Nutzerfrage, etwa aktuelle Webinformationen oder Aufgaben. Jede Aussage muss in ihrem wörtlichen Zitat aus gelesenen Seiten stehen. Ein Zitat darf bei Formularen Feldbeschriftung und Wert mit '...' verbinden (höchstens 6 Teile), solange jeder Teil wörtlich auf derselben Seite steht und die Reihenfolge der Seite einhält. Ordne jeden Betrag genau dem Feld zu, in dem die Seite ihn zeigt: Feldname und Betrag gehören in die Aussage so zusammen, wie sie auf der Seite zusammenstehen. Prüfe Person, Bedeutung der Frist und Widersprüche. Kein bloßer Titelbezug. Für eine konkrete Zahl/Datum highlight mitgeben. Keine Berechnungen oder nicht belegten Schlussfolgerungen. Wenn eine Angabe nach dem Nachlesen fehlt: claims leer, state not_found und konkrete Lücke in gap. Bei Fehler gezielt nachlesen/korrigieren.",
+      description: "Prüft und merkt belegte Dokumentaussagen für die abschließende Antwort. Beendet das Gespräch NICHT: Bearbeite danach alle übrigen Teile der Nutzerfrage, etwa aktuelle Webinformationen oder Aufgaben. Ein Personenbezug aus dem Verlauf ('sie', 'er', 'Und von Emma?') übernimmt Person und Thema aus der letzten Frage — nimm genau diese Person und melde dafür KEINE Lücke oder Rückfrage. Gibt es für denselben Unterlagentyp Belege für MEHRERE Kinder (z.B. zwei Abholscheine), reiche für JEDES Kind einen eigenen Claim ein — auch für ein unleserliches: dann belegt der Claim die Unlesbarkeit ('Für Theo ist das Abholdatum auf dem Abholschein unleserlich'), nicht der Wert. Jede Aussage muss in ihrem wörtlichen Zitat aus gelesenen Seiten stehen. Ein Zitat darf bei Formularen Feldbeschriftung und Wert mit '...' verbinden (höchstens 6 Teile), solange jeder Teil wörtlich auf derselben Seite steht und die Reihenfolge der Seite einhält. Ordne jeden Betrag genau dem Feld zu, in dem die Seite ihn zeigt: Feldname und Betrag gehören in die Aussage so zusammen, wie sie auf der Seite zusammenstehen. Prüfe Person, Bedeutung der Frist und Widersprüche. Kein bloßer Titelbezug. Für eine konkrete Zahl/Datum highlight mitgeben. Keine Berechnungen oder nicht belegten Schlussfolgerungen. Wenn eine Angabe nach dem Nachlesen fehlt: claims leer, state not_found und konkrete Lücke in gap. Bei Fehler gezielt nachlesen/korrigieren.",
       parameters: { type: "object", properties: {
         claims: { type: "array", minItems: 0, maxItems: 5, items: {
           type: "object", properties: {
@@ -1151,7 +1164,15 @@ export async function executeTool(
       ctx.responseState = answer.state;
       // Keep every lookup source in context: subsequent public queries must still
       // be checked against all private excerpts. Select display citations only at the end.
-      return JSON.stringify({ verified: true, document_answer: answer.text, instruction: "Diese geprüften Sätze wortgleich in die endgültige Antwort übernehmen. Bearbeite zuerst alle noch offenen Teile der Nutzerfrage mit den passenden Werkzeugen. Antworte danach vollständig in Textform im Ordilo-Ton (verbundene Sätze, Unterlage im Satz genannt, kein \"Quelle:\"-Etikett), mit Quellen für öffentliche Angaben. Der Text um die geprüften Sätze herum darf keinen neuen Fakt enthalten." });
+      if (answer.unverified_claims?.length) {
+        return JSON.stringify({
+          verified: true,
+          document_answer: answer.text,
+          unverified_claims: answer.unverified_claims,
+          instruction: "Diese geprüften Sätze wortgleich in die endgültige Antwort übernehmen. Die übrigen Claims waren noch nicht belegt: lies die passende Seite und reiche ALLE Claims (auch die bereits geprüften) in einem neuen Aufruf korrigiert ein — oder benenne die konkrete Lücke dafür in deiner Endantwort. " + ANSWER_FROM_DOCUMENTS_INSTRUCTION,
+        });
+      }
+      return JSON.stringify({ verified: true, document_answer: answer.text, instruction: "Diese geprüften Sätze wortgleich in die endgültige Antwort übernehmen. " + ANSWER_FROM_DOCUMENTS_INSTRUCTION });
     }
     case "add_calendar_event":
       return executeAddCalendarEvent(args, ctx);

@@ -181,7 +181,7 @@ describe("real document tools through the chat orchestration", () => {
     const result = await events(context(),'Wie lange gilt Hannahs Ticket und warum gibt es das überhaupt?');
     const answer = result.filter(event => event.type === 'text').map(event => event.content).join('');
     expect(answer).toContain(claim.text);
-    expect(answer).toContain('weiteren Teil');
+    expect(answer).toContain('Den Rest deiner Frage');
     expect(result).toContainEqual({type:'response_state',state:'partial'});
   });
 
@@ -212,10 +212,12 @@ describe("real document tools through the chat orchestration", () => {
     create.mockResolvedValueOnce(round('add_task',{title:'Fahrradkette ölen',confirmed:false}))
       .mockImplementation(async () => finalAnswer('Ich sehe in euren Unterlagen nach.'));
     const result = await events(context(),'Richte eine Erinnerung ein: Fahrradkette ölen.');
-    // The first round still grounds in the documents; once the write card
-    // is pending, forcing another tool call would only make the model
-    // circle a verification its answer does not need.
-    expect(create.mock.calls[0][0].tool_choice).toBe('required');
+    // A pure action ask does not prefetch the documents — any search on
+    // the way to the card is the model's own lookup, so no round is forced
+    // into tool calls and once the write card is pending, forcing another
+    // tool call would only make the model circle a verification its answer
+    // does not need.
+    expect(create.mock.calls[0][0].tool_choice).toBe('auto');
     expect(create.mock.calls[1][0].tool_choice).toBe('auto');
     expect(result.find(event => event.type === 'confirmation_request')).toMatchObject({
       tool_name:'add_task',
@@ -232,16 +234,16 @@ describe("real document tools through the chat orchestration", () => {
     expect(result.at(-1)).toEqual({type:'done'});
   });
 
-  it('keeps the found evidence when a round degenerates without a card', async () => {
+  it('closes a degenerated action ask with a warm retry note instead of an error code', async () => {
     create.mockResolvedValueOnce((async function* () {
       yield { type:'response.incomplete', response:{ incomplete_details:{ reason:'max_messages' }, usage:{}, output:[] } };
     })());
     const result = await events(context(),'Verschieb Hannahs Elternabend auf nächsten Montag.');
     const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
-    expect(answer).toContain('Unterlagen');
+    expect(answer).toContain('gleich noch einmal');
     expect(result.some(event => event.type === 'error')).toBe(false);
     expect(result).toContainEqual({type:'response_state',state:'partial'});
-    expect(result.find(event => event.type === 'sources').sources.length).toBeGreaterThan(0);
+    expect(result).toContainEqual({type:'sources',sources:[]});
     expect(result.at(-1)).toEqual({type:'done'});
   });
 
@@ -280,14 +282,68 @@ describe("real document tools through the chat orchestration", () => {
       .mockResolvedValueOnce((async function* () {
         yield { type:'response.incomplete', response:{ incomplete_details:{ reason:'max_messages' }, usage:{}, output:[] } };
       })());
-    const result = await events(context(),'Richte eine Erinnerung ein: Fahrradkette ölen.');
+    const result = await events(context(),'Was steht auf dem Abholschein? Und richte eine Erinnerung ein: Fahrradkette ölen.');
     const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
-    expect(answer).toContain('eindeutig zuordnen');
+    expect(answer).toContain('nicht klar genug');
     expect(answer).toContain("Fahrradkette ölen");
     expect(result).toContainEqual({type:'response_state',state:'partial'});
     expect(result.find(event => event.type === 'sources').sources.length).toBeGreaterThan(0);
     expect(result.some(event => event.type === 'error')).toBe(false);
     expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('closes a pure action ask with the card ask only — no document fallback noise', async () => {
+    // The search only resolved the document_id for the tag action; nothing
+    // was asked, so an unfinished-lookup fallback must not appear.
+    create.mockResolvedValueOnce(round('search_documents',{query:'Klassenfahrt Emma'}))
+      .mockResolvedValueOnce(round('add_document_tags',{document_id:id,tags:['Schule'],confirmed:false}))
+      .mockResolvedValueOnce((async function* () {
+        yield { type:'response.incomplete', response:{ incomplete_details:{ reason:'max_messages' }, usage:{}, output:[] } };
+      })());
+    const result = await events(context(),'Verschlagworte das Dokument zur Klassenfahrt von Emma mit dem Tag Schule.');
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).not.toContain('Unterlagen dazu gefunden');
+    expect(answer).toContain('Schule');
+    expect(result.some(event => event.type === 'confirmation_request')).toBe(true);
+    expect(result).toContainEqual({type:'response_state',state:'answered'});
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('closes a hung model round with the honest document fallback instead of dying', async () => {
+    create.mockRejectedValueOnce(new DOMException('The operation timed out', 'TimeoutError'));
+    const result = await events(context());
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).toContain('nicht klar genug');
+    expect(result).toContainEqual({type:'response_state',state:'partial'});
+    expect(result.some(event => event.type === 'error')).toBe(false);
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('treats the SDK client timeout ("Request timed out.") as a hung round, not a hard failure', async () => {
+    create.mockRejectedValueOnce(new Error('Request timed out.'));
+    const result = await events(context());
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).toContain('nicht klar genug');
+    expect(result.some(event => event.type === 'error')).toBe(false);
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('keeps the card ask when a model round hangs with a pending card', async () => {
+    create.mockResolvedValueOnce(round('add_task',{title:'Fahrradkette ölen',confirmed:false}))
+      .mockRejectedValueOnce(new DOMException('The operation timed out', 'TimeoutError'));
+    const result = await events(context(),'Richte eine Erinnerung ein: Fahrradkette ölen.');
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).toContain('Fahrradkette ölen');
+    expect(result.some(event => event.type === 'confirmation_request')).toBe(true);
+    expect(result.some(event => event.type === 'error')).toBe(false);
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('answers a bare hung round with an honest timeout note', async () => {
+    create.mockRejectedValueOnce(new DOMException('The operation timed out', 'TimeoutError'));
+    const result = await events(context(),'Hallo!');
+    expect(result).toContainEqual(expect.objectContaining({type:'error',code:'CHAT_TIMEOUT'}));
+    expect(result.filter(event => event.type === 'done')).toHaveLength(0);
   });
 
 });

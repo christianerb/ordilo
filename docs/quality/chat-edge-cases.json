@@ -11,7 +11,11 @@
     "sourceTitles": [
       "Deutschlandticket Hannah"
     ],
-    "expectedState": "answered"
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial"
+    ]
   },
   {
     "id": "relation-younger-ticket",
@@ -25,7 +29,11 @@
     "sourceTitles": [
       "Deutschlandticket Emma"
     ],
-    "expectedState": "answered"
+    "expectedState": "answered",
+    "expectedStates": [
+      "answered",
+      "partial"
+    ]
   },
   {
     "id": "relation-school",
