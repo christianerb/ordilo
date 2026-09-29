@@ -169,6 +169,13 @@ export const MAX_CLIENT_CHAT_HISTORY_MESSAGES = 30;
 export const MAX_CLIENT_CHAT_HISTORY_CONTENT = 10_000;
 export const MAX_CHAT_CONVERSATIONS = 30;
 
+/**
+ * Prefix of a spoken "still working" update in a Live conversation. The
+ * Live session instructions name it, so GPT Live treats the message as
+ * progress rather than the answer and never reads the tag out loud.
+ */
+export const LIVE_PROGRESS_TAG = "[Zwischenstand]";
+
 /** One safe follow-up the user can deliberately send as a new chat turn. */
 export interface ChatSuggestion {
   label: string;

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LIVE_PROGRESS_TAG } from "@ordilo/chat-contract";
 
 const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
@@ -189,14 +190,17 @@ describe("POST /api/realtime/live/session", () => {
     const openAiRequest = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(openAiRequest.session.model).toBe("gpt-live-1");
     expect(openAiRequest.session.delegation).toEqual({ type: "client" });
-    // The wait for the backend is bridged out loud: GPT Live restates the
-    // request before delegating and relays interim progress.
-    expect(openAiRequest.session.instructions).toContain(
-      "der die Frage in deinen Worten wiederholt",
+    // The wait is acknowledged in a few varied words, never by restating
+    // the question, and tagged progress is spoken without its tag.
+    const instructions: string = openAiRequest.session.instructions;
+    expect(instructions).toContain("nur ein bis drei Wörter");
+    expect(instructions).toContain("Wiederhole die Frage nicht");
+    expect(instructions).toContain("Nimm nie zweimal hintereinander dieselben Worte.");
+    expect(instructions).toContain(
+      `Beginnt eine Nachricht vom Backend mit „${LIVE_PROGRESS_TAG}“`,
     );
-    expect(openAiRequest.session.instructions).toContain(
-      "Bleib nie stumm, während das Backend arbeitet.",
-    );
+    expect(instructions).not.toContain("in deinen Worten wiederholt");
+    expect(instructions).not.toContain("Bleib nie stumm");
     expect(openAiRequest.transport).toEqual({
       type: "webrtc",
       sdp: "v=0\r\n",

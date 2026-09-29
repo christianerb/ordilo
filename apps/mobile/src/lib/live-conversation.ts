@@ -311,15 +311,15 @@ export function useNativeLiveConversation({
       clearProgressTimers();
       sendCommentary(turn.delegationId, content);
     };
-    // Silence while the backend works feels like a dropped call. Short
-    // spoken updates bridge it; they carry progress, never a result.
+    // A long silence feels like a dropped call. Short spoken updates bridge
+    // an unusually long wait; they carry progress, never a result.
     const spoken = new Set<string>();
     clearProgressTimers();
     progressTimersRef.current = LIVE_SPOKEN_PROGRESS_DELAYS_MS.map((delay) =>
       setTimeout(() => {
         if (delivered || generation !== generationRef.current) return;
-        const update = spokenProgress(collector.foundTitle);
-        if (spoken.has(update)) return;
+        const update = spokenProgress(collector.stage, spoken);
+        if (!update) return;
         spoken.add(update);
         sendCommentary(turn.delegationId, update);
       }, delay),

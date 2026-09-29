@@ -375,9 +375,16 @@ vocabulary, with three deliberate differences that come from the phone:
   whether Ordilo is listening, checking, or answering, plus a 44pt stop
   action. While checking, the upper line keeps the family's question and a
   Harbor Blue helper line names the current step ("Ich suche: …",
-  "Gefunden in: …"). Ordilo says out loud that it is looking before it
-  goes quiet, and a long search gets a short spoken progress note that
-  never contains a result. Live audio plays through the loudspeaker unless
+  "Gefunden in: …"). Out loud, Ordilo acknowledges a question the way a
+  person would: one to three words ("Moment.", "Mal sehen …", "Mach ich."),
+  varied from turn to turn. It never repeats the question back, because the
+  family just said it and can see it on screen, and it never announces where
+  it is looking. Then it waits quietly. Only a wait that is clearly longer
+  than usual gets a spoken note, in first person and only when it says
+  something new ("Ich habe „Handyvertrag“ gefunden und lese kurz nach."). A
+  note never contains a result and is never said twice in one turn. The
+  answer starts with the answer, with no "Ich habe nachgeschaut" preamble.
+  Live audio plays through the loudspeaker unless
   headphones or Bluetooth are connected. Spoken turns still appear in the
   normal conversation with sources and confirmation cards. Live never
   performs a write without the visible confirmation path.

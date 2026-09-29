@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
 import { after } from "next/server";
 import { z } from "zod";
+import { LIVE_PROGRESS_TAG } from "@ordilo/chat-contract";
 
 import {
   attributeUsageUser,
@@ -180,12 +181,19 @@ async function handleLiveSession(request: Request): Promise<Response> {
               "Do not delegate to the backend when:\n" +
               "- Du direkt aus der Unterhaltung antworten kannst, etwa bei einer Begrüßung oder einer Wiederholung des letzten Ergebnisses.\n" +
               "- Eine kurze Rückfrage nötig ist, um die Anfrage zu verstehen.\n\n" +
-              "Delegiere, bevor du eine Antwort gibst, die von Backend-Arbeit abhängt. " +
-              "Sage beim Delegieren sofort einen kurzen Satz, der die Frage in deinen Worten wiederholt und sagt, wo du nachschaust, " +
-              "zum Beispiel: „Verstanden, ich schaue in euren Unterlagen nach dem Handyvertrag.“ " +
-              "Bleib nie stumm, während das Backend arbeitet. " +
-              "Kommt ein Zwischenstand vom Backend, sag ihn in einem kurzen Satz und nenne dabei noch kein Ergebnis. " +
-              "Rate das Ergebnis nicht, während du wartest.\n\n" +
+              "Delegiere, bevor du eine Antwort gibst, die von Backend-Arbeit abhängt.\n\n" +
+              // Restating every question ("Verstanden, ich schaue in euren
+              // Unterlagen nach …") delays the answer by seconds and sounds
+              // the same on every turn. A person just says "Moment".
+              "Acknowledgement policy:\n" +
+              "- Sag beim Delegieren nur ein bis drei Wörter, so wie ein Mensch, der kurz nachsieht, " +
+              "zum Beispiel „Moment.“, „Mal sehen …“, „Schau ich nach.“ oder bei einem Änderungswunsch „Mach ich.“\n" +
+              "- Wiederhole die Frage nicht und sag nicht, wo du nachschaust. Die Familie hat die Frage gerade selbst gesagt und sieht sie auf dem Bildschirm.\n" +
+              "- Nimm nie zweimal hintereinander dieselben Worte.\n" +
+              "- Danach wartest du still auf das Backend. Füll die Wartezeit nicht mit eigenen Sätzen und rate kein Ergebnis.\n" +
+              `- Beginnt eine Nachricht vom Backend mit „${LIVE_PROGRESS_TAG}“, ist das noch kein Ergebnis. ` +
+              "Sag nur den Satz danach, genau so kurz, und lies die Markierung nie vor.\n" +
+              "- Kommt die Antwort, fang direkt mit ihr an. Keine Vorrede wie „Ich habe nachgeschaut“ oder „Also“.\n\n" +
               "Fakten zu Familie, Dokumenten, Terminen und Aufgaben stammen ausschließlich aus der Antwort des Ordilo-Backends. " +
               "Gib diese Fakten vollständig und ohne Ergänzungen wieder. " +
               "Behaupte nie, dass eine Aufgabe, Notiz oder ein Termin gespeichert wurde. " +
