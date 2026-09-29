@@ -393,6 +393,15 @@ describe("hand-written notes", () => {
     const db = database({ ...note, ocr_text: "8341" });
     expect(await readDocumentEvidence(db.client, "family-a", id, "Stromzähler")).toMatchObject([{ page: null, text: "Code Stromzähler\n8341" }]);
   });
+  it.each([
+    ["a page", (body: string) => database({ ...note, title: "Stromzähler" }, [{ page_number: 1, ocr_markdown: body }])],
+    ["the combined text", (body: string) => database({ ...note, title: "Stromzähler", ocr_text: body })],
+  ])("keeps the window of a long note on the asked value in %s, not on its title", async (_name, db) => {
+    const body = "Füllzeile ".repeat(900) + "Zählercode 8341";
+    const [evidence] = await readDocumentEvidence(db(body).client, "family-a", id, "stromzähler zählercode");
+    expect(evidence.text.startsWith("Stromzähler\n")).toBe(true);
+    expect(evidence.text).toContain("Zählercode 8341");
+  });
   it("keeps a scanned page exactly as printed, since its title is generated", async () => {
     const db = database({ ...note, source: "upload" }, [{ page_number: 1, ocr_markdown: "8341" }]);
     expect(await readDocumentEvidence(db.client, "family-a", id, "Stromzähler")).toMatchObject([{ text: "8341" }]);

@@ -170,21 +170,23 @@ export async function readDocumentEvidence(
     text: redactPII(selectEvidenceWindow(correctionResult.data, query)),
   }] : [];
   const words = normalizeEvidence(query).match(/[\p{L}\p{N}]{3,}/gu) ?? [];
-  const readable = (pages ?? []).map((row) => {
-    const text = safeText(row.ocr_markdown ?? "");
-    return { ...row, ocr_markdown: row.page_number === 1 && text.trim() ? withNoteTitle(text) : text };
-  }).filter((row) => row.ocr_markdown.trim());
+  const readable = (pages ?? []).map((row) => ({ ...row, ocr_markdown: safeText(row.ocr_markdown ?? "") })).filter((row) => row.ocr_markdown.trim());
   const selected = readable.map((row) => ({ row, score: words.reduce((score, word) =>
     score + Number(normalizeEvidence(row.ocr_markdown!).includes(word)), 0) }))
     .sort((a, b) => b.score - a.score || a.row.page_number - b.row.page_number).slice(0, 4);
-  if (selected.length) return [...corrections, ...selected.map(({ row }) => ({
-    documentId: doc.id, title: doc.title, page: row.page_number, hasOriginal: Boolean(doc.file_url),
-    text: redactPII(selectEvidenceWindow(row.ocr_markdown!, query)),
-  }))];
+  // The title is added after the window is chosen: a query word in the
+  // title would otherwise pin a long note's window to its first lines.
+  if (selected.length) return [...corrections, ...selected.map(({ row }) => {
+    const window = selectEvidenceWindow(row.ocr_markdown!, query);
+    return {
+      documentId: doc.id, title: doc.title, page: row.page_number, hasOriginal: Boolean(doc.file_url),
+      text: redactPII(row.page_number === 1 ? withNoteTitle(window) : window),
+    };
+  })];
   // A legacy combined OCR field has no trustworthy page attribution.
   if (page !== undefined || !safeText(doc.ocr_text ?? "").trim()) return corrections;
   return [...corrections, { documentId: doc.id, title: doc.title, page: null, hasOriginal: Boolean(doc.file_url),
-    text: redactPII(selectEvidenceWindow(withNoteTitle(safeText(doc.ocr_text!)), query)) }];
+    text: redactPII(withNoteTitle(selectEvidenceWindow(safeText(doc.ocr_text!), query))) }];
 }
 
 const months = ["januar", "februar", "märz", "april", "mai", "juni", "juli", "august", "september", "oktober", "november", "dezember"];
