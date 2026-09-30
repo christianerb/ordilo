@@ -409,6 +409,7 @@ export function ListRow({
   meta,
   onPress,
   subtitle,
+  subtitleLines = 1,
   title,
   titleLines = 1,
   trailing,
@@ -424,6 +425,7 @@ export function ListRow({
   meta?: ReactNode;
   onPress?: () => void;
   subtitle?: string | null;
+  subtitleLines?: number;
   title: string;
   titleLines?: number;
   trailing?: ReactNode;
@@ -442,7 +444,7 @@ export function ListRow({
           {title}
         </Text>
         {subtitle ? (
-          <Text numberOfLines={1} style={styles.rowSubtitle}>
+          <Text numberOfLines={subtitleLines} style={styles.rowSubtitle}>
             {subtitle}
           </Text>
         ) : null}

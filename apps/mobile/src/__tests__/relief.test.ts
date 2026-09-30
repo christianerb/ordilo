@@ -25,6 +25,11 @@ it("keeps display labels short while preserving full source identity in the prom
   expect(starters[0].prompt).toContain(title.trim());
   expect(starters[1].prompt).toContain("Hilf mir bei dieser Aufgabe:");
 });
+it("names the actual document and task in starter labels", () => {
+  const starters = buildPersonalChatStarters({ members: [], recentDocumentTitle: "Mietvertrag", upcomingTaskTitle: "Für Fahrten einen Ausweis mitführen" });
+  expect(starters[0].label).toBe("Was ist wichtig an „Mietvertrag“?");
+  expect(starters[1].label).toBe("Was brauche ich für „Für Fahrten einen Ausweis …“?");
+});
 it("refuses notification destinations from a different family", () => {
   expect(notificationDestination({ familyId: "other", documentId: "00000000-0000-4000-a000-000000000001" }, "ours")).toBeNull();
   expect(notificationDestination({ familyId: "ours", url: "https://example.com" }, "ours")).toBe("/(tabs)/plan");

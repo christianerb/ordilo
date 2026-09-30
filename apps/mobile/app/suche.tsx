@@ -10,15 +10,12 @@ import {
 } from "expo-audio";
 import { randomUUID } from "expo-crypto";
 import {
-  CalendarCheck,
   ChevronDown,
-  FileText,
   History,
   MessageCircle,
   Plus,
   Sparkles,
   Trash2,
-  UserRound,
 } from "lucide-react-native";
 import {
   useCallback,
@@ -94,13 +91,15 @@ import {
 } from "@/src/lib/chat";
 import {
   deleteConversation,
+  dedupeConversationsByTitle,
   formatConversationWhen,
   getConversationTitle,
   listConversations,
+  loadConversationPreviews,
   loadConversationMessages,
   type ConversationSummary,
 } from "@/src/lib/conversations";
-import { buildPersonalChatStarters, type ChatStarterKind } from "@ordilo/chat-contract";
+import { buildPersonalChatStarters } from "@ordilo/chat-contract";
 import { AiConsentProvider, useAiConsent } from "@/src/lib/ai-consent-context";
 import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
@@ -119,14 +118,6 @@ import {
 } from "@/src/lib/live-conversation";
 
 const CHAT_ANSWER_ENTERING = contentEntering();
-
-/** Each starter hints at what it's about before it's even read. */
-const SUGGESTION_ICON: Record<ChatStarterKind, typeof Sparkles> = {
-  document: FileText,
-  task: CalendarCheck,
-  member: UserRound,
-  general: Sparkles,
-};
 
 /**
  * „Ordilo fragen" — the chat with Ordilo. Streams the answer token by
@@ -162,21 +153,62 @@ function titleOf(
   return typeof title === "string" ? title : null;
 }
 
-/** Same height as the three starter rows, so nothing jumps when they land. */
+/** Same height as the starter pills, so the composer does not jump when they land. */
 function SuggestionsPlaceholder() {
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={styles.suggestions}
+      style={styles.starterRow}
     >
-      {[0, 1, 2].map((index) => (
-        <View key={index} style={[styles.suggestion, styles.suggestionPlaceholder]}>
-          <Skeleton height={36} radius={radii.base} width={36} />
-          <Skeleton height={14} width={index === 1 ? "58%" : "72%"} />
-        </View>
+      {[148, 176].map((width) => (
+        <Skeleton height={40} key={width} radius={radii.pill} width={width} />
       ))}
     </View>
+  );
+}
+
+/**
+ * Starters sit right above the composer: in thumb reach, next to where a
+ * question is typed, and clearly "ask this" rather than another menu.
+ */
+function StarterPills({
+  busy,
+  onAsk,
+  suggestions,
+}: {
+  busy: boolean;
+  onAsk: (prompt: string) => void;
+  suggestions: { label: string; prompt: string }[] | null;
+}) {
+  if (!suggestions) return <SuggestionsPlaceholder />;
+  if (suggestions.length === 0) return null;
+  return (
+    <ScrollView
+      contentContainerStyle={styles.starterRow}
+      horizontal
+      keyboardShouldPersistTaps="handled"
+      showsHorizontalScrollIndicator={false}
+      style={styles.starterScroller}
+    >
+      {suggestions.map(({ label, prompt }) => (
+        <Pressable
+          accessibilityHint="Stellt diese Frage an Ordilo"
+          accessibilityLabel={label}
+          accessibilityRole="button"
+          disabled={busy}
+          key={prompt}
+          onPress={() => {
+            tap();
+            onAsk(prompt);
+          }}
+          style={({ pressed }) => [styles.starterPill, pressed && styles.pressed]}
+        >
+          <Sparkles color={colors.harborBlue} size={15} strokeWidth={2} />
+          <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={styles.starterText}>{label}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -237,6 +269,7 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
   const [starterContext, setStarterContext] = useState<StarterContext | null>(null);
   const recentDocumentTitle = starterContext?.recentDocumentTitle ?? null;
   const [historyLoading, setHistoryLoading] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, string>>({});
   const [deleteCandidate, setDeleteCandidate] = useState<ConversationSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
   const historySheetRef = useRef<OrdiloSheetHandle>(null);
@@ -320,6 +353,25 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
       cancelled = true;
     };
   }, [family, refreshConversations]);
+
+  const recentConversations = useMemo(
+    () => dedupeConversationsByTitle(conversations).slice(0, 3),
+    [conversations],
+  );
+  const recentIds = recentConversations.map((conversation) => conversation.id).join(",");
+  useEffect(() => {
+    if (!recentIds) return;
+    let cancelled = false;
+    // A preview is a convenience; without it the row keeps its date.
+    void loadConversationPreviews(recentIds.split(","))
+      .then((next) => {
+        if (!cancelled) setPreviews((current) => ({ ...current, ...next }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [recentIds]);
 
   const hasFamily = Boolean(family);
   const suggestions = useMemo(() => {
@@ -1171,6 +1223,9 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
                       ) : null}
                     </View>
                   ) : null}
+                  {messages.length === 0 && !input.trim() ? (
+                    <StarterPills busy={busy} onAsk={(prompt) => void send(prompt)} suggestions={suggestions} />
+                  ) : null}
                   <ChatComposer
                     busy={busy}
                     inputRef={inputRef}
@@ -1233,48 +1288,11 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
                       antwortet mit Quelle.
                     </Text>
                   </View>
-                  {/* Asking leads: a labeled section plus the harbor tint of
-                      an action, so they cannot be mistaken for the chevroned
-                      history rows sitting quietly below them. */}
-                  <View style={styles.suggestionsBlock}>
-                    <SectionHeader title="Beispielfragen" />
-                    {suggestions ? (
-                      <View style={styles.suggestions}>
-                        {suggestions.map(({ label, prompt, kind }) => {
-                          const Icon = SUGGESTION_ICON[kind];
-                          return (
-                            <Pressable
-                              accessibilityHint="Stellt diese Frage an Ordilo"
-                              accessibilityLabel={label}
-                              accessibilityRole="button"
-                              disabled={busy}
-                              key={prompt}
-                              onPress={() => {
-                                tap();
-                                void send(prompt);
-                              }}
-                              style={({ pressed }) => [
-                                styles.suggestion,
-                                pressed && styles.pressed,
-                              ]}
-                            >
-                              <IconTile size={36} tint={colors.harborTint}>
-                                <Icon color={colors.harborBlue} size={18} strokeWidth={1.9} />
-                              </IconTile>
-                              <Text style={styles.suggestionText}>{label}</Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    ) : (
-                      <SuggestionsPlaceholder />
-                    )}
-                  </View>
-                  {conversations.length > 0 ? (
+                  {recentConversations.length > 0 ? (
                     <View style={styles.recentBlock}>
                       <SectionHeader
                         action={
-                          conversations.length > 3
+                          conversations.length > recentConversations.length
                             ? {
                                 label: "Alle",
                                 onPress: () => historySheetRef.current?.present(),
@@ -1285,24 +1303,23 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
                         title={fontScale > 1.3 ? "Verlauf" : "Zuletzt gefragt"}
                       />
                       <ListGroup>
-                        {conversations.slice(0, 3).map((conversation, index) => (
+                        {recentConversations.map((conversation, index) => (
                           <ListRow
                             accessibilityHint="Öffnet das frühere Gespräch"
-                            chevron
+                            chevron={historyLoading !== conversation.id}
                             first={index === 0}
                             key={conversation.id}
-                            leading={
-                              <IconTile tint={colors.washSageSoft}>
-                                {historyLoading === conversation.id ? (
-                                  <ActivityIndicator color={colors.harborBlue} size="small" />
-                                ) : (
-                                  <MessageCircle color={colors.harborBlue} size={19} strokeWidth={1.9} />
-                                )}
-                              </IconTile>
-                            }
+                            meta={previews[conversation.id]
+                              ? <Text style={styles.recentWhen}>{formatConversationWhen(conversation.updatedAt)}</Text>
+                              : undefined}
                             onPress={() => void openConversation(conversation)}
-                            subtitle={formatConversationWhen(conversation.updatedAt)}
+                            subtitle={previews[conversation.id] ?? formatConversationWhen(conversation.updatedAt)}
+                            subtitleLines={2}
                             title={getConversationTitle(conversation)}
+                            titleLines={2}
+                            trailing={historyLoading === conversation.id
+                              ? <ActivityIndicator color={colors.harborBlue} size="small" />
+                              : undefined}
                           />
                         ))}
                       </ListGroup>
@@ -1563,32 +1580,26 @@ const styles = StyleSheet.create({
     textAlign: "center",
     ...typography.timestamp,
   },
-  suggestionsBlock: {
+  starterScroller: { flexGrow: 0 },
+  starterRow: {
+    flexDirection: "row",
     gap: spacing.sm,
-    marginTop: spacing.xl,
-    width: "100%",
+    minHeight: 44,
   },
-  suggestions: {
-    gap: spacing.sm,
-    width: "100%",
-  },
-  suggestion: {
+  starterPill: {
     alignItems: "center",
     backgroundColor: colors.harborTint,
     borderColor: colors.harborLine,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     borderWidth: 1,
     flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 54,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 9,
+    gap: 6,
+    maxWidth: 300,
+    minHeight: 44,
+    paddingHorizontal: 14,
   },
-  suggestionPlaceholder: {
-    backgroundColor: colors.sand,
-    borderColor: colors.sandLight,
-  },
-  suggestionText: { color: colors.harborBlueDarker, flex: 1, ...typography.title },
+  starterText: { color: colors.harborBlueDarker, flexShrink: 1, ...typography.title },
+  recentWhen: { color: colors.mistDark, ...typography.label },
   recentBlock: {
     gap: spacing.sm,
     marginTop: spacing.xl,

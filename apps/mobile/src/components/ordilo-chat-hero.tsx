@@ -16,10 +16,14 @@ export function OrdiloChatHero({ compact = false }: { compact?: boolean }) {
       style={[styles.frame, compact && { height: 100, aspectRatio: undefined }]}
     >
       <Svg height="100%" preserveAspectRatio="xMidYMid meet" viewBox="0 0 360 270" width="100%">
-        <Path
-          d="M0 0 H360 V112 C312 91 276 102 236 86 C192 68 151 43 103 55 C60 65 31 88 0 99 Z"
-          fill={colors.sand}
-        />
+        {/* Scaled down, the sand sky reads as a cropped box, so the compact
+            hero lets Ordilo stand on the page itself. */}
+        {compact ? null : (
+          <Path
+            d="M0 0 H360 V112 C312 91 276 102 236 86 C192 68 151 43 103 55 C60 65 31 88 0 99 Z"
+            fill={colors.sand}
+          />
+        )}
         <Circle cx={303} cy={52} fill={colors.warmApricotLight} opacity={0.72} r={26} />
         <Circle cx={320} cy={32} fill={colors.warmApricot} opacity={0.16} r={8} />
 
