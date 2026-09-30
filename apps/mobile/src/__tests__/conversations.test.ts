@@ -149,10 +149,22 @@ describe("recent conversations", () => {
     expect(dedupeConversationsByTitle(list).map((entry) => entry.id)).toEqual(["new", "other", "a", "b"]);
   });
 
+  it("never merges two questions whose titles were cut off alike", () => {
+    const start = "Wie viel Geld bekommen wir zurück, wenn wir die Rech";
+    const list = [
+      conversation("first", `${start}…`),
+      conversation("second", `${start}…`),
+    ];
+    expect(dedupeConversationsByTitle(list).map((entry) => entry.id)).toEqual(["first", "second"]);
+  });
+
   it("turns an answer into one plain line", () => {
     expect(answerPreview("**Bis zum 30. Juni 2027.** Das steht in deinem Vertrag.")).toBe("Bis zum 30. Juni 2027.");
     expect(answerPreview("## Kosten\n- 128 EUR pro Kind")).toBe("Kosten 128 EUR pro Kind");
     expect(answerPreview("Siehe [Vertrag](ordilo://doc/1) für Details")).toBe("Siehe Vertrag für Details");
+    expect(answerPreview("Das gilt z. B. für Brillen. Mehr steht im Vertrag.")).toBe("Das gilt z. B. für Brillen.");
+    expect(answerPreview("Es kostet ca. 40 Euro. Das ist wenig.")).toBe("Es kostet ca. 40 Euro.");
+    expect(answerPreview("Ruf Dr. Yilmaz an, d. h. morgen früh.")).toBe("Ruf Dr. Yilmaz an, d. h. morgen früh.");
     expect(answerPreview("   ")).toBeNull();
     expect(answerPreview("x".repeat(200))?.length).toBe(90);
   });

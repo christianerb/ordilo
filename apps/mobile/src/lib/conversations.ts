@@ -225,7 +225,10 @@ function normalizeTitle(title: string | null): string {
 export function dedupeConversationsByTitle(conversations: ConversationSummary[]): ConversationSummary[] {
   const seen = new Set<string>();
   return conversations.filter((conversation) => {
-    const key = normalizeTitle(conversation.title) || conversation.id;
+    // A cut-off title ("…") only holds the start of the question, and two
+    // different questions can start alike, so it is never merged.
+    const truncated = /(…|\.\.\.)\s*$/.test(conversation.title ?? "");
+    const key = (!truncated && normalizeTitle(conversation.title)) || conversation.id;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -234,12 +237,27 @@ export function dedupeConversationsByTitle(conversations: ConversationSummary[])
 
 const answerPreviewMaxLength = 90;
 
-/** German dates ("30. Juni") and ordinals end in a dot that does not end the sentence. */
+/** Short words whose dot abbreviates rather than ends a sentence. */
+const germanAbbreviations = new Set([
+  "bzw", "ca", "dr", "etc", "evtl", "fr", "ggf", "gem", "hr", "inkl", "lt",
+  "max", "min", "mio", "mrd", "nr", "prof", "sog", "str", "tel", "usw", "vgl",
+  "bspw", "zzgl", "abs", "art", "kap", "jh",
+]);
+
+/**
+ * German dates ("30. Juni"), ordinals and abbreviations ("z. B.", "ca.")
+ * end in a dot that does not end the sentence.
+ */
 function firstSentence(text: string): string {
   const boundary = /[.!?](?=\s|$)/g;
   for (let match = boundary.exec(text); match; match = boundary.exec(text)) {
     const before = text.slice(0, match.index + 1);
-    if (match[0] === "." && /(^|\D)\d{1,2}\.$/.test(before)) continue;
+    if (match[0] === "." && match.index + 1 < text.length) {
+      if (/(^|\D)\d{1,2}\.$/.test(before)) continue;
+      const word = /(?:^|[\s(„"])([A-Za-zÄÖÜäöüß]+)\.$/.exec(before)?.[1];
+      // Single letters cover the spaced forms: "z. B.", "d. h.", "u. a.".
+      if (word && (word.length === 1 || germanAbbreviations.has(word.toLowerCase()))) continue;
+    }
     return before;
   }
   return text;
