@@ -3,7 +3,9 @@ import {
   buildCredentialsContent,
   buildDocumentUpdatePayload,
   createNote,
+  formatNoteValue,
   getNoteContent,
+  getNoteValueAction,
   isShortNoteValue,
   shouldShowNoteSummary,
   maxNoteContentLength,
@@ -204,5 +206,28 @@ describe("note reader helpers", () => {
     expect(shouldShowNoteSummary(long, `${long}`)).toBe(false);
     expect(shouldShowNoteSummary(long, "an die Stadtwerke gemeldet.")).toBe(false);
     expect(shouldShowNoteSummary(long, "Jährliche Meldung an die Stadtwerke.")).toBe(true);
+  });
+});
+
+describe("note value actions", () => {
+  it("offers to call a phone number", () => {
+    expect(getNoteValueAction("0911 / 123 45-6")).toEqual({ kind: "call", label: "Anrufen", url: "tel:0911123456" });
+    expect(getNoteValueAction("+49 170 1234567")?.url).toBe("tel:+491701234567");
+  });
+
+  it("offers mail and links", () => {
+    expect(getNoteValueAction("praxis@beispiel.de")?.kind).toBe("mail");
+    expect(getNoteValueAction("stadtwerke.de/zaehler")?.url).toBe("https://stadtwerke.de/zaehler");
+  });
+
+  it("stays quiet for codes and prose", () => {
+    expect(getNoteValueAction("2281")).toBeNull();
+    expect(getNoteValueAction("0815")).toBeNull();
+    expect(getNoteValueAction("Schlüssel liegt beim Nachbarn")).toBeNull();
+  });
+
+  it("groups an IBAN in fours for reading", () => {
+    expect(formatNoteValue("de89370400440532013000")).toBe("DE89 3704 0044 0532 0130 00");
+    expect(formatNoteValue("2281")).toBe("2281");
   });
 });

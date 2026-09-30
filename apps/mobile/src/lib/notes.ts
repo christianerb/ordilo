@@ -65,6 +65,38 @@ export function isShortNoteValue(content: string): boolean {
   return text.length > 0 && text.length <= shortValueMaxLength && !/\n/.test(text);
 }
 
+export type NoteValueAction = { kind: "call" | "mail" | "open"; label: string; url: string };
+
+/**
+ * When a stored value is something the phone can act on, offer that act
+ * directly, so a saved Hausarzt number is one tap from ringing.
+ */
+export function getNoteValueAction(content: string): NoteValueAction | null {
+  const text = content.trim();
+  if (!isShortNoteValue(text)) return null;
+  if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(text)) {
+    return { kind: "mail", label: "E-Mail schreiben", url: `mailto:${text}` };
+  }
+  const digits = text.replace(/\D/g, "");
+  if (/^(\+|0)[\d\s/().-]+$/.test(text) && digits.length >= 6 && digits.length <= 15) {
+    return { kind: "call", label: "Anrufen", url: `tel:${text.startsWith("+") ? "+" : ""}${digits}` };
+  }
+  if (/^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/\S*)?$/i.test(text)) {
+    return { kind: "open", label: "Öffnen", url: /^https?:\/\//i.test(text) ? text : `https://${text}` };
+  }
+  return null;
+}
+
+/** IBANs are read aloud and typed off in groups of four; show them that way. */
+export function formatNoteValue(content: string): string {
+  const text = content.trim();
+  const compact = text.replace(/\s+/g, "").toUpperCase();
+  if (/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
+    return compact.replace(/(.{4})(?=.)/g, "$1 ");
+  }
+  return text;
+}
+
 function normalizeForComparison(text: string): string {
   return text.toLowerCase().replace(/[\s.,;:!?"„“'-]+/g, " ").trim();
 }

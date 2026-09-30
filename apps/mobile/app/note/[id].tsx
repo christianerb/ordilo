@@ -9,8 +9,11 @@ import {
   Copy,
   Eye,
   EyeOff,
+  ExternalLink,
   Image as ImageIcon,
+  Mail,
   MoreHorizontal,
+  Phone,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -38,7 +41,9 @@ import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import { DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen, SpringPressable } from "@/src/components/ui";
 import {
   buildDocumentUpdatePayload,
+  formatNoteValue,
   getNoteContent,
+  getNoteValueAction,
   isShortNoteValue,
   shouldShowNoteSummary,
   updateDocumentSecret,
@@ -298,6 +303,17 @@ export default function NoteScreen() {
 
 const copiedResetMs = 1600;
 
+const valueActionIcons = { call: Phone, mail: Mail, open: ExternalLink } as const;
+
+async function openValueAction(url: string) {
+  try {
+    await Linking.openURL(url);
+  } catch {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    Alert.alert("Das hat nicht geklappt", "Dein Handy kann das gerade nicht öffnen. Kopiere den Wert und versuch es selbst.");
+  }
+}
+
 /**
  * The note's text is the reason the screen was opened, so it leads. A short
  * value is shown large and copies with one tap anywhere on it; longer text
@@ -336,19 +352,31 @@ function NoteContent({ content, hasText }: { content: string; hasText: boolean }
   );
 
   if (isValue) {
+    const action = getNoteValueAction(content);
+    const ActionIcon = action ? valueActionIcons[action.kind] : null;
     return (
-      <SpringPressable
-        accessibilityHint="Kopiert den Wert"
-        accessibilityLabel={`${content}. ${copied ? "Kopiert" : "Kopieren"}`}
-        haptic={false}
-        onPress={() => void copy()}
-        style={styles.valuePanel}
-      >
-        <Text adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={2} style={styles.value}>
-          {content}
-        </Text>
-        {copyLabel}
-      </SpringPressable>
+      <View style={styles.valueGroup}>
+        <SpringPressable
+          accessibilityHint="Kopiert den Wert"
+          accessibilityLabel={`${content}. ${copied ? "Kopiert" : "Kopieren"}`}
+          haptic={false}
+          onPress={() => void copy()}
+          style={styles.valuePanel}
+        >
+          <Text adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={2} style={styles.value}>
+            {formatNoteValue(content)}
+          </Text>
+          {copyLabel}
+        </SpringPressable>
+        {action && ActionIcon ? (
+          <OrdiloButton
+            icon={<ActionIcon color={colors.graphite} size={17} />}
+            onPress={() => void openValueAction(action.url)}
+            title={action.label}
+            variant="outline"
+          />
+        ) : null}
+      </View>
     );
   }
 
@@ -655,7 +683,8 @@ const styles = StyleSheet.create({
   edit: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -6, width: 44 },
   content: { gap: spacing.lg, padding: spacing.md, paddingBottom: spacing["2xl"] },
   title: { color: colors.graphite, ...typography.largeTitle },
-  valuePanel: { backgroundColor: colors.sand, borderRadius: radii.md, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
+  valueGroup: { alignItems: "flex-start", gap: spacing.sm },
+  valuePanel: { alignSelf: "stretch", backgroundColor: colors.sand, borderRadius: radii.md, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
   value: { color: colors.harborBlue, fontFamily: typography.largeTitle.fontFamily, fontSize: 40, fontVariant: ["tabular-nums"], letterSpacing: 0.5, lineHeight: 46 },
   textPanel: { backgroundColor: colors.sand, borderRadius: radii.sm, gap: spacing.md, padding: spacing.md },
   contentText: { color: colors.graphite, ...typography.body },
