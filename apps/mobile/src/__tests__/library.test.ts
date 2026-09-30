@@ -1,5 +1,9 @@
 import {
+  buildLibraryFilterExpression,
   filterLibraryDocuments,
+  formatLibraryCount,
+  getLibraryEntryGroup,
+  isNearListEnd,
   formatDocumentDate,
   getLibraryPageRange,
   getLibrarySortOrder,
@@ -179,5 +183,46 @@ describe("document library helpers", () => {
     expect(getDocumentStatusTone("analyzed")).toBe("new");
     expect(getDocumentStatusTone("ocr_processing")).toBe("processing");
     expect(getDocumentStatusTone("failed")).toBe("failed");
+  });
+});
+
+describe("unified library", () => {
+  it("files a login as Zugang whether it was typed or scanned", () => {
+    expect(getLibraryEntryGroup({ document_type: "credentials", source: "manual" })).toBe("credentials");
+    expect(getLibraryEntryGroup({ document_type: "credentials", source: "upload" })).toBe("credentials");
+    expect(getLibraryEntryGroup({ document_type: "note", source: "manual" })).toBe("notes");
+    expect(getLibraryEntryGroup({ document_type: null, source: "upload" })).toBe("documents");
+  });
+
+  it("folds kind and search into one or() expression", () => {
+    expect(buildLibraryFilterExpression("all", "")).toBeNull();
+    expect(buildLibraryFilterExpression("credentials", "")).toBeNull();
+    expect(buildLibraryFilterExpression("notes", "")).toBe(
+      "document_type.is.null,document_type.neq.credentials",
+    );
+    expect(buildLibraryFilterExpression("all", "wlan")).toBe(
+      'title.ilike."%wlan%",original_filename.ilike."%wlan%",summary.ilike."%wlan%",ocr_text.ilike."%wlan%"',
+    );
+    expect(buildLibraryFilterExpression("documents", "wlan")).toBe(
+      'and(or(document_type.is.null,document_type.neq.credentials),or(title.ilike."%wlan%",original_filename.ilike."%wlan%",summary.ilike."%wlan%",ocr_text.ilike."%wlan%"))',
+    );
+  });
+
+  it("counts in plain words", () => {
+    expect(formatLibraryCount("all", 128)).toBe("128 Einträge");
+    expect(formatLibraryCount("notes", 1)).toBe("1 Notiz");
+    expect(formatLibraryCount("credentials", 3)).toBe("3 Zugänge");
+    expect(formatLibraryCount("documents", 25, { more: true })).toBe("25+ Dokumente");
+    expect(formatLibraryCount("all", 4, { filtered: true })).toBe("4 Treffer");
+  });
+
+  it("asks for the next page before the last row is reached", () => {
+    const at = (y: number) => ({
+      contentOffset: { y },
+      contentSize: { height: 3000 },
+      layoutMeasurement: { height: 800 },
+    });
+    expect(isNearListEnd(at(0))).toBe(false);
+    expect(isNearListEnd(at(1700))).toBe(true);
   });
 });

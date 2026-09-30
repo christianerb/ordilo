@@ -50,10 +50,13 @@ export type NoteDraft = {
 };
 
 export function NoteFormSheet({
+  initialType = "note",
   onClose,
   onSubmit,
   visible,
 }: {
+  /** Preselects the kind, e.g. a Zugang when opened from that filter. */
+  initialType?: DocumentType;
   onClose: () => void;
   onSubmit: (draft: NoteDraft) => Promise<void>;
   visible: boolean;
@@ -70,6 +73,14 @@ export function NoteFormSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isCredentials = documentType === "credentials";
+
+  // Adjusted during render rather than in an effect, so the sheet opens
+  // with the right kind on its first frame.
+  const [wasVisible, setWasVisible] = useState(visible);
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible) setDocumentType(initialType);
+  }
 
   const reset = useCallback(() => {
     setTitle("");

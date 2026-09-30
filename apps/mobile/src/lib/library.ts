@@ -31,6 +31,89 @@ export type LibraryFilters = {
 
 export type LibrarySort = "newest" | "oldest" | "title";
 
+/**
+ * What the family is looking for, not how it got in: a password is a
+ * Zugang whether it was typed or scanned, and contacts sit beside the
+ * paperwork they were read from.
+ */
+export type LibraryKind = "all" | "documents" | "notes" | "credentials" | "contacts";
+
+export const libraryKindOptions: { value: LibraryKind; label: string }[] = [
+  { value: "all", label: "Alle" },
+  { value: "documents", label: "Dokumente" },
+  { value: "notes", label: "Notizen" },
+  { value: "credentials", label: "Zugänge" },
+  { value: "contacts", label: "Kontakte" },
+];
+
+export type LibraryEntryGroup = Exclude<LibraryKind, "all" | "contacts">;
+
+export function getLibraryEntryGroup(
+  document: Pick<LibraryDocument, "document_type" | "source">,
+): LibraryEntryGroup {
+  if (document.document_type === "credentials") return "credentials";
+  return document.source === "manual" ? "notes" : "documents";
+}
+
+/**
+ * Kind and search folded into one PostgREST `or()` expression. Two
+ * separate `.or()` calls would send two `or` parameters, and a plain
+ * `neq` would drop rows whose type is still null while Ordilo reads them.
+ */
+export function buildLibraryFilterExpression(
+  kind: LibraryKind,
+  query: string,
+): string | null {
+  const notCredentials = "document_type.is.null,document_type.neq.credentials";
+  const kindExpression =
+    kind === "documents" || kind === "notes" ? notCredentials : null;
+  let searchExpression: string | null = null;
+  if (query.trim()) {
+    const pattern = toLibrarySearchPattern(query);
+    searchExpression = `title.ilike.${pattern},original_filename.ilike.${pattern},summary.ilike.${pattern},ocr_text.ilike.${pattern}`;
+  }
+  if (kindExpression && searchExpression) {
+    return `and(or(${kindExpression}),or(${searchExpression}))`;
+  }
+  return kindExpression ?? searchExpression;
+}
+
+const COUNT_WORDS: Record<LibraryKind, [string, string]> = {
+  all: ["Eintrag", "Einträge"],
+  documents: ["Dokument", "Dokumente"],
+  notes: ["Notiz", "Notizen"],
+  credentials: ["Zugang", "Zugänge"],
+  contacts: ["Kontakt", "Kontakte"],
+};
+
+/** "128 Einträge", "1 Notiz"; a search or filter counts "Treffer" instead. */
+export function formatLibraryCount(
+  kind: LibraryKind,
+  count: number,
+  { filtered = false, more = false } = {},
+): string {
+  const suffix = more ? "+" : "";
+  if (filtered) return `${count}${suffix} Treffer`;
+  const [one, many] = COUNT_WORDS[kind];
+  return `${count}${suffix} ${count === 1 && !more ? one : many}`;
+}
+
+/** The next page starts loading well before the last row is on screen. */
+export function isNearListEnd(
+  event: {
+    contentOffset: { y: number };
+    contentSize: { height: number };
+    layoutMeasurement: { height: number };
+  },
+  threshold = 600,
+): boolean {
+  const distance =
+    event.contentSize.height -
+    event.layoutMeasurement.height -
+    event.contentOffset.y;
+  return distance < threshold;
+}
+
 export const libraryPageSize = 25;
 
 export const librarySortOptions: { value: LibrarySort; label: string }[] = [
