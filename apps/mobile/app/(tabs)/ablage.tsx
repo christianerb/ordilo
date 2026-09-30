@@ -35,7 +35,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Animated from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { AmbientFields } from "@/src/components/ambient-fields";
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
@@ -211,6 +211,10 @@ export default function AblageScreen() {
   const createSheetRef = useRef<OrdiloSheetHandle>(null);
   const pendingCreateRef = useRef<CreateKind | null>(null);
   const membersRef = useRef<FamilyMemberOption[]>([]);
+  const chipScrollRef = useRef<ScrollView>(null);
+  const chipFrames = useRef(new Map<LibraryKind, { x: number; width: number }>());
+  const chipRow = useRef({ scrollX: 0, width: 0 });
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     if (!family) return;
@@ -382,13 +386,16 @@ export default function AblageScreen() {
     setContactsError(null);
     try {
       const rows = await loadContacts(family.id);
-      setContacts(rows);
       const sourceIds = rows
         .map((contact) => contact.source_document_id)
         .filter((id): id is string => Boolean(id));
-      void loadContactSourceTitles(sourceIds)
-        .then(setContactSources)
-        .catch(() => undefined);
+      // Awaited so the "Aus …" line lands with its row. Arriving later it
+      // would grow every row by a line under the reader's eyes.
+      const sources = await loadContactSourceTitles(sourceIds).catch(
+        () => new Map<string, string>(),
+      );
+      setContactSources(sources);
+      setContacts(rows);
     } catch {
       setContactsError(
         "Deine Kontakte konnten nicht geladen werden. Bitte versuch es nochmal.",
@@ -548,6 +555,26 @@ export default function AblageScreen() {
     setView(nextView);
   }, [view]);
 
+  /**
+   * A half-visible chip slides fully into view once chosen, so the
+   * selection is never cut off at the edge. Native scroll, no worklet.
+   */
+  const revealChip = useCallback((kind: LibraryKind) => {
+    const frame = chipFrames.current.get(kind);
+    const { scrollX, width } = chipRow.current;
+    if (!frame || width === 0) return;
+    // The chip row bleeds to the screen edges; keep the page margin clear.
+    const inset = spacing.md;
+    let target: number | null = null;
+    if (frame.x + frame.width > scrollX + width - inset) {
+      target = frame.x + frame.width - width + inset;
+    } else if (frame.x < scrollX + inset) {
+      target = frame.x - inset;
+    }
+    if (target === null) return;
+    chipScrollRef.current?.scrollTo({ animated: !reduceMotion, x: Math.max(0, target) });
+  }, [reduceMotion]);
+
   const handleContactCreated = useCallback((saved: Contact) => {
     setContacts((current) => mergeSavedContact(current, saved));
     setCreateContactOpen(false);
@@ -658,22 +685,42 @@ export default function AblageScreen() {
           accessibilityRole="tablist"
           contentContainerStyle={styles.chips}
           horizontal
+          onLayout={({ nativeEvent }) => {
+            chipRow.current.width = nativeEvent.layout.width;
+          }}
+          onScroll={({ nativeEvent }) => {
+            chipRow.current.scrollX = nativeEvent.contentOffset.x;
+          }}
+          ref={chipScrollRef}
+          scrollEventThrottle={64}
           showsHorizontalScrollIndicator={false}
           style={styles.chipRow}
         >
           {libraryKindOptions.map((option) => (
-            <Chip
-              accessibilityLabel={`${option.label} anzeigen`}
-              icon={KIND_ICON[option.value]}
+            <View
               key={option.value}
-              label={
-                option.value === "contacts" && suggestedContacts.length > 0
-                  ? `${option.label} · ${suggestedContacts.length} neu`
-                  : option.label
+              onLayout={({ nativeEvent }) =>
+                chipFrames.current.set(option.value, {
+                  x: nativeEvent.layout.x,
+                  width: nativeEvent.layout.width,
+                })
               }
-              onPress={() => switchView(option.value)}
-              selected={view === option.value}
-            />
+            >
+              <Chip
+                accessibilityLabel={`${option.label} anzeigen`}
+                icon={KIND_ICON[option.value]}
+                label={
+                  option.value === "contacts" && suggestedContacts.length > 0
+                    ? `${option.label} · ${suggestedContacts.length} neu`
+                    : option.label
+                }
+                onPress={() => {
+                  switchView(option.value);
+                  revealChip(option.value);
+                }}
+                selected={view === option.value}
+              />
+            </View>
           ))}
         </ScrollView>
 
@@ -697,11 +744,15 @@ export default function AblageScreen() {
             query={filters.query}
             sourceTitles={contactSources}
           />
-        ) : loading && documents.length === 0 && !hasActiveFilters ? (
+        ) : (loading && documents.length === 0 && !hasActiveFilters) ||
+          (view === "all" && contactsLoading && contacts.length === 0) ? (
+          // "Alle" waits for the first contacts read too: the "neue Kontakte"
+          // row then arrives with the list instead of shoving it down.
           <ListSkeleton rows={6} />
         ) : showDocumentControls ? (
           <>
             {view === "all" && !searching && suggestedContacts.length > 0 ? (
+              <Animated.View entering={contentEntering()}>
               <ListGroup>
                 <ListRow
                   accessibilityHint="Zeigt die Kontakte, die Ordilo in euren Dokumenten gefunden hat"
@@ -721,6 +772,7 @@ export default function AblageScreen() {
                   }
                 />
               </ListGroup>
+              </Animated.View>
             ) : null}
 
             <View style={styles.libraryToolbar}>
