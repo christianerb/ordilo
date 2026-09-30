@@ -365,6 +365,19 @@ vocabulary, with three deliberate differences that come from the phone:
   spelling — and picking a member stores the link, not a fourth spelling
   of the name.
 
+### Signature: The Library (Dokumente)
+
+The native Dokumente tab is one list of everything the family keeps, sorted by what a thing is, never by how it got in. A password is a Zugang whether it was typed or scanned.
+
+- **One list, kind chips.** Alle, Dokumente, Notizen, Zugänge, Kontakte sit in one horizontal tab row under the search. A chip that was only half visible scrolls fully into view when chosen. Every row still says what it is (kind icon and word in the meta line), so the mixed "Alle" list reads clearly.
+- **One search, one settings button.** The search field looks everywhere, including contacts in "Alle". It waits for a short pause before asking the server, and shows a small spinner in place of the magnifier while it does. Filter and sort share a single trailing button in the field. A Harbor Blue count badge shows how many settings differ from the defaults. Applied settings stay visible below the chips as removable Harbor-tinted chips with a trailing X, never as a second toolbar.
+- **What needs a hand comes first.** Above the rows, one grouped card holds "N Dokumente warten auf dich" (counted on the server, so it is true for the whole library) and "N neue Kontakte gefunden". Neither is apricot. Each is a normal row that leads to its answer.
+- **Long libraries keep their bearings.** Rows are grouped by "Diese Woche" and month, or by first letter for the name sort (umlauts join their vowel). The group label is a small floating pill that sticks to the top while its rows pass beneath it, with no opaque band across the ambient fields. Tapping the pill opens "Zu welchem Monat?" (or "Zu welchem Buchstaben?"). It lists every group in the whole library with its count, and a jump loads through the target before landing on it.
+- **No page numbers.** The next page loads before the end is reached. The header counts the real total. A failed page stops the automatic loading and offers "Nochmal versuchen". A long list ends with a quiet "Das war alles."
+- **Returning keeps your place.** Coming back from a document keeps the loaded pages and the scroll position. After a while away, the rows refresh quietly in place with no skeleton flash.
+
+Implementation references: `apps/mobile/app/(tabs)/ablage.tsx` and `apps/mobile/src/lib/library.ts`.
+
 ### Signature: Document Conversation
 
 “Ordilo fragen” keeps the family-journal warmth in a quiet reading column: Figtree on Warm White, a compact Harbor Blue user bubble, and an open assistant answer. The answer, its supporting passage, and the next question establish the hierarchy.

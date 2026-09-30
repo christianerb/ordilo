@@ -1,5 +1,12 @@
 import {
+  buildLibraryFilterExpression,
+  buildLibraryJumpTargets,
+  flattenLibraryGroups,
+  getLibraryGroup,
+  getLibraryRowsThrough,
   filterLibraryDocuments,
+  formatLibraryCount,
+  getLibraryEntryGroup,
   formatDocumentDate,
   getLibraryPageRange,
   getLibrarySortOrder,
@@ -7,6 +14,8 @@ import {
   getDocumentStatusGroup,
   getDocumentStatusLabel,
   getDocumentTitle,
+  getLibraryChunkRanges,
+  getLibraryDocumentTypeOptions,
   groupLibraryDocuments,
   getDocumentStatusTone,
   isManualNote,
@@ -165,13 +174,13 @@ describe("document library helpers", () => {
     ]);
   });
 
-  it("groups the title sort by first letter", () => {
+  it("groups the title sort by first letter, umlauts with their vowel", () => {
     const doc = (id: string, title: string): LibraryDocument => ({ ...invoice, id, title });
     const groups = groupLibraryDocuments(
       [doc("1", "Arztbrief"), doc("2", "ärztliche Bescheinigung"), doc("3", "Bafög"), doc("4", "2026 Steuer")],
       "title",
     );
-    expect(groups.map((group) => group.label)).toEqual(["A", "Ä", "B", "#"]);
+    expect(groups.map((group) => group.label)).toEqual(["A", "B", "#"]);
   });
 
   it("only speaks up for non-final statuses", () => {
@@ -179,5 +188,117 @@ describe("document library helpers", () => {
     expect(getDocumentStatusTone("analyzed")).toBe("new");
     expect(getDocumentStatusTone("ocr_processing")).toBe("processing");
     expect(getDocumentStatusTone("failed")).toBe("failed");
+  });
+});
+
+describe("unified library", () => {
+  it("files a login as Zugang whether it was typed or scanned", () => {
+    expect(getLibraryEntryGroup({ document_type: "credentials", source: "manual" })).toBe("credentials");
+    expect(getLibraryEntryGroup({ document_type: "credentials", source: "upload" })).toBe("credentials");
+    expect(getLibraryEntryGroup({ document_type: "note", source: "manual" })).toBe("notes");
+    expect(getLibraryEntryGroup({ document_type: null, source: "upload" })).toBe("documents");
+  });
+
+  it("folds kind and search into one or() expression", () => {
+    expect(buildLibraryFilterExpression("all", "")).toBeNull();
+    expect(buildLibraryFilterExpression("credentials", "")).toBeNull();
+    expect(buildLibraryFilterExpression("notes", "")).toBe(
+      "document_type.is.null,document_type.neq.credentials",
+    );
+    expect(buildLibraryFilterExpression("all", "wlan")).toBe(
+      'title.ilike."%wlan%",original_filename.ilike."%wlan%",summary.ilike."%wlan%",ocr_text.ilike."%wlan%"',
+    );
+    expect(buildLibraryFilterExpression("documents", "wlan")).toBe(
+      'and(or(document_type.is.null,document_type.neq.credentials),or(title.ilike."%wlan%",original_filename.ilike."%wlan%",summary.ilike."%wlan%",ocr_text.ilike."%wlan%"))',
+    );
+  });
+
+  it("counts in plain words", () => {
+    expect(formatLibraryCount("all", 128)).toBe("128 Einträge");
+    expect(formatLibraryCount("notes", 1)).toBe("1 Notiz");
+    expect(formatLibraryCount("credentials", 3)).toBe("3 Zugänge");
+    expect(formatLibraryCount("documents", 25, { more: true })).toBe("25+ Dokumente");
+    expect(formatLibraryCount("all", 4, { filtered: true })).toBe("4 Treffer");
+  });
+
+});
+
+describe("long libraries", () => {
+  const now = new Date("2026-09-30T12:00:00");
+  const row = (created_at: string, title = "Brief") => ({ created_at, title, original_filename: null });
+
+  it("puts this week, months and letters into the same groups as the list", () => {
+    expect(getLibraryGroup(row("2026-09-28T09:00:00"), "newest", now)).toEqual({ key: "this-week", label: "Diese Woche" });
+    expect(getLibraryGroup(row("2026-03-02T09:00:00"), "newest", now)).toEqual({ key: "2026-2", label: "März 2026" });
+    expect(getLibraryGroup(row("2026-03-02T09:00:00", "ärztin"), "title", now).label).toBe("A");
+    expect(getLibraryGroup(row("2026-03-02T09:00:00", "élan"), "title", now).label).toBe("E");
+    expect(getLibraryGroup(row("2026-03-02T09:00:00", "2026 Steuer"), "title", now).label).toBe("#");
+  });
+
+  it("never repeats a group key when the database sorts a letter twice", () => {
+    const docs = ["Anna", "Zoo", "Ärger"].map((title, index) => ({
+      ...invoice,
+      id: String(index),
+      title,
+    }));
+    const groups = groupLibraryDocuments(docs, "title", now);
+    expect(groups.map((group) => group.key)).toEqual(["letter-A", "letter-Z", "letter-A~2"]);
+    expect(buildLibraryJumpTargets(docs, "title", now).map((target) => target.groupKey)).toEqual(
+      groups.map((group) => group.key),
+    );
+  });
+
+  it("knows every month of the full result and where it starts", () => {
+    const targets = buildLibraryJumpTargets(
+      [row("2026-09-29T09:00:00"), row("2026-08-10T09:00:00"), row("2026-08-01T09:00:00"), row("2025-12-24T09:00:00")],
+      "newest",
+      now,
+    );
+    expect(targets.map(({ groupKey, label, count, offset }) => [groupKey, label, count, offset])).toEqual([
+      ["this-week", "Diese Woche", 1, 0],
+      ["2026-7", "August 2026", 2, 1],
+      ["2025-11", "Dezember 2025", 1, 3],
+    ]);
+  });
+
+  it("never offers a document type the kind chip already rules out", () => {
+    expect(getLibraryDocumentTypeOptions("all")).toContain("credentials");
+    expect(getLibraryDocumentTypeOptions("documents")).not.toContain("credentials");
+    expect(getLibraryDocumentTypeOptions("notes")).not.toContain("credentials");
+    expect(getLibraryDocumentTypeOptions("documents")).toContain("invoice");
+    expect(getLibraryDocumentTypeOptions("credentials")).toEqual([]);
+  });
+
+  it("splits a long read into ranges one response can carry", () => {
+    expect(getLibraryChunkRanges(50)).toEqual([{ from: 0, to: 49 }]);
+    expect(getLibraryChunkRanges(2050, 1000)).toEqual([
+      { from: 0, to: 999 },
+      { from: 1000, to: 1999 },
+      { from: 2000, to: 2049 },
+    ]);
+    expect(getLibraryChunkRanges(0)).toEqual([]);
+  });
+
+  it("loads through a jump target plus one page after it", () => {
+    expect(getLibraryRowsThrough(0)).toBe(50);
+    expect(getLibraryRowsThrough(24)).toBe(50);
+    expect(getLibraryRowsThrough(25)).toBe(75);
+    expect(getLibraryRowsThrough(130)).toBe(175);
+  });
+
+  it("flattens groups into sticky headers and card cells", () => {
+    const { items, stickyIndices } = flattenLibraryGroups([
+      { key: "this-week", label: "Diese Woche", documents: [invoice] },
+      { key: "2026-7", label: "August 2026", documents: [{ ...invoice, id: "a" }, { ...invoice, id: "b" }] },
+    ]);
+    expect(stickyIndices).toEqual([0, 2]);
+    expect(items.map((item) => item.type === "row" ? `${item.key}:${item.first}:${item.last}` : item.key)).toEqual([
+      "header-this-week",
+      "invoice:true:true",
+      "header-2026-7",
+      "a:true:false",
+      "b:false:true",
+    ]);
+    expect(items.flatMap((item) => (item.type === "header" ? [item.offset] : []))).toEqual([0, 1]);
   });
 });

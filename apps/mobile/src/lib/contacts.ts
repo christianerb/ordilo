@@ -86,6 +86,25 @@ export async function loadContacts(familyId: string): Promise<Contact[]> {
   return (data ?? []) as Contact[];
 }
 
+/** Titles of the documents contacts were read from, keyed by document id. */
+export async function loadContactSourceTitles(
+  documentIds: string[],
+): Promise<Map<string, string>> {
+  const ids = [...new Set(documentIds)];
+  const result = new Map<string, string>();
+  if (ids.length === 0) return result;
+  const { data, error } = await getSupabase()
+    .from("documents")
+    .select("id, title, original_filename")
+    .in("id", ids);
+  if (error) throw error;
+  for (const row of (data ?? []) as { id: string; title: string | null; original_filename: string | null }[]) {
+    const title = row.title?.trim() || row.original_filename?.trim();
+    if (title) result.set(row.id, title);
+  }
+  return result;
+}
+
 export async function createContact(
   familyId: string,
   input: ContactInput,
