@@ -10,9 +10,7 @@ import {
   Eye,
   EyeOff,
   Image as ImageIcon,
-  KeyRound,
   MoreHorizontal,
-  Pencil,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -37,7 +35,7 @@ import {
   OrdiloFormSheet,
 } from "@/src/components/sheet";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
-import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen, SpringPressable } from "@/src/components/ui";
+import { DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen, SpringPressable } from "@/src/components/ui";
 import {
   buildDocumentUpdatePayload,
   getNoteContent,
@@ -81,6 +79,8 @@ export default function NoteScreen() {
   const [openingOriginal, setOpeningOriginal] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const [showSecretEditor, setShowSecretEditor] = useState(false);
+  const [secretVersion, setSecretVersion] = useState(0);
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
@@ -135,22 +135,25 @@ export default function NoteScreen() {
 
   const openMenu = useCallback(() => {
     if (!note || deleting) return;
-    const canEdit = note.status === "confirmed";
-    const edit = () => setShowEditor(true);
+    const actions: { label: string; run: () => void }[] = [];
+    if (note.status === "confirmed") actions.push({ label: "Bearbeiten", run: () => setShowEditor(true) });
+    if (note.document_type === "credentials") actions.push({ label: "Passwort ändern", run: () => setShowSecretEditor(true) });
+    const destructiveIndex = actions.length;
+    actions.push({ label: "Löschen", run: askToDelete });
     if (Platform.OS === "ios") {
-      const options = canEdit ? ["Bearbeiten", "Löschen", "Abbrechen"] : ["Löschen", "Abbrechen"];
+      const options = [...actions.map((action) => action.label), "Abbrechen"];
       ActionSheetIOS.showActionSheetWithOptions(
-        { options, destructiveButtonIndex: canEdit ? 1 : 0, cancelButtonIndex: options.length - 1 },
-        (index) => {
-          if (options[index] === "Bearbeiten") edit();
-          if (options[index] === "Löschen") askToDelete();
-        },
+        { options, destructiveButtonIndex: destructiveIndex, cancelButtonIndex: options.length - 1 },
+        (index) => actions[index]?.run(),
       );
       return;
     }
     Alert.alert(note.title?.trim() || "Notiz", undefined, [
-      ...(canEdit ? [{ text: "Bearbeiten", onPress: edit }] : []),
-      { text: "Löschen", style: "destructive" as const, onPress: askToDelete },
+      ...actions.map((action, index) => ({
+        text: action.label,
+        style: index === destructiveIndex ? "destructive" as const : "default" as const,
+        onPress: action.run,
+      })),
       { text: "Abbrechen", style: "cancel" as const },
     ]);
   }, [askToDelete, deleting, note]);
@@ -208,7 +211,7 @@ export default function NoteScreen() {
     <Screen style={styles.screen}>
       <DetailTopBar
         onBack={() => router.back()}
-        title={documentTypeLabels[note.document_type]}
+        title={note.document_type === "note" ? undefined : documentTypeLabels[note.document_type]}
         trailing={
           <Pressable
             accessibilityLabel="Weitere Aktionen"
@@ -236,23 +239,34 @@ export default function NoteScreen() {
           </View>
         ) : null}
 
-        {note.document_type === "credentials" ? <SecretSection documentId={id} /> : null}
+        {note.document_type === "credentials" ? <SecretSection documentId={id} key={secretVersion} /> : null}
 
         {hasAttachment ? (
           <Pressable
             accessibilityHint="Öffnet das angehängte Bild"
-            accessibilityLabel="Angehängtes Bild ansehen"
+            accessibilityLabel="Bild ansehen"
             accessibilityRole="button"
             disabled={openingOriginal}
             onPress={() => void openOriginal()}
             style={({ pressed }) => [styles.attachment, pressed && styles.pressed, openingOriginal && styles.disabled]}
           >
             {openingOriginal ? <ActivityIndicator color={colors.harborBlue} size="small" /> : <ImageIcon color={colors.harborBlue} size={19} />}
-            <Text style={styles.attachmentText}>{openingOriginal ? "Bild wird geöffnet …" : "Angehängtes Bild ansehen"}</Text>
+            <Text style={styles.attachmentText}>{openingOriginal ? "Bild wird geöffnet …" : "Bild ansehen"}</Text>
             <ChevronRight color={colors.mistDark} size={18} />
           </Pressable>
         ) : null}
       </ScrollView>
+      {showSecretEditor ? (
+        <SecretEditor
+          documentId={id}
+          onClose={() => setShowSecretEditor(false)}
+          onSaved={() => {
+            setShowSecretEditor(false);
+            // Remounting drops a revealed copy of the old password.
+            setSecretVersion((current) => current + 1);
+          }}
+        />
+      ) : null}
       {showEditor ? (
         <NoteMetadataEditor
           documentId={id}
@@ -358,7 +372,8 @@ function SecretSection({ documentId }: { documentId: string }) {
   const [secret, setSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedReset = useRef<ReturnType<typeof setTimeout> | null>(null);
   const secretExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipboardExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedSecret = useRef<string | null>(null);
@@ -376,10 +391,11 @@ function SecretSection({ documentId }: { documentId: string }) {
   useEffect(() => () => {
     if (secretExpiry.current) clearTimeout(secretExpiry.current);
     if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
-    const copied = copiedSecret.current;
-    if (copied) {
+    if (copiedReset.current) clearTimeout(copiedReset.current);
+    const pending = copiedSecret.current;
+    if (pending) {
       void Clipboard.getStringAsync()
-        .then((value) => value === copied ? Clipboard.setStringAsync("") : undefined)
+        .then((value) => value === pending ? Clipboard.setStringAsync("") : undefined)
         .catch(() => undefined);
     }
   }, []);
@@ -406,6 +422,10 @@ function SecretSection({ documentId }: { documentId: string }) {
     if (!secret) return;
     await Clipboard.setStringAsync(secret);
     copiedSecret.current = secret;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCopied(true);
+    if (copiedReset.current) clearTimeout(copiedReset.current);
+    copiedReset.current = setTimeout(() => setCopied(false), copiedResetMs);
     armSecretExpiry();
     if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
     clipboardExpiry.current = setTimeout(() => {
@@ -418,54 +438,44 @@ function SecretSection({ documentId }: { documentId: string }) {
     }, 30_000);
   };
 
+  const shown = visible && secret;
+
   return (
-    <Card style={styles.card}>
-      <View style={styles.secretHeader}>
-        <KeyRound color={colors.mistDark} size={18} />
-        <Text style={styles.sectionTitle}>Passwort</Text>
+    <View style={styles.secretPanel}>
+      <View style={styles.secretCopy}>
+        <Text style={styles.summaryLabel}>Passwort</Text>
+        <Text numberOfLines={2} selectable={Boolean(shown)} style={shown ? styles.secretValue : styles.secretMasked}>
+          {shown ? secret : "••••••••"}
+        </Text>
       </View>
-      {visible && secret ? (
-        <>
-          <Text selectable style={styles.secretValue}>{secret}</Text>
-          <View style={styles.secretActions}>
-            <OrdiloButton
-              icon={<Copy color={colors.graphite} size={16} />}
-              onPress={() => void copy()}
-              title="Kopieren"
-              variant="outline"
-            />
-            <OrdiloButton
-              icon={<EyeOff color={colors.mistDark} size={16} />}
-              onPress={clearSecret}
-              title="Verbergen"
-              variant="ghost"
-            />
-          </View>
-        </>
-      ) : (
-        <OrdiloButton
-          icon={loading ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Eye color={colors.warmWhite} size={17} />}
-          onPress={() => void reveal()}
-          title={loading ? "Wird geladen …" : "Passwort anzeigen"}
-        />
-      )}
-      <OrdiloButton
-        icon={<Pencil color={colors.graphite} size={16} />}
-        onPress={() => setEditing(true)}
-        title="Passwort ändern"
-        variant="outline"
-      />
-      {editing ? (
-        <SecretEditor
-          documentId={documentId}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            clearSecret();
-            setEditing(false);
-          }}
-        />
+      {shown ? (
+        <Pressable
+          accessibilityLabel={copied ? "Kopiert" : "Passwort kopieren"}
+          accessibilityRole="button"
+          onPress={() => void copy()}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+        >
+          <Animated.View entering={stateEntering()} key={copied ? "copied" : "copy"}>
+            {copied
+              ? <Check color={colors.harborBlue} size={19} strokeWidth={2.4} />
+              : <Copy color={colors.harborBlue} size={19} />}
+          </Animated.View>
+        </Pressable>
       ) : null}
-    </Card>
+      <Pressable
+        accessibilityLabel={shown ? "Passwort verbergen" : "Passwort anzeigen"}
+        accessibilityRole="button"
+        disabled={loading}
+        onPress={shown ? clearSecret : () => void reveal()}
+        style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+      >
+        {loading
+          ? <ActivityIndicator color={colors.harborBlue} size="small" />
+          : shown
+            ? <EyeOff color={colors.mistDark} size={19} />
+            : <Eye color={colors.harborBlue} size={19} />}
+      </Pressable>
+    </View>
   );
 }
 
@@ -592,8 +602,8 @@ function NoteMetadataEditor({
       dismissDisabled={saving}
       keyboardAvoiding
       onClose={onClose}
-      subtitle="Text, Bild und Passwort bleiben geschützt und werden hier nicht geändert."
-      title="Angaben bearbeiten"
+      subtitle="Den Text der Notiz kannst du hier nicht ändern."
+      title="Bearbeiten"
       visible
     >
       <OrdiloFormBody>
@@ -645,8 +655,6 @@ const styles = StyleSheet.create({
   edit: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -6, width: 44 },
   content: { gap: spacing.lg, padding: spacing.md, paddingBottom: spacing["2xl"] },
   title: { color: colors.graphite, ...typography.largeTitle },
-  card: { gap: spacing.sm },
-  sectionTitle: { color: colors.graphite, ...typography.title },
   valuePanel: { backgroundColor: colors.sand, borderRadius: radii.md, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
   value: { color: colors.harborBlue, fontFamily: typography.largeTitle.fontFamily, fontSize: 40, fontVariant: ["tabular-nums"], letterSpacing: 0.5, lineHeight: 46 },
   textPanel: { backgroundColor: colors.sand, borderRadius: radii.sm, gap: spacing.md, padding: spacing.md },
@@ -659,11 +667,13 @@ const styles = StyleSheet.create({
   summaryBlock: { gap: spacing.xs },
   summaryLabel: { color: colors.mistDark, ...typography.label },
   summary: { color: colors.graphite, ...typography.body },
-  attachment: { alignItems: "center", backgroundColor: colors.sand, borderColor: colors.mistLight, borderRadius: radii.sm, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 52, paddingHorizontal: 12 },
+  attachment: { alignItems: "center", backgroundColor: colors.sand, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, minHeight: 52, paddingHorizontal: spacing.md },
   attachmentText: { color: colors.harborBlue, flex: 1, ...typography.title },
-  secretHeader: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
-  secretValue: { backgroundColor: colors.sandLight, borderRadius: radii.base, color: colors.graphite, padding: 12, ...typography.body },
-  secretActions: { flexDirection: "row", gap: spacing.sm },
+  secretPanel: { alignItems: "center", backgroundColor: colors.sand, borderRadius: radii.sm, flexDirection: "row", gap: spacing.xs, paddingLeft: spacing.md, paddingRight: spacing.xs, paddingVertical: spacing.sm },
+  secretCopy: { flex: 1, gap: spacing.xs },
+  secretValue: { color: colors.graphite, ...typography.title },
+  secretMasked: { color: colors.mistDark, letterSpacing: 2, ...typography.title },
+  iconButton: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
   typeChips: { gap: spacing.xs },
   typeChip: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.pill, borderWidth: 1, height: 36, justifyContent: "center", paddingHorizontal: 12 },
   typeChipSelected: { backgroundColor: colors.harborBlue, borderColor: colors.harborBlue },
