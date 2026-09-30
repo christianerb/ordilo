@@ -402,8 +402,8 @@ describe("ReviewCard", () => {
     render(<ReviewCard documentId="doc-1" status="confirmed" />);
 
     await screen.findByTestId("confirmed-details");
-    // An empty "Nummern & Kennungen" heading reads like something failed
-    // to load — until there is a number, only the add action shows.
+    // An empty "Wichtige Angaben" heading reads like something failed
+    // to load — until there is a value, only the add action shows.
     expect(screen.queryByTestId("confirmed-facts")).toBeNull();
     expect(screen.getByTestId("confirmed-fact-add-button")).toBeDefined();
   });

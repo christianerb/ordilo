@@ -13,9 +13,9 @@ import {
 } from "@/lib/schemas/extraction";
 
 /**
- * POST|PATCH|DELETE /api/documents/[id]/facts — manage a document's
- * identifiers ("Steuer-ID Hanna", "Seriennummer Waschmaschine", …) AFTER
- * confirmation.
+ * POST|PATCH|DELETE /api/documents/[id]/facts — manage a document's key
+ * facts ("Steuer-ID Hanna", "Seriennummer Waschmaschine", "Gesamtnote
+ * Masterstudium", …) AFTER confirmation.
  *
  * Facts are the values families come back for; when the extraction got
  * one wrong (OCR misread) or missed one, this endpoint lets the user fix
@@ -88,8 +88,8 @@ export async function POST(
   const { supabase, document } = resolved;
 
   const parsed = await parseJsonBody(request, createFactSchema, {
-    invalidJson: "Bitte gib eine gültige Nummer an.",
-    invalidPayload: "Bitte gib eine gültige Nummer an.",
+    invalidJson: "Bitte gib eine gültige Angabe an.",
+    invalidPayload: "Bitte gib eine gültige Angabe an.",
     payloadCode: "INVALID_INPUT",
   });
   if (!parsed.ok) return parsed.response;
@@ -129,8 +129,8 @@ export async function PATCH(
   const { supabase, document } = resolved;
 
   const parsed = await parseJsonBody(request, updateFactSchema, {
-    invalidJson: "Bitte gib an, was an der Nummer geändert werden soll.",
-    invalidPayload: "Bitte gib an, was an der Nummer geändert werden soll.",
+    invalidJson: "Bitte gib an, was an der Angabe geändert werden soll.",
+    invalidPayload: "Bitte gib an, was an der Angabe geändert werden soll.",
     payloadCode: "INVALID_INPUT",
   });
   if (!parsed.ok) return parsed.response;
@@ -167,8 +167,8 @@ export async function DELETE(
   const { supabase, document } = resolved;
 
   const parsed = await parseJsonBody(request, deleteFactSchema, {
-    invalidJson: "Bitte gib an, welche Nummer entfernt werden soll.",
-    invalidPayload: "Bitte gib an, welche Nummer entfernt werden soll.",
+    invalidJson: "Bitte gib an, welche Angabe entfernt werden soll.",
+    invalidPayload: "Bitte gib an, welche Angabe entfernt werden soll.",
     payloadCode: "INVALID_INPUT",
   });
   if (!parsed.ok) return parsed.response;

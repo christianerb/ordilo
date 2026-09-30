@@ -72,10 +72,16 @@ export const EMBEDDING_DIMENSIONS = 1536;
  *
  * Stamped on every embedding row (`document_embeddings.pipeline_version`)
  * and on analyzed documents (`documents.extraction_version`). Bump this
- * whenever the embedding model, chunking strategy, or extraction schema/
- * prompt changes in a way that makes previously processed documents stale.
- * The reindex job (`job_type = 'reindex'`) re-embeds documents whose
- * embeddings carry an older version.
+ * when the embedding model, chunking strategy, or embedding inputs change —
+ * in short, anything the reindex job (`job_type = 'reindex'`) can actually
+ * repair by re-embedding: it re-embeds documents whose embeddings carry an
+ * older version.
+ *
+ * Extraction-prompt changes do NOT bump. Reindexing can never re-extract,
+ * so a bump would only enqueue a mass re-embed whose output cannot change
+ * (POST /api/documents/reindex treats every older embedding as stale).
+ * Re-analyze picks a new extraction prompt up per document, and it
+ * re-embeds as part of that flow anyway.
  *
  * History:
  *   1 — initial pipeline (pre-versioning)
@@ -85,5 +91,10 @@ export const EMBEDDING_DIMENSIONS = 1536;
  *   4 — time-specific synthetic questions (Um wieviel Uhr, Wie spät, Uhrzeit)
  *        + improved extraction prompt (detailed summaries, always tags, times)
  *        + re-analyze keeps confirmed status with auto re-embedding
+ *   (no bump) — general-purpose facts: the extraction prompt no longer
+ *        confines facts to numbers and identifiers — a certificate's
+ *        Abschluss, Gesamtnote and ECTS are facts too. Prompt-only change:
+ *        embeddings are unchanged, no reindex needed. Re-analyze a document
+ *        to pick the new prompt up.
  */
 export const PIPELINE_VERSION = 4;

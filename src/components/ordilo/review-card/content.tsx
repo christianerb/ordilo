@@ -591,11 +591,11 @@ export function ReviewCardContent({
           </ReviewFieldSection>
         )}
 
-        {/* Facts — exact identifiers (serial numbers, contract numbers, …).
+        {/* Facts — exact key values (serial numbers, grades, ECTS counts, …).
             Shown monospaced so single-character OCR errors are easy to
             spot, with a one-tap correction input.
 
-            In edit mode they are read-only: a confirmed document's numbers
+            In edit mode they are read-only: a confirmed document's facts
             are corrected row by row in the calm view, which writes them
             straight to `document_facts` (this screen's save deliberately
             leaves that table alone, so an edit here would look saved and
@@ -603,7 +603,7 @@ export function ReviewCardContent({
         {analysis.facts.length > 0 && (
           <ReviewFieldSection
             icon={Hash}
-            title="Nummern & Kennungen"
+            title="Wichtige Angaben"
             testId="review-facts"
           >
             {analysis.facts.map((fact, i) => {

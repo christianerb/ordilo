@@ -825,15 +825,17 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
     function: {
       name: "save_document_fact",
       description:
-        "Speichert oder korrigiert eine Nummer/Kennung (Steuer-ID, " +
-        "Seriennummer, IBAN, Kennzeichen, Zaehlernummer, ...) an einem " +
-        "Dokument. Verwende dies, wenn der Nutzer eine Nummer nachtragen " +
-        "will ('Merk dir: die Seriennummer der Waschmaschine ist ...') " +
-        "oder eine falsch erkannte Nummer korrigiert ('die Seriennummer " +
-        "ist falsch, richtig ist ...'). Die Dokument-ID muss aus einem " +
+        "Speichert oder korrigiert eine wichtige Angabe an einem Dokument " +
+        "— eine Nummer/Kennung (Steuer-ID, Seriennummer, IBAN, Kennzeichen, " +
+        "Zaehlernummer, ...) oder einen anderen kurzen, exakten Wert " +
+        "(Abschluss, Gesamtnote, ECTS, ...). Verwende dies, wenn der Nutzer " +
+        "etwas nachtragen will ('Merk dir: die Seriennummer der Waschmaschine " +
+        "ist ...', 'Meine Gesamtnote im Master ist 1,9') oder eine falsch " +
+        "erkannte Angabe korrigiert ('die Seriennummer ist falsch, richtig " +
+        "ist ...'). Die Dokument-ID muss aus einem " +
         "vorherigen search_documents-/list_documents-Aufruf stammen — " +
         "suche das Dokument zuerst, wenn du die ID noch nicht hast. " +
-        "Existiert am Dokument bereits eine Nummer mit derselben " +
+        "Existiert am Dokument bereits eine Angabe mit derselben " +
         "Bezeichnung, wird sie korrigiert, sonst neu angelegt. Setze " +
         "confirmed erst auf true, wenn der Nutzer die Aktion klar " +
         "bestaetigt hat.",
@@ -851,9 +853,10 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           label: {
             type: "string",
             description:
-              "Wozu die Nummer gehoert — danach wird sie spaeter " +
+              "Wozu die Angabe gehoert — danach wird sie spaeter " +
               "gefunden. Nenne Art und Bezug, z.B. 'Seriennummer " +
-              "Waschmaschine' oder 'Steuer-ID Hanna'.",
+              "Waschmaschine', 'Steuer-ID Hanna' oder 'Gesamtnote " +
+              "Masterstudium Karina'.",
           },
           confirmed: {
             type: "boolean",
@@ -2998,13 +3001,12 @@ async function executeAddDocumentTags(
 // ---------------------------------------------------------------------------
 
 /**
- * Save or correct a typed fact (serial number, contract number, IBAN, …)
- * on a document — the agentic path for "Merk dir: die Seriennummer der
- * Waschmaschine ist …". If a fact of the same type already exists on the
- * document (matching the given label when provided), it is CORRECTED;
- * otherwise a new fact is added. User-provided facts are stored with
- * confidence 1.0 and confirmed=true, so the fact search picks them up
- * immediately — no reindex.
+ * Save or correct a key fact (serial number, final grade, IBAN, …) on a
+ * document — the agentic path for "Merk dir: die Seriennummer der
+ * Waschmaschine ist …". If a fact with the same label already exists on
+ * the document, it is CORRECTED; otherwise a new fact is added.
+ * User-provided facts are stored with confidence 1.0 and confirmed=true,
+ * so the fact search picks them up immediately — no reindex.
  */
 async function executeSaveDocumentFact(
   args: Record<string, unknown>,
@@ -3082,7 +3084,7 @@ async function executeSaveDocumentFact(
       .eq("id", existing.id)
       .eq("family_id", ctx.familyId);
     if (updateError) {
-      return JSON.stringify({ error: "Die Nummer konnte nicht korrigiert werden." });
+      return JSON.stringify({ error: "Die Angabe konnte nicht korrigiert werden." });
     }
     return JSON.stringify({
       success: true,
@@ -3106,7 +3108,7 @@ async function executeSaveDocumentFact(
       confirmed: true,
     });
   if (insertError) {
-    return JSON.stringify({ error: "Die Nummer konnte nicht gespeichert werden." });
+    return JSON.stringify({ error: "Die Angabe konnte nicht gespeichert werden." });
   }
   return JSON.stringify({
     success: true,

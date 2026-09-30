@@ -263,7 +263,7 @@ export function ConfirmedAnalysisDetails({
 }
 
 // ---------------------------------------------------------------------------
-// Editable facts — "Nummern & Kennungen" with fix/add after confirmation
+// Editable facts — "Wichtige Angaben" with fix/add after confirmation
 // ---------------------------------------------------------------------------
 
 interface FactRowData {
@@ -273,17 +273,18 @@ interface FactRowData {
 }
 
 /**
- * The one part of a confirmed document that stays editable: its numbers
- * and identifiers. Extraction can misread exactly these values (an OCR'd
+ * The one part of a confirmed document that stays editable: its key
+ * facts. Extraction can misread exactly these values (an OCR'd
  * 8 becomes a B) or name them badly ("Unklare Kennnummer"), and they are
  * what families come back for — so correcting or adding one must never
  * require a re-scan. Reads and writes go straight to `document_facts`
  * via /api/documents/[id]/facts; the fact search picks changes up
  * immediately.
  *
- * A number is a label plus a value — there is no type to pick. The label
- * is what makes it findable ("Steuer-ID Hanna"), so it is a plain text
- * field, not a dropdown that could never cover German paperwork anyway.
+ * A fact is a label plus a value — there is no type to pick. The label
+ * is what makes it findable ("Steuer-ID Hanna", "Gesamtnote
+ * Masterstudium"), so it is a plain text field, not a dropdown that
+ * could never cover German paperwork anyway.
  */
 function EditableFactsSection({ documentId }: { documentId: string }) {
   const [facts, setFacts] = useState<FactRowData[]>([]);
@@ -307,7 +308,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
           .order("created_at", { ascending: true });
         if (!cancelled && data) setFacts(data);
       } catch {
-        // Facts stay empty — the section still offers "Nummer hinzufügen".
+        // Facts stay empty — the section still offers "Angabe hinzufügen".
       }
     })();
     return () => {
@@ -344,7 +345,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
         ),
       );
       setEditingId(null);
-      toast.success("Nummer korrigiert");
+      toast.success("Angabe korrigiert");
     } catch {
       toast.error("Speichern hat nicht geklappt — bitte nochmal versuchen");
     } finally {
@@ -372,7 +373,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
       setNewValue("");
       setNewLabel("");
       setAdding(false);
-      toast.success("Nummer hinterlegt");
+      toast.success("Angabe hinterlegt");
     } catch {
       toast.error("Speichern hat nicht geklappt — bitte nochmal versuchen");
     } finally {
@@ -380,9 +381,9 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
     }
   };
 
-  // No numbers on this document (the common case for notes and letters):
-  // a full "Nummern & Kennungen" section with nothing under it reads like
-  // something failed to load. Until there is a number — or the user starts
+  // No facts on this document (the common case for notes and letters):
+  // a full "Wichtige Angaben" section with nothing under it reads like
+  // something failed to load. Until there is a value — or the user starts
   // adding one — the section is just its quiet add action.
   if (facts.length === 0 && !adding) {
     return (
@@ -393,13 +394,13 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
         data-testid="confirmed-fact-add-button"
       >
         <Plus className="size-4 shrink-0" aria-hidden="true" />
-        Nummer hinzufügen
+        Angabe hinzufügen
       </button>
     );
   }
 
   return (
-    <ReviewFieldSection icon={Hash} title="Nummern & Kennungen" testId="confirmed-facts">
+    <ReviewFieldSection icon={Hash} title="Wichtige Angaben" testId="confirmed-facts">
       {facts.map((fact) => (
         <FieldRow
           key={fact.id}
@@ -461,13 +462,13 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
               </div>
               {/* The label is what Ordilo matches questions against ("Wie
                   ist die Steuer-ID von Hanna?"), so it stays editable — a
-                  number nobody can name is a number nobody finds again. */}
+                  value nobody can name is a value nobody finds again. */}
               <input
                 type="text"
                 value={editLabel}
                 onChange={(e) => setEditLabel(e.target.value)}
-                placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna"
-                aria-label="Bezeichnung der Nummer"
+                placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna, Gesamtnote"
+                aria-label="Bezeichnung der Angabe"
                 maxLength={120}
                 className="w-full min-w-0 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="confirmed-fact-edit-label"
@@ -498,21 +499,21 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             value={newValue}
             onChange={(e) => setNewValue(e.target.value)}
             placeholder="z. B. WM-482-A93816"
-            aria-label="Wert der Nummer"
+            aria-label="Wert der Angabe"
             maxLength={200}
             autoFocus
             className="w-full min-w-0 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             data-testid="confirmed-fact-add-input"
           />
           <div className="flex items-center gap-1.5">
-            {/* This is what makes the number findable later — "Steuer-ID
+            {/* This is what makes the fact findable later — "Steuer-ID
                 Hanna" answers a question that a bare value cannot. */}
             <input
               type="text"
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
-              placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna"
-              aria-label="Bezeichnung der Nummer"
+              placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna, Gesamtnote"
+              aria-label="Bezeichnung der Angabe"
               maxLength={120}
               className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               data-testid="confirmed-fact-add-label"
@@ -520,7 +521,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             <button
               type="submit"
               disabled={saving || !newValue.trim()}
-              aria-label="Nummer speichern"
+              aria-label="Angabe speichern"
               className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-ring disabled:opacity-50"
               data-testid="confirmed-fact-add-save"
             >
@@ -552,7 +553,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
           data-testid="confirmed-fact-add-button"
         >
           <Plus className="size-4 shrink-0" aria-hidden="true" />
-          Nummer hinzufügen
+          Angabe hinzufügen
         </button>
       )}
     </ReviewFieldSection>

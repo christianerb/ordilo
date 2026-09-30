@@ -75,22 +75,24 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Typed identifiers the LLM extracts as document facts.
+ * Typed key facts the LLM extracts as document facts.
  *
- * Facts are exact key-value pairs (serial numbers, contract numbers, ...)
- * that must be retrievable verbatim — embeddings are unreliable for them,
- * so they are stored in `document_facts` and matched lexically.
+ * Facts are exact label-value pairs — a serial number, a contract number,
+ * a final grade, an ECTS count — that must be retrievable verbatim.
+ * Embeddings are unreliable for them, so they are stored in
+ * `document_facts` and matched lexically.
  */
 /**
  * The single fact type.
  *
  * Facts used to carry a type enum (serial_number, policy_number, iban, …),
  * which turned out to be the wrong axis: German paperwork produces an
- * endless tail of numbers — Steuer-ID, Versichertennummer, Zählernummer,
- * Aktenzeichen, Bestellnummer — and every new one either needed a code
- * change or fell into a nameless "other" bucket. What tells two numbers
- * apart is their LABEL ("Steuer-ID Hanna", "Zählernummer Keller"), and the
- * label is free text that anyone can write and correct.
+ * endless tail of exact values — Steuer-ID, Versichertennummer, Zählernummer,
+ * Aktenzeichen, Gesamtnote, ECTS — and every new one either needed a code
+ * change or fell into a nameless "other" bucket. What tells two values
+ * apart is their LABEL ("Steuer-ID Hanna", "Zählernummer Keller",
+ * "Gesamtnote Masterstudium"), and the label is free text that anyone can
+ * write and correct.
  *
  * So there is one type, and the label carries the meaning. The column
  * stays in the database (legacy rows still hold their old value) but
@@ -99,7 +101,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
 export const IDENTIFIER_FACT_TYPE = "identifier";
 
 /** Fallback label for a fact nobody has named yet. */
-export const DEFAULT_FACT_LABEL = "Nummer";
+export const DEFAULT_FACT_LABEL = "Angabe";
 
 /**
  * Groups of words that mean the same number to a family.
@@ -429,7 +431,8 @@ const taskSchema = z.object({
 });
 
 /**
- * Zod schema for a single extracted fact (an identifier).
+ * Zod schema for a single extracted fact — a key value the family may look
+ * up verbatim later, from a serial number to a final grade.
  *
  * `fact_type` is not part of the extraction any more — it defaults to
  * `identifier`. It stays a plain string rather than a literal so rows

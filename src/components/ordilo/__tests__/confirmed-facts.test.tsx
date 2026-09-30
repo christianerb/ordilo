@@ -5,9 +5,9 @@ import { ReviewCard } from "@/components/ordilo/review-card";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
 /**
- * The "Nummern & Kennungen" section of a confirmed document.
+ * The "Wichtige Angaben" section of a confirmed document.
  *
- * A number Ordilo could not name ("Unklare Kennnummer") is a number nobody
+ * A fact Ordilo could not name ("Unklare Kennnummer") is a value nobody
  * finds again — the label is what the fact search matches questions
  * against, so it has to be correctable without a re-scan.
  */
@@ -73,7 +73,7 @@ function factsCall(spy: { mock: { calls: unknown[][] } }): RequestInit {
   return call[1] as RequestInit;
 }
 
-describe("confirmed document — Nummern & Kennungen", () => {
+describe("confirmed document — Wichtige Angaben", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(analysis);

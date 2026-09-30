@@ -245,7 +245,7 @@ export function emptyEditState(): EditState {
  * saves exactly what the user corrected.
  *
  * Tasks and facts are deliberately not sent — both are edited where they
- * live (the task sheet, the "Nummern & Kennungen" rows), and the route
+ * live (the task sheet, the "Wichtige Angaben" rows), and the route
  * would otherwise reset task status and assignment.
  */
 export async function patchDocument(

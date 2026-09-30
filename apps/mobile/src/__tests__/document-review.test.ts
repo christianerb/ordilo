@@ -7,6 +7,7 @@ import {
   formatReviewDate,
   isDeadlineLike,
   isDocumentIssueDate,
+  loadDocumentReview,
   remapCalendarSelection,
   formatRelativeDays,
   formatReviewAmount,
@@ -21,6 +22,7 @@ import {
   revealDocumentSecret,
   type ReviewAnalysis,
 } from "../lib/document-review";
+import { getSupabase } from "../lib/supabase";
 
 const mockApiFetch = jest.fn();
 const mockApiJson = jest.fn();
@@ -397,4 +399,118 @@ it("describes only the retained nonempty tasks and selected calendar entries", (
   expect(result[0]).toContain("Formular abgeben");
   expect(result[1]).toContain("Elternabend");
   expect(result.join()).not.toContain("Ungewählt");
+});
+
+/**
+ * loadDocumentReview rebuilds the analysis from the RLS tables — including
+ * the tag entity rows the extraction wrote. documents.tags is NOT NULL
+ * DEFAULT '{}' (never null), so a plain `row.tags ?? entities` always
+ * picked the empty column and the confirm or edit that followed wiped the
+ * extraction's tags (both write replace-all). The union of both sources
+ * must survive into the rebuilt payload.
+ */
+describe("loadDocumentReview", () => {
+  type QueryResult = { data: unknown; error: unknown };
+
+  /** Chainable builder: `.select().eq()` resolves like a PostgREST query,
+   *  `.maybeSingle()` resolves like the single-row documents read. */
+  function query(result: QueryResult) {
+    const chain: Record<string, unknown> = {
+      select: () => chain,
+      eq: () => chain,
+      maybeSingle: () => Promise.resolve(result),
+      then: (
+        resolve: (value: QueryResult) => unknown,
+        reject: (reason: unknown) => unknown,
+      ) => Promise.resolve(result).then(resolve, reject),
+    };
+    return chain;
+  }
+
+  function mockReviewDb({
+    document,
+    entities = [],
+    tasks = [],
+    facts = [],
+  }: {
+    document: Record<string, unknown> | null;
+    entities?: Record<string, unknown>[];
+    tasks?: Record<string, unknown>[];
+    facts?: Record<string, unknown>[];
+  }) {
+    const client = {
+      from: (table: string) =>
+        query(
+          table === "documents"
+            ? { data: document, error: null }
+            : {
+                data:
+                  table === "extracted_entities"
+                    ? entities
+                    : table === "tasks"
+                      ? tasks
+                      : facts,
+                error: null,
+              },
+        ),
+    };
+    jest.mocked(getSupabase).mockReturnValue(
+      client as unknown as ReturnType<typeof getSupabase>,
+    );
+  }
+
+  const documentRow = {
+    status: "analyzed",
+    title: "Masterzeugnis Big Data & Business Analytics",
+    summary: "Master of Science, Gesamtnote 1,9 bei 120 ECTS.",
+    document_type: "school",
+    category: "Unterlagen",
+    tags: [] as string[],
+    created_at: "2026-09-10T08:51:57Z",
+    confirmed_at: null,
+    original_filename: "zeugnis.pdf",
+    mime_type: "application/pdf",
+    page_count: 6,
+    ocr_text: null,
+  };
+
+  it("keeps the extracted tag entities when documents.tags is empty", async () => {
+    mockReviewDb({
+      document: documentRow,
+      entities: [
+        { entity_type: "person", entity_value: "Karina", confidence: 0.91 },
+        { entity_type: "tag", entity_value: "Zeugnis", confidence: 1 },
+        { entity_type: "tag", entity_value: "Master", confidence: 1 },
+        { entity_type: "tag", entity_value: "FOM", confidence: 1 },
+      ],
+    });
+
+    const review = await loadDocumentReview("doc-1");
+    expect(review).not.toBeNull();
+    expect((review as ReviewAnalysis).status).toBe("analyzed");
+    // The old `row.tags ?? entities` lost these three on every confirm.
+    expect((review as ReviewAnalysis).tags).toEqual(["Zeugnis", "Master", "FOM"]);
+  });
+
+  it("unions chat-added documents.tags with the stored tag entities", async () => {
+    mockReviewDb({
+      document: {
+        ...documentRow,
+        status: "confirmed",
+        confirmed_at: "2026-09-10T10:53:57Z",
+        tags: ["Versicherung", " Chat-Tag "],
+      },
+      entities: [
+        { entity_type: "tag", entity_value: "Zeugnis", confidence: 1 },
+        { entity_type: "tag", entity_value: "Versicherung", confidence: 1 },
+      ],
+    });
+
+    const review = await loadDocumentReview("doc-1");
+    expect((review as ReviewAnalysis).tags).toEqual([
+      "Zeugnis",
+      "Versicherung",
+      "Chat-Tag",
+    ]);
+  });
 });
