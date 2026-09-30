@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, X, type LucideIcon } from "lucide-react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Pressable,
@@ -519,6 +519,8 @@ export function Chip({
   icon: Icon,
   label,
   onPress,
+  removable = false,
+  role = "button",
   selected = false,
   tone = "neutral",
 }: {
@@ -526,13 +528,17 @@ export function Chip({
   icon?: LucideIcon;
   label: string;
   onPress: () => void;
+  /** An applied filter: tinted, with a trailing X that takes it off. */
+  removable?: boolean;
+  /** "tab" inside a tablist, so VoiceOver reads "Tab, 2 von 5". */
+  role?: "button" | "tab";
   selected?: boolean;
   tone?: "neutral" | "attention";
 }) {
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityRole="button"
+      accessibilityRole={role}
       accessibilityState={{ selected }}
       hitSlop={{ bottom: 4, left: 0, right: 0, top: 4 }}
       onPress={() => {
@@ -542,6 +548,7 @@ export function Chip({
       style={({ pressed }) => [
         styles.chip,
         selected && styles.chipSelected,
+        removable && styles.chipRemovable,
         tone === "attention" && !selected && styles.chipAttention,
         pressed && styles.pressedOpacity,
       ]}
@@ -559,11 +566,13 @@ export function Chip({
         style={[
           styles.chipText,
           selected && styles.chipTextSelected,
+          removable && styles.chipTextRemovable,
           tone === "attention" && !selected && styles.chipTextAttention,
         ]}
       >
         {label}
       </Text>
+      {removable ? <X color={colors.harborBlue} size={14} strokeWidth={2.4} /> : null}
     </Pressable>
   );
 }
@@ -1014,6 +1023,14 @@ const styles = StyleSheet.create({
   chipSelected: {
     backgroundColor: colors.harborBlue,
     borderColor: colors.harborBlue,
+  },
+  chipRemovable: {
+    backgroundColor: colors.harborTint,
+    borderColor: colors.harborLine,
+    paddingRight: 10,
+  },
+  chipTextRemovable: {
+    color: colors.harborBlue,
   },
   chipAttention: {
     backgroundColor: colors.washApricot,
