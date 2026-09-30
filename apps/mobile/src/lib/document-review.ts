@@ -257,6 +257,17 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
   const ofType = (entityType: string) => items.filter((entity) => entity.entity_type === entityType);
   const category = ofType("category")[0];
 
+  // Tags live in two places: the extraction stores them as entity rows,
+  // the chat and the note form write into documents.tags. documents.tags is
+  // NOT NULL DEFAULT '{}' — never null — so the old `row.tags ?? entities`
+  // always picked the (usually empty) column, and the confirm or edit that
+  // followed wiped the extraction's tag rows (both write replace-all).
+  // Union both sources so neither can disappear in the rebuilt payload.
+  const tags = [...new Set([
+    ...ofType("tag").map((entity) => text(entity.entity_value).trim()).filter(Boolean),
+    ...(row.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
+  ])];
+
   return {
     status: row.status,
     created_at: row.created_at,
@@ -283,7 +294,7 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
       return { id: text(entry.id) || undefined, fact_type: text(entry.fact_type) || "identifier", label: text(entry.label), value: text(entry.value), confidence: confidence(entry.confidence) };
     }),
     suggested_category: text(category?.entity_value) || row.category || "Sonstiges",
-    tags: row.tags ?? ofType("tag").map((entity) => text(entity.entity_value)).filter(Boolean),
+    tags,
     needs_user_review: items.some((entity) => confidence(entity.confidence) < 0.7),
   };
 }
