@@ -56,6 +56,20 @@ export function getLibraryEntryGroup(
 }
 
 /**
+ * The document types worth offering under a kind chip. Dokumente and
+ * Notizen leave Zugänge out by definition, so offering "Zugangsdaten"
+ * there could only ever find nothing; Zugänge are one type already.
+ */
+export function getLibraryDocumentTypeOptions(kind: LibraryKind): DocumentType[] {
+  const all = Object.keys(documentTypeLabels) as DocumentType[];
+  if (kind === "credentials" || kind === "contacts") return [];
+  if (kind === "documents" || kind === "notes") {
+    return all.filter((type) => type !== "credentials");
+  }
+  return all;
+}
+
+/**
  * Kind and search folded into one PostgREST `or()` expression. Two
  * separate `.or()` calls would send two `or` parameters, and a plain
  * `neq` would drop rows whose type is still null while Ordilo reads them.

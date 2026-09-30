@@ -99,6 +99,7 @@ import {
   buildLibraryJumpTargets,
   flattenLibraryGroups,
   getLibraryChunkRanges,
+  getLibraryDocumentTypeOptions,
   getLibraryRowsThrough,
   libraryJumpSelect,
   libraryMaxRowsPerRequest,
@@ -134,10 +135,6 @@ import { contentEntering, stateEntering } from "@/src/theme/motion";
 import { colors, fonts, radii, spacing, typography } from "@/src/theme/tokens";
 import { getManualNotePreview } from "@ordilo/document-contract";
 
-const documentTypes = Object.entries(documentTypeLabels) as [
-  DocumentType,
-  string,
-][];
 type CreateKind = "document" | "note" | "contact";
 type LibraryFilterDraft = Omit<LibraryFilters, "query"> & { sort: LibrarySort };
 /** Long enough for a word, short enough that results feel live. */
@@ -1386,7 +1383,7 @@ export default function AblageScreen() {
           setDraftFilters((current) => ({ ...current, status }))
         }
         personId={draftFilters.personId}
-        showDocumentType={view !== "credentials"}
+        documentTypeOptions={getLibraryDocumentTypeOptions(view)}
         sort={draftFilters.sort}
         status={draftFilters.status}
         visible={filterSheetOpen}
@@ -1891,6 +1888,7 @@ function FilteredEmptyState({
 
 function LibraryFilterSheet({
   documentType,
+  documentTypeOptions,
   members,
   onApply,
   onClose,
@@ -1900,12 +1898,13 @@ function LibraryFilterSheet({
   onSortChange,
   onStatusChange,
   personId,
-  showDocumentType,
   sort,
   status,
   visible,
 }: {
   documentType: DocumentType | "all";
+  /** Types that can match under the current kind; none hides the field. */
+  documentTypeOptions: DocumentType[];
   members: FamilyMemberOption[];
   onApply: () => void;
   onClose: () => void;
@@ -1915,8 +1914,6 @@ function LibraryFilterSheet({
   onSortChange: (sort: LibrarySort) => void;
   onStatusChange: (status: LibraryFilters["status"]) => void;
   personId: string | "all";
-  /** Zugänge are one type already; asking for another would find nothing. */
-  showDocumentType: boolean;
   sort: LibrarySort;
   status: LibraryFilters["status"];
   visible: boolean;
@@ -1968,7 +1965,7 @@ function LibraryFilterSheet({
             value={statusLabel}
           />
         </OrdiloFormField>
-        {showDocumentType ? (
+        {documentTypeOptions.length > 0 ? (
           <OrdiloFormField label="Dokumentart">
             <OrdiloFormSelect
               accessibilityHint="Öffnet die Auswahl der Dokumentart"
@@ -2061,7 +2058,8 @@ function LibraryFilterSheet({
               },
               selected: documentType === "all",
             },
-            ...documentTypes.map(([value, label]) => {
+            ...documentTypeOptions.map((value) => {
+              const label = documentTypeLabels[value];
               const kind = getDocumentKind(value);
               const KindIcon = kind.icon;
               return {

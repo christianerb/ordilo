@@ -15,6 +15,7 @@ import {
   getDocumentStatusLabel,
   getDocumentTitle,
   getLibraryChunkRanges,
+  getLibraryDocumentTypeOptions,
   groupLibraryDocuments,
   getDocumentStatusTone,
   isManualNote,
@@ -258,6 +259,14 @@ describe("long libraries", () => {
       ["2026-7", "August 2026", 2, 1],
       ["2025-11", "Dezember 2025", 1, 3],
     ]);
+  });
+
+  it("never offers a document type the kind chip already rules out", () => {
+    expect(getLibraryDocumentTypeOptions("all")).toContain("credentials");
+    expect(getLibraryDocumentTypeOptions("documents")).not.toContain("credentials");
+    expect(getLibraryDocumentTypeOptions("notes")).not.toContain("credentials");
+    expect(getLibraryDocumentTypeOptions("documents")).toContain("invoice");
+    expect(getLibraryDocumentTypeOptions("credentials")).toEqual([]);
   });
 
   it("splits a long read into ranges one response can carry", () => {
