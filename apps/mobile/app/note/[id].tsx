@@ -37,7 +37,7 @@ import {
   OrdiloFormSheet,
 } from "@/src/components/sheet";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
-import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
+import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen, SpringPressable } from "@/src/components/ui";
 import {
   buildDocumentUpdatePayload,
   getNoteContent,
@@ -323,18 +323,18 @@ function NoteContent({ content, hasText }: { content: string; hasText: boolean }
 
   if (isValue) {
     return (
-      <Pressable
+      <SpringPressable
         accessibilityHint="Kopiert den Wert"
         accessibilityLabel={`${content}. ${copied ? "Kopiert" : "Kopieren"}`}
-        accessibilityRole="button"
+        haptic={false}
         onPress={() => void copy()}
-        style={({ pressed }) => [styles.valuePanel, pressed && styles.valuePressed]}
+        style={styles.valuePanel}
       >
-        <Text adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={2} selectable style={styles.value}>
+        <Text adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={2} style={styles.value}>
           {content}
         </Text>
         {copyLabel}
-      </Pressable>
+      </SpringPressable>
     );
   }
 
@@ -648,7 +648,6 @@ const styles = StyleSheet.create({
   card: { gap: spacing.sm },
   sectionTitle: { color: colors.graphite, ...typography.title },
   valuePanel: { backgroundColor: colors.sand, borderRadius: radii.md, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
-  valuePressed: { backgroundColor: colors.sandLight },
   value: { color: colors.harborBlue, fontFamily: typography.largeTitle.fontFamily, fontSize: 40, fontVariant: ["tabular-nums"], letterSpacing: 0.5, lineHeight: 46 },
   textPanel: { backgroundColor: colors.sand, borderRadius: radii.sm, gap: spacing.md, padding: spacing.md },
   contentText: { color: colors.graphite, ...typography.body },
