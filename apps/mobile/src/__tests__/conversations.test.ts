@@ -1,4 +1,6 @@
 import {
+  answerPreview,
+  dedupeConversationsByTitle,
   formatConversationWhen,
   getConversationTitle,
   loadConversationMessages,
@@ -130,5 +132,28 @@ describe("loadConversationMessages", () => {
     // most recent turns — then reversed for display.
     expect(order).toHaveBeenCalledWith("created_at", { ascending: false });
     expect(messages.map((message) => message.dbId)).toEqual(["m2", "m3"]);
+  });
+});
+
+describe("recent conversations", () => {
+  const conversation = (id: string, title: string | null) => ({ id, title, createdAt: "", updatedAt: "" });
+
+  it("shows a repeated question once, keeping the newest", () => {
+    const list = [
+      conversation("new", "Bis wann kann ich den Handyvertrag kündigen?"),
+      conversation("old", "bis wann kann ich den Handyvertrag kündigen"),
+      conversation("other", "Was kostet die Klassenfahrt?"),
+      conversation("a", null),
+      conversation("b", null),
+    ];
+    expect(dedupeConversationsByTitle(list).map((entry) => entry.id)).toEqual(["new", "other", "a", "b"]);
+  });
+
+  it("turns an answer into one plain line", () => {
+    expect(answerPreview("**Bis zum 30. Juni 2027.** Das steht in deinem Vertrag.")).toBe("Bis zum 30. Juni 2027.");
+    expect(answerPreview("## Kosten\n- 128 EUR pro Kind")).toBe("Kosten 128 EUR pro Kind");
+    expect(answerPreview("Siehe [Vertrag](ordilo://doc/1) für Details")).toBe("Siehe Vertrag für Details");
+    expect(answerPreview("   ")).toBeNull();
+    expect(answerPreview("x".repeat(200))?.length).toBe(90);
   });
 });

@@ -213,3 +213,68 @@ export function formatConversationWhen(iso: string, now = new Date()): string {
 export function getConversationTitle(conversation: Pick<ConversationSummary, "title">): string {
   return conversation.title?.trim() || "Gespräch";
 }
+function normalizeTitle(title: string | null): string {
+  return (title ?? "").toLowerCase().replace(/[\s?!.,„“"]+/g, " ").trim();
+}
+
+/**
+ * Asking the same thing twice leaves two conversations with one title. The
+ * recent list shows each question once, newest first; the full history
+ * sheet still lists every conversation.
+ */
+export function dedupeConversationsByTitle(conversations: ConversationSummary[]): ConversationSummary[] {
+  const seen = new Set<string>();
+  return conversations.filter((conversation) => {
+    const key = normalizeTitle(conversation.title) || conversation.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+const answerPreviewMaxLength = 90;
+
+/** German dates ("30. Juni") and ordinals end in a dot that does not end the sentence. */
+function firstSentence(text: string): string {
+  const boundary = /[.!?](?=\s|$)/g;
+  for (let match = boundary.exec(text); match; match = boundary.exec(text)) {
+    const before = text.slice(0, match.index + 1);
+    if (match[0] === "." && /(^|\D)\d{1,2}\.$/.test(before)) continue;
+    return before;
+  }
+  return text;
+}
+
+/** One plain line of an answer, so a recent question shows what came out of it. */
+export function answerPreview(markdown: string): string | null {
+  const plain = markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
+    .replace(/[*_`|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!plain) return null;
+  const sentence = firstSentence(plain);
+  return sentence.length > answerPreviewMaxLength
+    ? `${sentence.slice(0, answerPreviewMaxLength - 1).trimEnd()}…`
+    : sentence;
+}
+
+/** The latest answer line for each conversation; a failed read just leaves that row on its date. */
+export async function loadConversationPreviews(conversationIds: string[]): Promise<Record<string, string>> {
+  const entries = await Promise.all(conversationIds.map(async (conversationId) => {
+    const { data, error } = await getSupabase()
+      .from("chat_messages")
+      .select("content")
+      .eq("conversation_id", conversationId)
+      .eq("role", "assistant")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const preview = answerPreview((data as { content: string | null }).content ?? "");
+    return preview ? [conversationId, preview] as const : null;
+  }));
+  return Object.fromEntries(entries.filter((entry) => entry !== null));
+}

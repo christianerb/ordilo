@@ -535,14 +535,29 @@ export function buildPersonalChatPrompts(input: {
 /** What a starter is about — lets the UI give each one a fitting icon. */
 export type ChatStarterKind = "document" | "task" | "member" | "general";
 
-/** Short display labels retain the complete source context in the sent prompt. */
+const STARTER_TITLE_MAX = 28;
+
+/** Cuts at a word boundary so a label names the thing without running long. */
+function shortStarterTitle(title: string): string {
+  const clean = title.trim().replace(/\s+/g, " ");
+  if (clean.length <= STARTER_TITLE_MAX) return clean;
+  const cut = clean.slice(0, STARTER_TITLE_MAX);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > STARTER_TITLE_MAX / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()} …`;
+}
+
+/**
+ * Labels name the actual document or task, so a starter reads as a question
+ * about this family's things, while staying short enough for one pill.
+ * The sent prompt keeps the complete title.
+ */
 export function buildPersonalChatStarters(input: Parameters<typeof buildPersonalChatPrompts>[0]): Array<{ label: string; prompt: string; kind: ChatStarterKind }> {
   return buildPersonalChatPrompts(input).map((prompt) => {
     if (input.recentDocumentTitle && prompt.includes(`„${input.recentDocumentTitle.trim()}“`)) {
-      return { label: "Was ist am letzten Dokument wichtig?", prompt, kind: "document" };
+      return { label: `Was ist wichtig an „${shortStarterTitle(input.recentDocumentTitle)}“?`, prompt, kind: "document" };
     }
     if (input.upcomingTaskTitle && prompt.includes(`„${input.upcomingTaskTitle.trim()}“`)) {
-      return { label: "Was brauche ich für die nächste Aufgabe?", prompt: `Hilf mir bei dieser Aufgabe: „${input.upcomingTaskTitle.trim()}“. Was muss ich konkret tun?`, kind: "task" };
+      return { label: `Was brauche ich für „${shortStarterTitle(input.upcomingTaskTitle)}“?`, prompt: `Hilf mir bei dieser Aufgabe: „${input.upcomingTaskTitle.trim()}“. Was muss ich konkret tun?`, kind: "task" };
     }
     if (prompt.startsWith("Was steht für ") && prompt.includes("als Nächstes an?")) {
       return { label: prompt, prompt, kind: "member" };
