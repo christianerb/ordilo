@@ -54,6 +54,33 @@ export function getNoteContent(
   return note.ocr_text?.trim() || "Diese Notiz hat keinen Text.";
 }
 
+const shortValueMaxLength = 40;
+
+/**
+ * A note that is just a value (a PIN, a meter code, a phone number) is read
+ * at a glance and copied, so it earns large type instead of a paragraph.
+ */
+export function isShortNoteValue(content: string): boolean {
+  const text = content.trim();
+  return text.length > 0 && text.length <= shortValueMaxLength && !/\n/.test(text);
+}
+
+function normalizeForComparison(text: string): string {
+  return text.toLowerCase().replace(/[\s.,;:!?"„“'-]+/g, " ").trim();
+}
+
+/**
+ * The summary only helps when it says something the note itself does not.
+ * For short notes the analysis usually echoes the text back verbatim.
+ */
+export function shouldShowNoteSummary(content: string, summary: string | null | undefined): boolean {
+  const cleanSummary = summary?.trim();
+  if (!cleanSummary || isShortNoteValue(content)) return false;
+  const a = normalizeForComparison(content);
+  const b = normalizeForComparison(cleanSummary);
+  return a !== b && !a.includes(b);
+}
+
 /**
  * Sends the documented multipart note contract. Expo File implements Blob,
  * so note attachments use the same native multipart transport as scans.

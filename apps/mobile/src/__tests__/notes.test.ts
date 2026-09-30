@@ -4,6 +4,8 @@ import {
   buildDocumentUpdatePayload,
   createNote,
   getNoteContent,
+  isShortNoteValue,
+  shouldShowNoteSummary,
   maxNoteContentLength,
   triggerNoteAnalysis,
   updateDocumentSecret,
@@ -183,5 +185,24 @@ describe("native notes helpers", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ secret: "" }),
     });
+  });
+});
+
+describe("note reader helpers", () => {
+  it("treats a single short line as a value", () => {
+    expect(isShortNoteValue("2281")).toBe(true);
+    expect(isShortNoteValue("  DE12 3456 7890  ")).toBe(true);
+    expect(isShortNoteValue("Zeile eins\nZeile zwei")).toBe(false);
+    expect(isShortNoteValue("x".repeat(41))).toBe(false);
+    expect(isShortNoteValue("   ")).toBe(false);
+  });
+
+  it("hides a summary that only repeats the note", () => {
+    expect(shouldShowNoteSummary("2281", "2281")).toBe(false);
+    expect(shouldShowNoteSummary("2281", null)).toBe(false);
+    const long = "Der Zählerstand wird jedes Jahr im Januar an die Stadtwerke gemeldet.";
+    expect(shouldShowNoteSummary(long, `${long}`)).toBe(false);
+    expect(shouldShowNoteSummary(long, "an die Stadtwerke gemeldet.")).toBe(false);
+    expect(shouldShowNoteSummary(long, "Jährliche Meldung an die Stadtwerke.")).toBe(true);
   });
 });
