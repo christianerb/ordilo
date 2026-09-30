@@ -442,6 +442,13 @@ async function performMeteredAnalyzeStep(client: Client, document: AnalyzeStepDo
  * cleared here — they are replaced atomically by performAnalyzeStep
  * after generating new ones with the updated metadata.
  *
+ * Every replace carries `confirmed: wasConfirmed`. On a re-analysis no
+ * review step follows — the replacement rows ARE the live family book —
+ * so they must keep the confirmed flag the first confirm set. Tasks and
+ * facts default to `confirmed = false`, and the task list, the home
+ * views and the fact search all read confirmed rows only: a false flag
+ * would silently hide the very values the re-analysis just produced.
+ *
  * @throws {Error} if any DB operation fails.
  */
 export async function storeExtractionResults(
@@ -524,6 +531,7 @@ export async function storeExtractionResults(
     title: task.title,
     due_date: sanitizeDate(task.due_date),
     status: "open",
+    confirmed: wasConfirmed,
     confidence: task.confidence,
   }));
 
@@ -537,7 +545,7 @@ export async function storeExtractionResults(
     }
   }
 
-  // 4. Insert new document_facts rows (typed identifiers) --------------------
+  // 4. Insert new document_facts rows (key facts) -----------------------------
   type FactInsert = Database["public"]["Tables"]["document_facts"]["Insert"];
   const factInserts: FactInsert[] = analysis.facts.map((fact) => ({
     document_id: documentId,
@@ -546,6 +554,7 @@ export async function storeExtractionResults(
     label: fact.label,
     value: fact.value,
     normalized_value: normalizeFactValue(fact.value),
+    confirmed: wasConfirmed,
     confidence: fact.confidence,
   }));
 
