@@ -1,9 +1,12 @@
 import {
   buildLibraryFilterExpression,
+  buildLibraryJumpTargets,
+  flattenLibraryGroups,
+  getLibraryGroup,
+  getLibraryRowsThrough,
   filterLibraryDocuments,
   formatLibraryCount,
   getLibraryEntryGroup,
-  isNearListEnd,
   formatDocumentDate,
   getLibraryPageRange,
   getLibrarySortOrder,
@@ -11,6 +14,7 @@ import {
   getDocumentStatusGroup,
   getDocumentStatusLabel,
   getDocumentTitle,
+  getLibraryChunkRanges,
   groupLibraryDocuments,
   getDocumentStatusTone,
   isManualNote,
@@ -169,13 +173,13 @@ describe("document library helpers", () => {
     ]);
   });
 
-  it("groups the title sort by first letter", () => {
+  it("groups the title sort by first letter, umlauts with their vowel", () => {
     const doc = (id: string, title: string): LibraryDocument => ({ ...invoice, id, title });
     const groups = groupLibraryDocuments(
       [doc("1", "Arztbrief"), doc("2", "ärztliche Bescheinigung"), doc("3", "Bafög"), doc("4", "2026 Steuer")],
       "title",
     );
-    expect(groups.map((group) => group.label)).toEqual(["A", "Ä", "B", "#"]);
+    expect(groups.map((group) => group.label)).toEqual(["A", "B", "#"]);
   });
 
   it("only speaks up for non-final statuses", () => {
@@ -216,13 +220,76 @@ describe("unified library", () => {
     expect(formatLibraryCount("all", 4, { filtered: true })).toBe("4 Treffer");
   });
 
-  it("asks for the next page before the last row is reached", () => {
-    const at = (y: number) => ({
-      contentOffset: { y },
-      contentSize: { height: 3000 },
-      layoutMeasurement: { height: 800 },
-    });
-    expect(isNearListEnd(at(0))).toBe(false);
-    expect(isNearListEnd(at(1700))).toBe(true);
+});
+
+describe("long libraries", () => {
+  const now = new Date("2026-09-30T12:00:00");
+  const row = (created_at: string, title = "Brief") => ({ created_at, title, original_filename: null });
+
+  it("puts this week, months and letters into the same groups as the list", () => {
+    expect(getLibraryGroup(row("2026-09-28T09:00:00"), "newest", now)).toEqual({ key: "this-week", label: "Diese Woche" });
+    expect(getLibraryGroup(row("2026-03-02T09:00:00"), "newest", now)).toEqual({ key: "2026-2", label: "März 2026" });
+    expect(getLibraryGroup(row("2026-03-02T09:00:00", "ärztin"), "title", now).label).toBe("A");
+    expect(getLibraryGroup(row("2026-03-02T09:00:00", "élan"), "title", now).label).toBe("E");
+    expect(getLibraryGroup(row("2026-03-02T09:00:00", "2026 Steuer"), "title", now).label).toBe("#");
+  });
+
+  it("never repeats a group key when the database sorts a letter twice", () => {
+    const docs = ["Anna", "Zoo", "Ärger"].map((title, index) => ({
+      ...invoice,
+      id: String(index),
+      title,
+    }));
+    const groups = groupLibraryDocuments(docs, "title", now);
+    expect(groups.map((group) => group.key)).toEqual(["letter-A", "letter-Z", "letter-A~2"]);
+    expect(buildLibraryJumpTargets(docs, "title", now).map((target) => target.groupKey)).toEqual(
+      groups.map((group) => group.key),
+    );
+  });
+
+  it("knows every month of the full result and where it starts", () => {
+    const targets = buildLibraryJumpTargets(
+      [row("2026-09-29T09:00:00"), row("2026-08-10T09:00:00"), row("2026-08-01T09:00:00"), row("2025-12-24T09:00:00")],
+      "newest",
+      now,
+    );
+    expect(targets.map(({ groupKey, label, count, offset }) => [groupKey, label, count, offset])).toEqual([
+      ["this-week", "Diese Woche", 1, 0],
+      ["2026-7", "August 2026", 2, 1],
+      ["2025-11", "Dezember 2025", 1, 3],
+    ]);
+  });
+
+  it("splits a long read into ranges one response can carry", () => {
+    expect(getLibraryChunkRanges(50)).toEqual([{ from: 0, to: 49 }]);
+    expect(getLibraryChunkRanges(2050, 1000)).toEqual([
+      { from: 0, to: 999 },
+      { from: 1000, to: 1999 },
+      { from: 2000, to: 2049 },
+    ]);
+    expect(getLibraryChunkRanges(0)).toEqual([]);
+  });
+
+  it("loads through a jump target plus one page after it", () => {
+    expect(getLibraryRowsThrough(0)).toBe(50);
+    expect(getLibraryRowsThrough(24)).toBe(50);
+    expect(getLibraryRowsThrough(25)).toBe(75);
+    expect(getLibraryRowsThrough(130)).toBe(175);
+  });
+
+  it("flattens groups into sticky headers and card cells", () => {
+    const { items, stickyIndices } = flattenLibraryGroups([
+      { key: "this-week", label: "Diese Woche", documents: [invoice] },
+      { key: "2026-7", label: "August 2026", documents: [{ ...invoice, id: "a" }, { ...invoice, id: "b" }] },
+    ]);
+    expect(stickyIndices).toEqual([0, 2]);
+    expect(items.map((item) => item.type === "row" ? `${item.key}:${item.first}:${item.last}` : item.key)).toEqual([
+      "header-this-week",
+      "invoice:true:true",
+      "header-2026-7",
+      "a:true:false",
+      "b:false:true",
+    ]);
+    expect(items.flatMap((item) => (item.type === "header" ? [item.offset] : []))).toEqual([0, 1]);
   });
 });

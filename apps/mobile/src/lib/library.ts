@@ -98,23 +98,26 @@ export function formatLibraryCount(
   return `${count}${suffix} ${count === 1 && !more ? one : many}`;
 }
 
-/** The next page starts loading well before the last row is on screen. */
-export function isNearListEnd(
-  event: {
-    contentOffset: { y: number };
-    contentSize: { height: number };
-    layoutMeasurement: { height: number };
-  },
-  threshold = 600,
-): boolean {
-  const distance =
-    event.contentSize.height -
-    event.layoutMeasurement.height -
-    event.contentOffset.y;
-  return distance < threshold;
-}
-
 export const libraryPageSize = 25;
+
+/**
+ * PostgREST answers at most this many rows per request (Supabase's
+ * default max-rows), so longer reads are split into several ranges.
+ */
+export const libraryMaxRowsPerRequest = 1000;
+
+/** Row ranges of at most `chunk` rows that together cover 0…count-1. */
+export function getLibraryChunkRanges(
+  count: number,
+  chunk = libraryMaxRowsPerRequest,
+): { from: number; to: number }[] {
+  const ranges: { from: number; to: number }[] = [];
+  const size = Math.max(1, Math.floor(chunk));
+  for (let from = 0; from < count; from += size) {
+    ranges.push({ from, to: Math.min(count, from + size) - 1 });
+  }
+  return ranges;
+}
 
 export const librarySortOptions: { value: LibrarySort; label: string }[] = [
   { value: "newest", label: "Neueste zuerst" },
@@ -230,7 +233,9 @@ export function mergeLibraryDocuments(
   return [...current, ...next.filter((document) => !seen.has(document.id))];
 }
 
-export function getDocumentTitle(document: LibraryDocument): string {
+export function getDocumentTitle(
+  document: Pick<LibraryDocument, "original_filename" | "title">,
+): string {
   return document.title?.trim() || document.original_filename || "Dokument";
 }
 
@@ -338,9 +343,40 @@ export interface LibraryDocumentGroup {
   documents: LibraryDocument[];
 }
 
+type GroupableRow = Pick<LibraryDocument, "created_at" | "original_filename" | "title">;
+
 /**
- * Groups a date-sorted list into weeks and months so a long library keeps
- * its bearings while scrolling; the title sort groups by first letter
+ * The group one row falls into: "Diese Woche", a month, or a first letter
+ * for the title sort. Shared by the list and the month jump so both agree
+ * on where a group starts.
+ */
+export function getLibraryGroup(
+  row: GroupableRow,
+  sort: LibrarySort,
+  now = new Date(),
+): { key: string; label: string } {
+  if (sort === "title") {
+    const first = (getDocumentTitle(row).trim()[0] ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const letter = /[a-z]/i.test(first) ? first.toLocaleUpperCase("de") : "#";
+    return { key: `letter-${letter}`, label: letter };
+  }
+  const date = new Date(row.created_at);
+  if (Number.isNaN(date.getTime())) return { key: "unknown", label: "Ohne Datum" };
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  if (day >= weekAgo && day <= today) return { key: "this-week", label: "Diese Woche" };
+  return {
+    key: `${date.getFullYear()}-${date.getMonth()}`,
+    label: new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" }).format(date),
+  };
+}
+
+/**
+ * Groups a sorted list into weeks and months so a long library keeps its
+ * bearings while scrolling; the title sort groups by first letter
  * instead. Groups are computed on the already-sorted list so the order
  * inside a group is never changed here.
  */
@@ -350,45 +386,124 @@ export function groupLibraryDocuments(
   now = new Date(),
 ): LibraryDocumentGroup[] {
   const groups: LibraryDocumentGroup[] = [];
-  const push = (key: string, label: string, document: LibraryDocument) => {
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) {
-      last.documents.push(document);
-      return;
-    }
-    groups.push({ key, label, documents: [document] });
-  };
-
-  if (sort === "title") {
-    for (const document of documents) {
-      const first = getDocumentTitle(document).trim()[0] ?? "#";
-      const letter = /[a-zäöü]/i.test(first) ? first.toLocaleUpperCase("de") : "#";
-      push(`letter-${letter}`, letter, document);
-    }
-    return groups;
-  }
-
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const weekAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
-  const monthFormatter = new Intl.DateTimeFormat("de-DE", {
-    month: "long",
-    year: "numeric",
-  });
+  const runKey = createRunKeys();
+  let lastBase: string | null = null;
   for (const document of documents) {
-    const date = new Date(document.created_at);
-    if (Number.isNaN(date.getTime())) {
-      push("unknown", "Ohne Datum", document);
-      continue;
-    }
-    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    if (day >= weekAgo && day <= today) {
-      push("this-week", "Diese Woche", document);
-      continue;
-    }
-    const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
-    push(monthKey, monthFormatter.format(date), document);
+    const { key, label } = getLibraryGroup(document, sort, now);
+    const last = groups[groups.length - 1];
+    if (last && lastBase === key) last.documents.push(document);
+    else groups.push({ key: runKey(key), label, documents: [document] });
+    lastBase = key;
   }
   return groups;
+}
+
+/**
+ * The database's collation decides where "Ärger", "é" or untitled rows
+ * land, so the same group can appear twice in one run of rows. The
+ * second run gets its own key; list and jump index number runs the same
+ * way because the loaded rows are always a prefix of the full result.
+ */
+function createRunKeys(): (key: string) => string {
+  const seen = new Map<string, number>();
+  return (key) => {
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    return count === 1 ? key : `${key}~${count}`;
+  };
+}
+
+export interface LibraryJumpTarget {
+  /** Same key as the list group it jumps to. */
+  groupKey: string;
+  label: string;
+  count: number;
+  /** Position of the group's first row in the full, sorted result. */
+  offset: number;
+}
+
+/** The columns a jump index needs: enough to group, nothing to read. */
+export const libraryJumpSelect = "created_at, title, original_filename";
+
+/**
+ * Every group of the full result, not only the loaded pages, so a family
+ * with two years of paperwork can go straight to "März 2025".
+ */
+export function buildLibraryJumpTargets(
+  rows: GroupableRow[],
+  sort: LibrarySort,
+  now = new Date(),
+): LibraryJumpTarget[] {
+  const targets: LibraryJumpTarget[] = [];
+  const runKey = createRunKeys();
+  let lastBase: string | null = null;
+  rows.forEach((row, index) => {
+    const { key, label } = getLibraryGroup(row, sort, now);
+    const last = targets[targets.length - 1];
+    if (last && lastBase === key) last.count += 1;
+    else targets.push({ groupKey: runKey(key), label, count: 1, offset: index });
+    lastBase = key;
+  });
+  return targets;
+}
+
+/** How many rows to load so a jump target's whole first page is present. */
+export function getLibraryRowsThrough(offset: number, pageSize = libraryPageSize): number {
+  return (Math.floor(Math.max(0, offset) / pageSize) + 2) * pageSize;
+}
+
+export type LibraryListItem =
+  | {
+      type: "header";
+      key: string;
+      groupKey: string;
+      label: string;
+      /** Position of the group's first row among all rows. */
+      offset: number;
+    }
+  | {
+      type: "row";
+      key: string;
+      groupKey: string;
+      document: LibraryDocument;
+      first: boolean;
+      last: boolean;
+    };
+
+/**
+ * One flat list for a virtualized FlatList: a header item per group (the
+ * sticky ones) followed by its rows, each row knowing whether it opens or
+ * closes its group's card.
+ */
+export function flattenLibraryGroups(groups: LibraryDocumentGroup[]): {
+  items: LibraryListItem[];
+  stickyIndices: number[];
+} {
+  const items: LibraryListItem[] = [];
+  const stickyIndices: number[] = [];
+  let offset = 0;
+  for (const group of groups) {
+    stickyIndices.push(items.length);
+    items.push({
+      type: "header",
+      key: `header-${group.key}`,
+      groupKey: group.key,
+      label: group.label,
+      offset,
+    });
+    offset += group.documents.length;
+    group.documents.forEach((document, index) => {
+      items.push({
+        type: "row",
+        key: document.id,
+        groupKey: group.key,
+        document,
+        first: index === 0,
+        last: index === group.documents.length - 1,
+      });
+    });
+  }
+  return { items, stickyIndices };
 }
 
 /**
