@@ -186,7 +186,7 @@ export default function NoteScreen() {
   if (loading) {
     return (
       <Screen style={styles.screen}>
-        <DetailTopBar onBack={() => router.back()} title="Notiz" />
+        <DetailTopBar onBack={() => router.back()} />
         <View style={styles.loadingContent}>
           <ListSkeleton rows={4} />
         </View>
@@ -224,7 +224,7 @@ export default function NoteScreen() {
             disabled={deleting}
             hitSlop={8}
             onPress={openMenu}
-            style={({ pressed }) => [styles.edit, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}
           >
             {deleting
               ? <ActivityIndicator color={colors.mistDark} size="small" />
@@ -239,7 +239,7 @@ export default function NoteScreen() {
 
         {shouldShowNoteSummary(content, note.summary) ? (
           <View style={styles.summaryBlock}>
-            <Text style={styles.summaryLabel}>Kurz gesagt</Text>
+            <Text style={styles.fieldLabel}>Kurz gesagt</Text>
             <Text style={styles.summary}>{note.summary}</Text>
           </View>
         ) : null}
@@ -290,7 +290,7 @@ export default function NoteScreen() {
         error={deleteError}
         loading={deleting}
         loadingLabel="Wird gelöscht …"
-        message={`"${note.title?.trim() || "Diese Notiz"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
+        message={`„${note.title?.trim() || "Diese Notiz"}“ wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={() => void deleteNote()}
         title="Notiz löschen?"
@@ -471,8 +471,13 @@ function SecretSection({ documentId }: { documentId: string }) {
   return (
     <View style={styles.secretPanel}>
       <View style={styles.secretCopy}>
-        <Text style={styles.summaryLabel}>Passwort</Text>
-        <Text numberOfLines={2} selectable={Boolean(shown)} style={shown ? styles.secretValue : styles.secretMasked}>
+        <Text style={styles.fieldLabel}>Passwort</Text>
+        <Text
+          accessibilityLabel={shown ? undefined : "Verborgen"}
+          numberOfLines={2}
+          selectable={Boolean(shown)}
+          style={shown ? styles.secretValue : styles.secretMasked}
+        >
           {shown ? secret : "••••••••"}
         </Text>
       </View>
@@ -680,21 +685,22 @@ function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
   loadingContent: { paddingHorizontal: spacing.md },
-  edit: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -6, width: 44 },
+  menuButton: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -6, width: 44 },
   content: { gap: spacing.lg, padding: spacing.md, paddingBottom: spacing["2xl"] },
   title: { color: colors.graphite, ...typography.largeTitle },
   valueGroup: { alignItems: "flex-start", gap: spacing.sm },
   valuePanel: { alignSelf: "stretch", backgroundColor: colors.sand, borderRadius: radii.md, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
-  value: { color: colors.harborBlue, fontFamily: typography.largeTitle.fontFamily, fontSize: 40, fontVariant: ["tabular-nums"], letterSpacing: 0.5, lineHeight: 46 },
+  value: { color: colors.harborBlue, fontFamily: typography.largeTitle.fontFamily, fontSize: 34, fontVariant: ["tabular-nums"], letterSpacing: 0.5, lineHeight: 41 },
   textPanel: { backgroundColor: colors.sand, borderRadius: radii.sm, gap: spacing.md, padding: spacing.md },
   contentText: { color: colors.graphite, ...typography.body },
   emptyText: { color: colors.mistDark, ...typography.body },
   copyRow: { flexDirection: "row", minHeight: 20 },
-  copyInner: { alignItems: "center", flexDirection: "row", gap: 6 },
-  copyButton: { alignSelf: "flex-start", justifyContent: "center", minHeight: 44 },
+  copyInner: { alignItems: "center", flexDirection: "row", gap: spacing.xs },
+  // Keeps a 44pt target without adding visual space below the 20pt label.
+  copyButton: { alignSelf: "flex-start", justifyContent: "center", marginVertical: -12, minHeight: 44 },
   copyText: { color: colors.harborBlue, ...typography.caption },
   summaryBlock: { gap: spacing.xs },
-  summaryLabel: { color: colors.mistDark, ...typography.label },
+  fieldLabel: { color: colors.mistDark, ...typography.label },
   summary: { color: colors.graphite, ...typography.body },
   attachment: { alignItems: "center", backgroundColor: colors.sand, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, minHeight: 52, paddingHorizontal: spacing.md },
   attachmentText: { color: colors.harborBlue, flex: 1, ...typography.title },
