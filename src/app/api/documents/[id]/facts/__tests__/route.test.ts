@@ -97,7 +97,7 @@ describe("/api/documents/[id]/facts", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib eine gültige Nummer an.",
+      error: "Bitte gib eine gültige Angabe an.",
       code: "INVALID_INPUT",
     });
   });
@@ -118,7 +118,7 @@ describe("/api/documents/[id]/facts", () => {
         document_id: DOCUMENT_ID,
         family_id: FAMILY_ID,
         fact_type: "identifier",
-        label: "Nummer",
+        label: "Angabe",
         value: "SN 4823-XK",
         normalized_value: "sn4823xk",
         confidence: 1.0,
@@ -161,7 +161,7 @@ describe("/api/documents/[id]/facts", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib an, was an der Nummer geändert werden soll.",
+      error: "Bitte gib an, was an der Angabe geändert werden soll.",
       code: "INVALID_INPUT",
     });
   });
@@ -232,7 +232,7 @@ describe("/api/documents/[id]/facts", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib an, welche Nummer entfernt werden soll.",
+      error: "Bitte gib an, welche Angabe entfernt werden soll.",
       code: "INVALID_INPUT",
     });
   });

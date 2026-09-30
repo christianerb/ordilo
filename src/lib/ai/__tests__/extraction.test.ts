@@ -167,6 +167,23 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("school");
   });
 
+  it("asks for facts beyond identifiers — a certificate's grade is one too", () => {
+    const prompt = buildSystemPrompt(validFamilyContext());
+    // Identifiers stay the anchor of the fact rule…
+    expect(prompt).toContain("Seriennummern");
+    expect(prompt).toContain("Steuer-ID");
+    // …but short exact values like a degree or a grade are facts now, so
+    // "Welche Note hat Karina im Master?" has a row to answer from.
+    expect(prompt).toContain("Abschluss");
+    expect(prompt).toContain("Gesamtnote");
+    expect(prompt).toContain("ECTS");
+  });
+
+  it("keeps facts from duplicating other extracted field types", () => {
+    const prompt = buildSystemPrompt(validFamilyContext());
+    expect(prompt).toContain("NICHT als facts");
+  });
+
   it("keeps times on their date, marks the letter date, and keeps appointments out of tasks", () => {
     const prompt = buildSystemPrompt(validFamilyContext());
     expect(prompt).toContain("NIEMALS nur eine Uhrzeit");

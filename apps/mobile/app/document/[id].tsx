@@ -891,7 +891,7 @@ export default function DocumentReviewScreen() {
               <Text style={styles.editHelp}>
                 {editable
                   ? "Ändere nur, was nicht stimmt. Danach speicherst du das Dokument mit „Passt so“."
-                  : "Korrigiere, was nicht stimmt. Aufgaben und Nummern werden mitgespeichert. Passende Kalendereinträge folgen geänderten Terminen; separat bearbeitete Termine bleiben bestehen. Entfernte Datumsangaben löschen keine Kalendereinträge."}
+                  : "Korrigiere, was nicht stimmt. Aufgaben und Angaben werden mitgespeichert. Passende Kalendereinträge folgen geänderten Terminen; separat bearbeitete Termine bleiben bestehen. Entfernte Datumsangaben löschen keine Kalendereinträge."}
               </Text>
             </View>
 
@@ -1607,14 +1607,14 @@ function AmountsSection({ analysis, editable, onChange }: SectionProps) {
 
 function FactsSection({ analysis, editable, onChange }: SectionProps) {
   return (
-    <Section icon={Hash} title="Nummern & Kennungen" onAdd={editable ? () => onChange((current) => ({ ...current, facts: [...current.facts, { fact_type: "identifier", label: "", value: "", confidence: 1 }] })) : undefined}>
-      {analysis.facts.length === 0 ? <EmptyRows text="Keine Nummer erkannt." /> : null}
+    <Section icon={Hash} title="Wichtige Angaben" onAdd={editable ? () => onChange((current) => ({ ...current, facts: [...current.facts, { fact_type: "identifier", label: "", value: "", confidence: 1 }] })) : undefined}>
+      {analysis.facts.length === 0 ? <EmptyRows text="Keine Angabe erkannt." /> : null}
       {analysis.facts.map((fact, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("facts", index, onChange)}>
           <FieldLabel text="Bezeichnung" />
-          <TextInput accessibilityLabel={`Bezeichnung Kennung ${index + 1}`} onChangeText={(label) => updateAt("facts", index, { label }, onChange)} placeholder="Zum Beispiel: Vertragsnummer" placeholderTextColor={colors.mistDark} style={styles.input} value={fact.label} />
-          <FieldLabel text="Nummer" />
-          <TextInput accessibilityLabel={`Kennung ${index + 1}`} onChangeText={(value) => updateAt("facts", index, { value }, onChange)} style={styles.input} value={fact.value} />
+          <TextInput accessibilityLabel={`Bezeichnung Angabe ${index + 1}`} onChangeText={(label) => updateAt("facts", index, { label }, onChange)} placeholder="Zum Beispiel: Vertragsnummer" placeholderTextColor={colors.mistDark} style={styles.input} value={fact.label} />
+          <FieldLabel text="Wert" />
+          <TextInput accessibilityLabel={`Wert der Angabe ${index + 1}`} onChangeText={(value) => updateAt("facts", index, { value }, onChange)} style={styles.input} value={fact.value} />
           <Confidence confidence={fact.confidence} />
           <OriginalTextHint text={analysis.ocr_text} value={fact.value} />
         </EditableRow>

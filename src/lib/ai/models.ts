@@ -85,5 +85,10 @@ export const EMBEDDING_DIMENSIONS = 1536;
  *   4 — time-specific synthetic questions (Um wieviel Uhr, Wie spät, Uhrzeit)
  *        + improved extraction prompt (detailed summaries, always tags, times)
  *        + re-analyze keeps confirmed status with auto re-embedding
+ *   5 — general-purpose facts: the extraction prompt no longer confines
+ *        facts to numbers and identifiers — a certificate's Abschluss,
+ *        Gesamtnote and ECTS are facts too. Embeddings are unchanged; no
+ *        reindex needed. Old documents keep their v4 facts until
+ *        re-analyzed.
  */
-export const PIPELINE_VERSION = 4;
+export const PIPELINE_VERSION = 5;

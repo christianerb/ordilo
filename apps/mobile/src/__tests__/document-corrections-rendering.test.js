@@ -144,7 +144,7 @@ describe("confirmed document corrections", () => {
     pickDate("Fälligkeitsdatum Aufgabe 1", "2026-10-01");
     change("Betrag 1", "12,50");
     change("Währung Betrag 1", "CHF");
-    change("Kennung 1", "4b");
+    change("Wert der Angabe 1", "4b");
     change("Neues Schlagwort", "Wichtig");
     act(() => tree.root.findAllByProps({ accessibilityLabel: "Hinzufügen" })[0].props.onPress());
     saveDocumentCorrections.mockImplementation(async (_id, _baseline, draft) => { loadDocumentReview.mockResolvedValue(draft); });
