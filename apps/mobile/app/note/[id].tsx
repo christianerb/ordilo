@@ -9,14 +9,19 @@ import {
   Copy,
   Eye,
   EyeOff,
-  FileText,
-  Image as ImageIcon,
+  ExternalLink,
   KeyRound,
+  Image as ImageIcon,
+  Mail,
+  MoreHorizontal,
+  Paperclip,
   Pencil,
+  Phone,
   Trash2,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Pressable,
@@ -25,20 +30,27 @@ import {
   Text,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import {
   OrdiloFormBody,
   OrdiloFormField,
   OrdiloFormFooter,
   OrdiloFormInput,
   OrdiloFormSheet,
+  type OrdiloSheetHandle,
 } from "@/src/components/sheet";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
-import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
+import { DetailTopBar, EmptyState, IconButton, ListSkeleton, OrdiloButton, Screen, SpringPressable } from "@/src/components/ui";
 import {
   buildDocumentUpdatePayload,
+  formatNoteValue,
   getNoteContent,
+  getNoteValueAction,
+  isShortNoteValue,
+  shouldShowNoteSummary,
   updateDocumentSecret,
   updateConfirmedDocument,
 } from "@/src/lib/notes";
@@ -57,9 +69,12 @@ import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
+import { stateEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const noteTypes = Object.entries(documentTypeLabels) as [DocumentType, string][];
+
+type MenuChoice = "edit" | "password" | "delete";
 
 /**
  * A note has its own compact reader: its text stays readable first, while
@@ -76,6 +91,8 @@ export default function NoteScreen() {
   const [openingOriginal, setOpeningOriginal] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const [showSecretEditor, setShowSecretEditor] = useState(false);
+  const [secretVersion, setSecretVersion] = useState(0);
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
@@ -128,6 +145,22 @@ export default function NoteScreen() {
     setDeleteOpen(true);
   }, [deleting, note]);
 
+  const menuRef = useRef<OrdiloSheetHandle>(null);
+  const pendingMenuRef = useRef<MenuChoice | null>(null);
+
+  // The follow-up sheet opens only after the menu has fully closed, so two sheets never stack.
+  const chooseMenu = (choice: MenuChoice) => {
+    pendingMenuRef.current = choice;
+    menuRef.current?.dismiss();
+  };
+  const finishMenu = () => {
+    const choice = pendingMenuRef.current;
+    pendingMenuRef.current = null;
+    if (choice === "edit") setShowEditor(true);
+    if (choice === "password") setShowSecretEditor(true);
+    if (choice === "delete") askToDelete();
+  };
+
   const openOriginal = useCallback(async () => {
     if (!id || openingOriginal) return;
     setOpeningOriginal(true);
@@ -142,7 +175,7 @@ export default function NoteScreen() {
       }
     } catch {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Bild nicht verfügbar", "Das Bild konnte nicht geöffnet werden. Bitte versuch es später nochmal.");
+      Alert.alert("Datei nicht verfügbar", "Die Datei konnte nicht geöffnet werden. Bitte versuch es später nochmal.");
     } finally {
       setOpeningOriginal(false);
     }
@@ -151,7 +184,7 @@ export default function NoteScreen() {
   if (loading) {
     return (
       <Screen style={styles.screen}>
-        <DetailTopBar onBack={() => router.back()} title="Notiz" />
+        <DetailTopBar onBack={() => router.back()} />
         <View style={styles.loadingContent}>
           <ListSkeleton rows={4} />
         </View>
@@ -175,85 +208,74 @@ export default function NoteScreen() {
   }
 
   const hasAttachment = Boolean(note.mime_type || note.original_filename);
+  const attachmentIsImage = isImageFile(note.mime_type);
+  const isCredentials = note.document_type === "credentials";
+  const hasText = Boolean(note.ocr_text?.trim());
   const content = getNoteContent(note);
-  const editable = note.status === "confirmed";
 
   return (
     <Screen style={styles.screen}>
       <DetailTopBar
         onBack={() => router.back()}
-        title="Notiz"
-        trailing={editable ? (
-          <Pressable
-            accessibilityLabel="Angaben bearbeiten"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => setShowEditor(true)}
-            style={styles.edit}
-          >
-            <Pencil color={colors.harborBlue} size={19} />
-          </Pressable>
-        ) : undefined}
+        title={note.document_type === "note" ? undefined : documentTypeLabels[note.document_type]}
+        trailing={
+          <IconButton
+            accessibilityLabel="Weitere Aktionen"
+            disabled={deleting}
+            icon={MoreHorizontal}
+            onPress={() => menuRef.current?.present()}
+            tone="plain"
+          />
+        }
       />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <View style={styles.icon}><FileText color={colors.harborBlue} size={23} /></View>
-          <View style={styles.heroCopy}>
-            <Text style={styles.type}>{documentTypeLabels[note.document_type]}</Text>
-            <Text style={styles.title}>{note.title || "Notiz"}</Text>
-          </View>
-        </View>
+        <Text accessibilityRole="header" style={styles.title}>{note.title || "Notiz"}</Text>
 
-        <Card style={styles.card}>
-          <Text style={styles.sectionTitle}>Notiz</Text>
-          <Text selectable style={styles.contentText}>{content}</Text>
-        </Card>
+        {hasText || (!hasAttachment && !isCredentials)
+          ? <NoteContent content={content} hasText={hasText} />
+          : null}
 
-        {note.summary ? (
-          <Card style={styles.card}>
-            <Text style={styles.sectionTitle}>Kurz gesagt</Text>
+        {shouldShowNoteSummary(content, note.summary) ? (
+          <View style={styles.summaryBlock}>
+            <Text style={styles.fieldLabel}>Kurz gesagt</Text>
             <Text style={styles.summary}>{note.summary}</Text>
-          </Card>
+          </View>
         ) : null}
 
-        {note.document_type === "credentials" ? <SecretSection documentId={id} /> : null}
+        {isCredentials ? <SecretSection documentId={id} key={secretVersion} /> : null}
 
         {hasAttachment ? (
           <Pressable
-            accessibilityHint="Öffnet das angehängte Bild"
-            accessibilityLabel="Angehängtes Bild ansehen"
+            accessibilityHint={attachmentIsImage ? "Öffnet das angehängte Bild" : "Öffnet die angehängte Datei"}
+            accessibilityLabel={attachmentIsImage ? "Bild ansehen" : "Datei öffnen"}
             accessibilityRole="button"
             disabled={openingOriginal}
             onPress={() => void openOriginal()}
             style={({ pressed }) => [styles.attachment, pressed && styles.pressed, openingOriginal && styles.disabled]}
           >
-            {openingOriginal ? <ActivityIndicator color={colors.harborBlue} size="small" /> : <ImageIcon color={colors.harborBlue} size={19} />}
-            <Text style={styles.attachmentText}>{openingOriginal ? "Bild wird geöffnet …" : "Angehängtes Bild ansehen"}</Text>
+            {openingOriginal
+              ? <ActivityIndicator color={colors.harborBlue} size="small" />
+              : attachmentIsImage
+                ? <ImageIcon color={colors.harborBlue} size={19} />
+                : <Paperclip color={colors.harborBlue} size={19} />}
+            <Text numberOfLines={1} style={styles.attachmentText}>
+              {openingOriginal ? "Wird geöffnet …" : attachmentIsImage ? "Bild ansehen" : "Datei öffnen"}
+            </Text>
             <ChevronRight color={colors.mistDark} size={18} />
           </Pressable>
         ) : null}
-
-        <View style={styles.actions}>
-          {editable ? (
-            <OrdiloButton
-              icon={<Pencil color={colors.graphite} size={17} />}
-              onPress={() => setShowEditor(true)}
-              title="Angaben bearbeiten"
-              variant="outline"
-            />
-          ) : null}
-          <Pressable
-            accessibilityLabel="Notiz löschen"
-            accessibilityRole="button"
-            disabled={deleting}
-            onPress={askToDelete}
-            style={({ pressed }) => [styles.delete, pressed && styles.pressed, deleting && styles.disabled]}
-          >
-            {deleting ? <ActivityIndicator color={colors.destructive} size="small" /> : <Trash2 color={colors.destructive} size={18} />}
-            <Text style={styles.deleteText}>{deleting ? "Wird gelöscht …" : "Notiz löschen"}</Text>
-          </Pressable>
-        </View>
       </ScrollView>
+      {showSecretEditor ? (
+        <SecretEditor
+          documentId={id}
+          onClose={() => setShowSecretEditor(false)}
+          onSaved={() => {
+            setShowSecretEditor(false);
+            // Remounting drops a revealed copy of the old password.
+            setSecretVersion((current) => current + 1);
+          }}
+        />
+      ) : null}
       {showEditor ? (
         <NoteMetadataEditor
           documentId={id}
@@ -272,14 +294,143 @@ export default function NoteScreen() {
         error={deleteError}
         loading={deleting}
         loadingLabel="Wird gelöscht …"
-        message={`"${note.title?.trim() || "Diese Notiz"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
+        message={`„${note.title?.trim() || "Diese Notiz"}“ wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={() => void deleteNote()}
         title="Notiz löschen?"
         visible={deleteOpen}
       />
+      <CreateChoiceSheet
+        accessibilityLabel="Aktionen für diese Notiz"
+        items={[
+          ...(note.status === "confirmed" ? [{
+            accessibilityLabel: "Bearbeiten",
+            description: "Titel, Art und Kurzfassung ändern",
+            icon: Pencil,
+            label: "Bearbeiten",
+            onPress: () => chooseMenu("edit"),
+            tint: "blue" as const,
+          }] : []),
+          ...(isCredentials ? [{
+            accessibilityLabel: "Passwort ändern",
+            description: "Ein neues Passwort speichern",
+            icon: KeyRound,
+            label: "Passwort ändern",
+            onPress: () => chooseMenu("password"),
+            tint: "sage" as const,
+          }] : []),
+          {
+            accessibilityLabel: "Notiz löschen",
+            description: "Aus eurer Ablage entfernen",
+            icon: Trash2,
+            label: "Löschen",
+            onPress: () => chooseMenu("delete"),
+            tint: "sand" as const,
+          },
+        ]}
+        onDismiss={finishMenu}
+        ref={menuRef}
+        subtitle={note.title?.trim() || undefined}
+        title="Notiz"
+      />
       <OriginalImagePreview imageUrl={imageUrl} onClose={() => setImageUrl(null)} />
     </Screen>
+  );
+}
+
+const copiedResetMs = 1600;
+
+const valueActionIcons = { call: Phone, mail: Mail, open: ExternalLink } as const;
+
+async function openValueAction(url: string) {
+  try {
+    await Linking.openURL(url);
+  } catch {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    Alert.alert("Das hat nicht geklappt", "Dein Handy kann das gerade nicht öffnen. Kopiere den Wert und versuch es selbst.");
+  }
+}
+
+/**
+ * The note's text is the reason the screen was opened, so it leads. A short
+ * value is shown large and copies with one tap anywhere on it; longer text
+ * stays selectable reading text with the same copy action beneath.
+ */
+function NoteContent({ content, hasText }: { content: string; hasText: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isValue = hasText && isShortNoteValue(content);
+
+  useEffect(() => () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+  }, []);
+
+  const copy = useCallback(async () => {
+    await Clipboard.setStringAsync(content.trim());
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    AccessibilityInfo.announceForAccessibility("Kopiert");
+    setCopied(true);
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setCopied(false), copiedResetMs);
+  }, [content]);
+
+  if (!hasText) {
+    return <Text style={styles.emptyText}>{content}</Text>;
+  }
+
+  const copyLabel = (
+    <View style={styles.copyRow}>
+      <Animated.View entering={stateEntering()} key={copied ? "copied" : "copy"} style={styles.copyInner}>
+        {copied
+          ? <Check color={colors.harborBlue} size={16} strokeWidth={2.4} />
+          : <Copy color={colors.mistDark} size={16} />}
+        <Text style={[styles.copyText, copied && styles.copyTextDone]}>{copied ? "Kopiert" : "Kopieren"}</Text>
+      </Animated.View>
+    </View>
+  );
+
+  if (isValue) {
+    const action = getNoteValueAction(content);
+    const ActionIcon = action ? valueActionIcons[action.kind] : null;
+    return (
+      <View style={styles.valueGroup}>
+        <SpringPressable
+          accessibilityHint="Kopiert den Wert"
+          accessibilityLabel={content}
+          haptic={false}
+          onPress={() => void copy()}
+          style={styles.valuePanel}
+        >
+          <Text maxFontSizeMultiplier={1.3} style={styles.value}>
+            {formatNoteValue(content)}
+          </Text>
+          {copyLabel}
+        </SpringPressable>
+        {action && ActionIcon ? (
+          <OrdiloButton
+            icon={<ActionIcon color={colors.warmWhite} size={18} />}
+            onPress={() => void openValueAction(action.url)}
+            size="lg"
+            title={action.label}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.textPanel}>
+      <Text selectable style={styles.contentText}>{content}</Text>
+      <Pressable
+        accessibilityLabel={copied ? "Kopiert" : "Text kopieren"}
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={() => void copy()}
+        style={({ pressed }) => [styles.copyButton, pressed && styles.pressed]}
+      >
+        {copyLabel}
+      </Pressable>
+    </View>
   );
 }
 
@@ -287,7 +438,8 @@ function SecretSection({ documentId }: { documentId: string }) {
   const [secret, setSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedReset = useRef<ReturnType<typeof setTimeout> | null>(null);
   const secretExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipboardExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedSecret = useRef<string | null>(null);
@@ -305,10 +457,11 @@ function SecretSection({ documentId }: { documentId: string }) {
   useEffect(() => () => {
     if (secretExpiry.current) clearTimeout(secretExpiry.current);
     if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
-    const copied = copiedSecret.current;
-    if (copied) {
+    if (copiedReset.current) clearTimeout(copiedReset.current);
+    const pending = copiedSecret.current;
+    if (pending) {
       void Clipboard.getStringAsync()
-        .then((value) => value === copied ? Clipboard.setStringAsync("") : undefined)
+        .then((value) => value === pending ? Clipboard.setStringAsync("") : undefined)
         .catch(() => undefined);
     }
   }, []);
@@ -335,6 +488,11 @@ function SecretSection({ documentId }: { documentId: string }) {
     if (!secret) return;
     await Clipboard.setStringAsync(secret);
     copiedSecret.current = secret;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    AccessibilityInfo.announceForAccessibility("Passwort kopiert");
+    setCopied(true);
+    if (copiedReset.current) clearTimeout(copiedReset.current);
+    copiedReset.current = setTimeout(() => setCopied(false), copiedResetMs);
     armSecretExpiry();
     if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
     clipboardExpiry.current = setTimeout(() => {
@@ -347,54 +505,49 @@ function SecretSection({ documentId }: { documentId: string }) {
     }, 30_000);
   };
 
+  const shown = visible && secret;
+
   return (
-    <Card style={styles.card}>
-      <View style={styles.secretHeader}>
-        <KeyRound color={colors.mistDark} size={18} />
-        <Text style={styles.sectionTitle}>Passwort</Text>
+    <View style={styles.secretPanel}>
+      <View style={styles.secretCopy}>
+        <Text style={styles.fieldLabel}>Passwort</Text>
+        <Text
+          accessibilityLabel={shown ? undefined : "Verborgen"}
+          numberOfLines={2}
+          selectable={Boolean(shown)}
+          style={shown ? styles.secretValue : styles.secretMasked}
+        >
+          {shown ? secret : "••••••••"}
+        </Text>
       </View>
-      {visible && secret ? (
-        <>
-          <Text selectable style={styles.secretValue}>{secret}</Text>
-          <View style={styles.secretActions}>
-            <OrdiloButton
-              icon={<Copy color={colors.graphite} size={16} />}
-              onPress={() => void copy()}
-              title="Kopieren"
-              variant="outline"
-            />
-            <OrdiloButton
-              icon={<EyeOff color={colors.mistDark} size={16} />}
-              onPress={clearSecret}
-              title="Verbergen"
-              variant="ghost"
-            />
-          </View>
-        </>
-      ) : (
-        <OrdiloButton
-          icon={loading ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Eye color={colors.warmWhite} size={17} />}
-          onPress={() => void reveal()}
-          title={loading ? "Wird geladen …" : "Passwort anzeigen"}
-        />
-      )}
-      <OrdiloButton
-        icon={<Pencil color={colors.graphite} size={16} />}
-        onPress={() => setEditing(true)}
-        title="Passwort ändern"
-        variant="outline"
-      />
-      {editing ? (
-        <SecretEditor
-          documentId={documentId}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            clearSecret();
-            setEditing(false);
-          }}
-        />
+      {shown ? (
+        <Pressable
+          accessibilityLabel={copied ? "Kopiert" : "Passwort kopieren"}
+          accessibilityRole="button"
+          onPress={() => void copy()}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+        >
+          <Animated.View entering={stateEntering()} key={copied ? "copied" : "copy"}>
+            {copied
+              ? <Check color={colors.harborBlue} size={19} strokeWidth={2.4} />
+              : <Copy color={colors.harborBlue} size={19} />}
+          </Animated.View>
+        </Pressable>
       ) : null}
-    </Card>
+      <Pressable
+        accessibilityLabel={shown ? "Passwort verbergen" : "Passwort anzeigen"}
+        accessibilityRole="button"
+        disabled={loading}
+        onPress={shown ? clearSecret : () => void reveal()}
+        style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+      >
+        {loading
+          ? <ActivityIndicator color={colors.harborBlue} size="small" />
+          : shown
+            ? <EyeOff color={colors.mistDark} size={19} />
+            : <Eye color={colors.harborBlue} size={19} />}
+      </Pressable>
+    </View>
   );
 }
 
@@ -521,8 +674,8 @@ function NoteMetadataEditor({
       dismissDisabled={saving}
       keyboardAvoiding
       onClose={onClose}
-      subtitle="Text, Bild und Passwort bleiben geschützt und werden hier nicht geändert."
-      title="Angaben bearbeiten"
+      subtitle="Den Text der Notiz kannst du hier nicht ändern."
+      title="Bearbeiten"
       visible
     >
       <OrdiloFormBody>
@@ -571,25 +724,30 @@ function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
   loadingContent: { paddingHorizontal: spacing.md },
-  edit: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -6, width: 44 },
-  content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing["2xl"] },
-  hero: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
-  icon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 44, justifyContent: "center", width: 44 },
-  heroCopy: { flex: 1 },
-  type: { color: colors.mistDark, ...typography.label },
-  title: { color: colors.graphite, ...typography.display },
-  card: { gap: spacing.sm },
-  sectionTitle: { color: colors.graphite, ...typography.title },
+  content: { gap: spacing.lg, padding: spacing.md, paddingBottom: spacing["2xl"] },
+  title: { color: colors.graphite, ...typography.largeTitle },
+  valueGroup: { gap: spacing.sm },
+  valuePanel: { backgroundColor: colors.sand, borderRadius: radii.sm, gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.xl },
+  value: { color: colors.harborBlue, fontFamily: typography.largeTitle.fontFamily, fontSize: 34, fontVariant: ["tabular-nums"], letterSpacing: 0.5, lineHeight: 41 },
+  textPanel: { backgroundColor: colors.sand, borderRadius: radii.sm, gap: spacing.md, padding: spacing.md },
   contentText: { color: colors.graphite, ...typography.body },
-  summary: { color: colors.mistDark, ...typography.body },
-  attachment: { alignItems: "center", backgroundColor: colors.sand, borderColor: colors.mistLight, borderRadius: radii.sm, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 52, paddingHorizontal: 12 },
+  emptyText: { color: colors.mistDark, ...typography.body },
+  copyRow: { flexDirection: "row", minHeight: 20 },
+  copyInner: { alignItems: "center", flexDirection: "row", gap: spacing.xs },
+  // Keeps a 44pt target without adding visual space below the 20pt label.
+  copyButton: { alignSelf: "flex-start", justifyContent: "center", marginVertical: -12, minHeight: 44 },
+  copyText: { color: colors.mistDark, ...typography.caption },
+  copyTextDone: { color: colors.harborBlue },
+  summaryBlock: { gap: spacing.xs },
+  fieldLabel: { color: colors.mistDark, ...typography.label },
+  summary: { color: colors.graphite, ...typography.body },
+  attachment: { alignItems: "center", backgroundColor: colors.sand, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, minHeight: 52, paddingHorizontal: spacing.md },
   attachmentText: { color: colors.harborBlue, flex: 1, ...typography.title },
-  actions: { alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
-  delete: { alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 44, paddingHorizontal: spacing.sm },
-  deleteText: { color: colors.destructive, ...typography.title },
-  secretHeader: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
-  secretValue: { backgroundColor: colors.sandLight, borderRadius: radii.base, color: colors.graphite, padding: 12, ...typography.body },
-  secretActions: { flexDirection: "row", gap: spacing.sm },
+  secretPanel: { alignItems: "center", backgroundColor: colors.sand, borderRadius: radii.sm, flexDirection: "row", gap: spacing.xs, paddingLeft: spacing.md, paddingRight: spacing.xs, paddingVertical: spacing.sm },
+  secretCopy: { flex: 1, gap: spacing.xs },
+  secretValue: { color: colors.graphite, ...typography.title },
+  secretMasked: { color: colors.mistDark, letterSpacing: 2, ...typography.title },
+  iconButton: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
   typeChips: { gap: spacing.xs },
   typeChip: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.pill, borderWidth: 1, height: 36, justifyContent: "center", paddingHorizontal: 12 },
   typeChipSelected: { backgroundColor: colors.harborBlue, borderColor: colors.harborBlue },

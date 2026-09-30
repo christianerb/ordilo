@@ -3,7 +3,11 @@ import {
   buildCredentialsContent,
   buildDocumentUpdatePayload,
   createNote,
+  formatNoteValue,
   getNoteContent,
+  getNoteValueAction,
+  isShortNoteValue,
+  shouldShowNoteSummary,
   maxNoteContentLength,
   triggerNoteAnalysis,
   updateDocumentSecret,
@@ -183,5 +187,47 @@ describe("native notes helpers", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ secret: "" }),
     });
+  });
+});
+
+describe("note reader helpers", () => {
+  it("treats a single short line as a value", () => {
+    expect(isShortNoteValue("2281")).toBe(true);
+    expect(isShortNoteValue("  DE12 3456 7890  ")).toBe(true);
+    expect(isShortNoteValue("Zeile eins\nZeile zwei")).toBe(false);
+    expect(isShortNoteValue("x".repeat(41))).toBe(false);
+    expect(isShortNoteValue("   ")).toBe(false);
+  });
+
+  it("hides a summary that only repeats the note", () => {
+    expect(shouldShowNoteSummary("2281", "2281")).toBe(false);
+    expect(shouldShowNoteSummary("2281", null)).toBe(false);
+    const long = "Der Zählerstand wird jedes Jahr im Januar an die Stadtwerke gemeldet.";
+    expect(shouldShowNoteSummary(long, `${long}`)).toBe(false);
+    expect(shouldShowNoteSummary(long, "an die Stadtwerke gemeldet.")).toBe(false);
+    expect(shouldShowNoteSummary(long, "Jährliche Meldung an die Stadtwerke.")).toBe(true);
+  });
+});
+
+describe("note value actions", () => {
+  it("offers to call a phone number", () => {
+    expect(getNoteValueAction("0911 / 123 45-6")).toEqual({ kind: "call", label: "Anrufen", url: "tel:0911123456" });
+    expect(getNoteValueAction("+49 170 1234567")?.url).toBe("tel:+491701234567");
+  });
+
+  it("offers mail and links", () => {
+    expect(getNoteValueAction("praxis@beispiel.de")?.kind).toBe("mail");
+    expect(getNoteValueAction("stadtwerke.de/zaehler")?.url).toBe("https://stadtwerke.de/zaehler");
+  });
+
+  it("stays quiet for codes and prose", () => {
+    expect(getNoteValueAction("2281")).toBeNull();
+    expect(getNoteValueAction("0815")).toBeNull();
+    expect(getNoteValueAction("Schlüssel liegt beim Nachbarn")).toBeNull();
+  });
+
+  it("groups an IBAN in fours for reading", () => {
+    expect(formatNoteValue("de89370400440532013000")).toBe("DE89 3704 0044 0532 0130 00");
+    expect(formatNoteValue("2281")).toBe("2281");
   });
 });

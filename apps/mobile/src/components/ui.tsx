@@ -749,7 +749,10 @@ export function DetailTopBar({
             </Text>
           ) : null}
         </View>
-      ) : null}
+      ) : (
+        // Without a title something still has to push the trailing action to the right edge.
+        <View style={styles.detailTopCopy} />
+      )}
       {trailing}
     </View>
   );

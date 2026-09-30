@@ -54,6 +54,65 @@ export function getNoteContent(
   return note.ocr_text?.trim() || "Diese Notiz hat keinen Text.";
 }
 
+const shortValueMaxLength = 40;
+
+/**
+ * A note that is just a value (a PIN, a meter code, a phone number) is read
+ * at a glance and copied, so it earns large type instead of a paragraph.
+ */
+export function isShortNoteValue(content: string): boolean {
+  const text = content.trim();
+  return text.length > 0 && text.length <= shortValueMaxLength && !/\n/.test(text);
+}
+
+export type NoteValueAction = { kind: "call" | "mail" | "open"; label: string; url: string };
+
+/**
+ * When a stored value is something the phone can act on, offer that act
+ * directly, so a saved Hausarzt number is one tap from ringing.
+ */
+export function getNoteValueAction(content: string): NoteValueAction | null {
+  const text = content.trim();
+  if (!isShortNoteValue(text)) return null;
+  if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(text)) {
+    return { kind: "mail", label: "E-Mail schreiben", url: `mailto:${text}` };
+  }
+  const digits = text.replace(/\D/g, "");
+  if (/^(\+|0)[\d\s/().-]+$/.test(text) && digits.length >= 6 && digits.length <= 15) {
+    return { kind: "call", label: "Anrufen", url: `tel:${text.startsWith("+") ? "+" : ""}${digits}` };
+  }
+  if (/^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/\S*)?$/i.test(text)) {
+    return { kind: "open", label: "Öffnen", url: /^https?:\/\//i.test(text) ? text : `https://${text}` };
+  }
+  return null;
+}
+
+/** IBANs are read aloud and typed off in groups of four; show them that way. */
+export function formatNoteValue(content: string): string {
+  const text = content.trim();
+  const compact = text.replace(/\s+/g, "").toUpperCase();
+  if (/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compact)) {
+    return compact.replace(/(.{4})(?=.)/g, "$1 ");
+  }
+  return text;
+}
+
+function normalizeForComparison(text: string): string {
+  return text.toLowerCase().replace(/[\s.,;:!?"„“'-]+/g, " ").trim();
+}
+
+/**
+ * The summary only helps when it says something the note itself does not.
+ * For short notes the analysis usually echoes the text back verbatim.
+ */
+export function shouldShowNoteSummary(content: string, summary: string | null | undefined): boolean {
+  const cleanSummary = summary?.trim();
+  if (!cleanSummary || isShortNoteValue(content)) return false;
+  const a = normalizeForComparison(content);
+  const b = normalizeForComparison(cleanSummary);
+  return a !== b && !a.includes(b);
+}
+
 /**
  * Sends the documented multipart note contract. Expo File implements Blob,
  * so note attachments use the same native multipart transport as scans.
