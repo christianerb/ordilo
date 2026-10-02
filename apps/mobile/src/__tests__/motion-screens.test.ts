@@ -589,18 +589,20 @@ describe("native motion wiring", () => {
     const filterSheet = sourceSection(
       library,
       "function LibraryFilterSheet",
-      "function SortPicker",
+      "const styles = StyleSheet.create",
     );
 
-    expect(library).toContain("<View style={styles.libraryToolbar}>");
-    expect(library).toContain("reviewFilterLabel");
-    expect(library).toContain(
-      'visibleReviewCount > 0 ||\n              filters.status === "needs_review"',
-    );
-    expect(library).toContain('title="Dokumente filtern"');
+    // Filter and sort share one button in the search field, with a count
+    // of everything that differs from the defaults; applied filters stay
+    // visible as removable chips.
+    expect(library).toContain("onOpenSettings={view === \"contacts\" ? undefined : openFilterSheet}");
+    expect(library).toContain("settingsCount={settingsCount}");
+    expect(library).toContain("<View style={styles.activeFilters}>");
+    expect(library).toContain("removable");
+    expect(library).not.toContain("function SortPicker");
+    expect(library).toContain('title="Filter und Sortierung"');
     expect(library).toContain("<LibraryFilterSheet");
-    expect(library).toContain("hiddenFilterCount");
-    expect(library).toContain("compactSortLabel");
+    expect(filterSheet).toContain('<OrdiloFormField label="Sortierung">');
     expect(library).toContain("<OrdiloFormFooter");
     expect(library).toContain('<OrdiloFormField label="Status">');
     expect(library).toContain('<OrdiloFormField label="Dokumentart">');
@@ -626,8 +628,14 @@ describe("native motion wiring", () => {
 
     expect(library).toContain("entering={stateEntering()}");
     expect(library).toContain("entering={contentEntering()}");
-    expect(library).toContain("layout={DOCUMENT_ROW_LAYOUT}");
-    expect(library).toContain("if (!append && !filters.query.trim())");
+    // Rows live in a virtualized list with sticky headers. No layout
+    // animation on its cells (it fights the sticky transforms), and no row
+    // replays an entrance while typing or scrolling in a new page.
+    expect(library).not.toContain("itemLayoutAnimation");
+    // The list header is cell 0, so every sticky index shifts by one.
+    expect(library).toContain("stickyHeaderIndices={stickyCells}");
+    expect(library).toContain("stickyIndices.map((index) => index + 1)");
+    expect(library).not.toContain("key={resultsRevision}");
     expect(motion).toContain("export function stateEntering");
     expect(ui).toContain("const indicatorX = useSharedValue(0)");
     expect(ui).toContain("duration: durations.base");

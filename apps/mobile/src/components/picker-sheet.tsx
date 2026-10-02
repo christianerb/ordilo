@@ -18,6 +18,8 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 export interface OrdiloPickerOption {
   accessibilityLabel?: string;
+  /** A placeholder row ("Wird geladen …"): shown, never pressable. */
+  disabled?: boolean;
   hint?: string;
   key: string;
   label: string;
@@ -100,7 +102,8 @@ function PickerContent({
             accessibilityHint={option.hint}
             accessibilityLabel={option.accessibilityLabel ?? option.label}
             accessibilityRole="button"
-            accessibilityState={{ selected: option.selected }}
+            accessibilityState={{ disabled: option.disabled, selected: option.selected }}
+            disabled={option.disabled}
             key={option.key}
             onPress={option.onPress}
             style={({ pressed }) => [
@@ -116,6 +119,7 @@ function PickerContent({
                 style={[
                   styles.label,
                   option.selected && styles.labelSelected,
+                  option.disabled && styles.labelDisabled,
                 ]}
               >
                 {option.label}
@@ -174,6 +178,9 @@ const styles = StyleSheet.create({
   },
   labelSelected: {
     color: colors.harborBlue,
+  },
+  labelDisabled: {
+    color: colors.mistDark,
   },
   hint: {
     color: colors.mistDark,
