@@ -38,7 +38,7 @@ const faqItems = [
   {
     question: "Was kostet Ordilo?",
     answer:
-      "In der Beta kannst du Ordilo kostenlos nutzen. Danach bleibt Ordilo Gratis mit 10 neuen Dokumenten und 10 KI-Antworten pro Monat. Familie Plus ist nach der Beta für geplant 7,99 € im Monat oder 79 € im Jahr erhältlich. Das Abo gilt für die ganze Familie und ist noch nicht buchbar.",
+      "Scannen, Fragen stellen und an Fristen erinnern lassen ist kostenlos. Mit Ordilo Plus sprichst du in der iPhone-App live mit Ordilo über eure Unterlagen. Plus kostet 7,99 € im Monat oder 79,99 € im Jahr und gilt für die ganze Familie.",
   },
 ] as const;
 
@@ -309,13 +309,12 @@ export function LandingPage() {
                   id="pricing-heading"
                   className="mt-3 text-3xl font-semibold leading-tight tracking-[-0.03em] sm:text-5xl"
                 >
-                  Kostenlos anfangen. Später nur zahlen, wenn ihr mehr braucht.
+                  Kostenlos anfangen. Plus, wenn ihr lieber sprecht als tippt.
                 </h2>
               </div>
               <p className="max-w-xl text-base leading-relaxed text-muted-foreground lg:justify-self-end">
-                Während der Beta nutzt du Ordilo kostenlos. Danach bleibt der
-                Einstieg gratis. Familie Plus kommt für größere Archive und
-                mehr Fragen dazu.
+                Scannen, fragen und erinnern ist kostenlos. Mit Ordilo Plus
+                sprecht ihr live mit Ordilo über eure Unterlagen.
               </p>
             </div>
 
@@ -341,8 +340,8 @@ export function LandingPage() {
 
                   <ul className="mt-7 space-y-3 text-sm">
                     {[
-                      "Nach der Beta: 10 neue Dokumente pro Monat",
-                      "Nach der Beta: 10 KI-Antworten pro Monat",
+                      "Briefe scannen und Fragen dazu stellen",
+                      "Fragen per Mikrofon diktieren",
                       "Familienbereich, Fundstellen und Datenexport",
                     ].map((feature) => (
                       <li key={feature} className="flex items-start gap-3">
@@ -369,24 +368,24 @@ export function LandingPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-sm font-semibold text-[var(--petrol)]">
-                        Familie Plus
+                        Ordilo Plus
                       </p>
                       <p className="mt-4 text-4xl font-semibold tracking-[-0.04em]">
                         7,99 €
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        pro Monat oder 79 € im Jahr
+                        pro Monat oder 79,99 € im Jahr
                       </p>
                     </div>
                     <span className="rounded-full border border-[var(--mist-light)] bg-[var(--warm-white)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)]">
-                      Nach der Beta
+                      In der iPhone-App
                     </span>
                   </div>
 
                   <ul className="mt-7 space-y-3 text-sm">
                     {[
                       "Alles aus Ordilo Gratis",
-                      "Mehr Dokumente und KI-Antworten",
+                      "Live mit Ordilo sprechen",
                       "Ein Abo, kein Preis pro Familienmitglied",
                     ].map((feature) => (
                       <li key={feature} className="flex items-start gap-3">
@@ -400,16 +399,16 @@ export function LandingPage() {
                   </ul>
 
                   <p className="mt-8 border-t border-border pt-4 text-sm leading-relaxed text-muted-foreground lg:mt-auto">
-                    Noch nicht buchbar. Die genauen Nutzungsgrenzen legen wir
-                    nach der Beta anhand der echten Nutzung fest.
+                    Buchbar in der iPhone-App. Kündigen kannst du jederzeit in
+                    deinen Apple-Abonnements.
                   </p>
                 </article>
               </div>
             </div>
 
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-              Geplante Preise inklusive Umsatzsteuer. Bevor ein kostenpflichtiges
-              Abo startet, informieren wir dich klar und rechtzeitig.
+              Preise in Deutschland inklusive Umsatzsteuer. Ein Abo startet nur,
+              wenn du den Kauf im App Store bestätigst.
             </p>
           </div>
         </section>

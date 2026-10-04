@@ -52,15 +52,20 @@ describe("LandingPage", () => {
     expect(screen.getByText(/Wer kann meine Dokumente lesen/)).toBeDefined();
   });
 
-  it("shows transparent beta pricing without offering an unavailable purchase", () => {
+  it("shows the store prices of Ordilo Plus and leaves the purchase to the app", () => {
     render(<LandingPage />);
 
     expect(screen.getByText("Ordilo Gratis")).toBeDefined();
-    expect(screen.getByText("Familie Plus")).toBeDefined();
+    expect(screen.getByText("Ordilo Plus")).toBeDefined();
+    expect(screen.queryByText("Familie Plus")).toBeNull();
     expect(screen.getAllByText("7,99 €").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/79 € im Jahr/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Nach der Beta")).toBeDefined();
-    expect(screen.getByText(/Noch nicht buchbar/)).toBeDefined();
+    // Must match the App Store price and the terms, not a rounded figure.
+    expect(screen.getAllByText(/79,99 € im Jahr/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/79 € im Jahr/)).toBeNull();
+    expect(screen.getByText("Live mit Ordilo sprechen")).toBeDefined();
+    expect(screen.getByText(/Buchbar in der iPhone-App/)).toBeDefined();
+    expect(screen.queryByText(/Noch nicht buchbar/)).toBeNull();
+    expect(screen.queryByText(/Nach der Beta/)).toBeNull();
     expect(
       screen.queryByRole("link", { name: /Plus buchen/i }),
     ).toBeNull();
