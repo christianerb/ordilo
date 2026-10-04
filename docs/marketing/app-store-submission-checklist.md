@@ -12,7 +12,8 @@ Frühere Ablehnung: Build 32 nach 2.5.4 (Hintergrund-Audio), behoben mit #236.
 - [x] **TestFlight-Geräteabnahme** — erledigt am 23.09.2026 (Team-Lauf mit dem
       Produktionsbuild auf echten iPhones, Umfang nach
       [mobile-prelaunch.md](../quality/mobile-prelaunch.md)).
-- [ ] **Umgebung prüfen**: EAS `production` hat
+- [x] **Umgebung prüfen** (04.10.2026: EAS-Schalter gesetzt, Build 34 damit
+      gebaut; Server-Sync mit Testkonto liefert 200): EAS `production` hat
       `EXPO_PUBLIC_BILLING_ENTITLEMENTS_ENABLED=1` und
       `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY`. Vercel Production hat
       `REVENUECAT_SECRET_API_KEY`, `REVENUECAT_WEBHOOK_SIGNING_SECRET` und
@@ -20,12 +21,10 @@ Frühere Ablehnung: Build 32 nach 2.5.4 (Hintergrund-Audio), behoben mit #236.
       **aus** (keine Monatskontingente für Gratis-Familien). Sentry-DSNs
       bleiben ungesetzt, sonst stimmt Abschnitt 5 der Datenschutzerklärung
       nicht mehr.
-- [ ] **RevenueCat-Webhook-URL**: muss `https://ordilo.de/api/billing/revenuecat`
-      sein. Die in [revenuecat-rollout.md](../plans/revenuecat-rollout.md)
-      notierte `app.ordilo.de` löst nicht auf (geprüft 04.10.2026); dorthin
-      zugestellte Verlängerungen, Kündigungen und Erstattungen gehen verloren.
-      Danach in RevenueCat „Send test event“ — erwartet: HTTP 200.
-- [ ] **Sandbox-Kauf auf TestFlight** mit dem neuen Build: Monatsabo kaufen,
+- [x] **RevenueCat-Webhook-URL** auf `https://ordilo.de/api/billing/revenuecat`
+      korrigiert (04.10.2026; vorher `app.ordilo.de`, das nicht auflöst).
+      Testereignis kam signiert in `billing_events` an.
+- [ ] **Sandbox-Kauf auf TestFlight** mit Build 34: Monatsabo kaufen,
       Paywall schließt, Live startet, `family_entitlements` zeigt
       `plan_code=plus`; „Käufe wiederherstellen“ auf einem zweiten Gerät.
 - [ ] **Review-Account** gehört zu einer Familie mit Plan `free`, damit der
@@ -52,7 +51,7 @@ Für **beide** Abos (Abo-Gruppe „Ordilo Plus“, ID `22383365`):
 
 ## 3. App Store Connect: Version 1.0
 
-- [ ] **Build** auswählen: der neue Build mit Billing-Schalter (nicht 33).
+- [ ] **Build** auswählen: Build 34 (mit Billing-Schalter, nicht 33).
 - [ ] **In-App-Käufe und Abos**: beide Abos hinzufügen. Das ist der Schritt,
       dessen Fehlen zur Ablehnung führte.
 - [ ] **Beschreibung** (Ende) ergänzen, Richtlinie 3.1.2:

@@ -128,7 +128,9 @@ Ein in Chat, Ticket oder Log geteiltes Secret vor Verwendung erneut rotieren.
 Angelegt am 2026-09-14 als Integration `Ordilo Backend`
 (`whintgr7601fa8b70`):
 
-- URL: `https://app.ordilo.de/api/billing/revenuecat`
+- URL: `https://ordilo.de/api/billing/revenuecat` (bis 04.10.2026 stand hier
+  `app.ordilo.de`, das nicht auflöst; seit der Korrektur kam das erste
+  Testereignis signiert in `billing_events` an)
 - Umgebungen: Sandbox und Production
 - Apps/Event-Typen: alle
 - HMAC Webhook Signing: aktiviert; das Signing Secret wurde einmalig
