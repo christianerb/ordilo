@@ -45,6 +45,17 @@ describe("public legal pages", () => {
     expect(html).toContain("Produkt- und Transaktionskennungen");
     expect(html).toContain("keine Dokumenttexte, Chat-Inhalte oder Familiennamen");
     expect(html).toContain("aber keine Sitzungsaufzeichnung");
+    // Plus is on sale in the iPhone app; the notice must not call it off.
+    expect(html).toContain("RevenueCat nutzen wir nur in der iPhone-App");
+    expect(html).not.toContain("Sentry und RevenueCat sind derzeit ausgeschaltet");
+    expect(html).not.toContain("mit dem Start von Ordilo Plus");
+  });
+
+  it("offers Plus in the iPhone app rather than at some later point", () => {
+    const html = renderToStaticMarkup(<NutzungsbedingungenPage />);
+
+    expect(html).toContain("als freiwilliges Abo in der iPhone-App abschließen");
+    expect(html).not.toContain("sobald es dir in der App");
   });
 
   it("states concluded DPAs and the third-country transfer grounds", () => {

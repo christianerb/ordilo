@@ -87,8 +87,8 @@ export default function NutzungsbedingungenPage() {
       <Section title="6. Kostenlos nutzen und Ordilo Plus">
         <p>
           Ordilo hat einen kostenlosen Einstieg. Zusätzlich kannst du Ordilo
-          Plus als freiwilliges Abo abschließen, sobald es dir in der App
-          angeboten wird. Plus enthält unter anderem das Live-Sprachgespräch
+          Plus als freiwilliges Abo in der iPhone-App abschließen. Plus
+          enthält unter anderem das Live-Sprachgespräch
           mit Ordilo. Die normale Diktierfunktion ist kein Live-Gespräch und
           setzt kein Plus-Abo voraus.
         </p>
@@ -194,7 +194,7 @@ export default function NutzungsbedingungenPage() {
         </p>
       </Section>
 
-      <p className="text-xs text-muted-foreground">Stand: 16. September 2026</p>
+      <p className="text-xs text-muted-foreground">Stand: 4. Oktober 2026</p>
     </article>
   );
 }

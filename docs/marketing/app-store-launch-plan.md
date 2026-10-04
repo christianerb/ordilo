@@ -1,6 +1,31 @@
-# Ordilo: App Store und Freemium – Arbeitsstand 23.09.2026
+# Ordilo: App Store und Freemium – Arbeitsstand 04.10.2026
 
-## Beschluss: Erstlaunch ohne Abo (23.09.2026)
+## Beschluss: Launch mit Ordilo Plus (04.10.2026)
+
+Apple hat Build 33 am 04.10.2026 nach Richtlinie 2.1(b) abgelehnt: Die App
+nennt „Ordilo Plus“ (Nutzungsbedingungen und Datenschutzerklärung sind aus den
+Einstellungen erreichbar), die zugehörigen Abos waren aber nicht zur Prüfung
+eingereicht. Statt jede Erwähnung zu entfernen, geht Version 1.0 jetzt **mit**
+dem Abo in den Store:
+
+- EAS `production`: `EXPO_PUBLIC_BILLING_ENTITLEMENTS_ENABLED=1` (neben dem
+  bereits gesetzten `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY`). Paywall unter
+  Familie → Einstellungen → „Ordilo Plus ansehen“ und am Live-Knopf in
+  „Ordilo fragen“.
+- Plus verkauft genau das, was die Paywall zeigt: das Live-Gespräch. Der
+  Server sperrt Live unabhängig von jedem Schalter über
+  `hasLiveConversationAccess`.
+- Vercel `BILLING_ENTITLEMENTS_ENABLED` bleibt **aus**. Der Schalter würde die
+  Monatskontingente für Gratis-Familien (10 Dokumente, 10 Antworten)
+  erzwingen. Die Paywall verspricht keine höheren Kontingente, und die App
+  führt beim Erreichen eines Limits nicht zur Paywall. Erst einschalten, wenn
+  beides passt.
+- Beide Abos (`com.ordilo.app.plus.monthly`, `com.ordilo.app.plus.yearly`)
+  werden mit Prüfungs-Screenshot zusammen mit dem neuen Build eingereicht.
+
+Der folgende Abschnitt ist der überholte Stand vom 23.09.2026.
+
+## Überholt: Erstlaunch ohne Abo (23.09.2026)
 
 Version 1.0 geht **komplett kostenlos** in den Store. Konkret:
 

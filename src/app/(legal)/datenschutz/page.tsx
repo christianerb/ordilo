@@ -79,8 +79,8 @@ export default function DatenschutzPage() {
             Dokumentinhalte, Dateinamen, Suchbegriffe oder Chat-Nachrichten.
           </li>
           <li>
-            <strong>Käufe und Abos:</strong> Wenn die Abo-Funktion aktiviert
-            ist, nutzen wir die technische Kennung deines Familienbereichs,
+            <strong>Käufe und Abos:</strong> In der iPhone-App nutzen wir die
+            technische Kennung deines Familienbereichs,
             Produkt- und Transaktionskennungen sowie Kauf-, Verlängerungs-,
             Ablauf- und Erstattungsinformationen, um Ordilo Plus zuzuordnen.
             Zahlungsdaten wie deine Kreditkartennummer erhält Ordilo bei
@@ -176,9 +176,9 @@ export default function DatenschutzPage() {
             <strong>Vercel</strong> (Hosting der Anwendung).
           </li>
           <li>
-            <strong>RevenueCat</strong> (Abo-Verwaltung) — erhält bei
-            aktivierter Abo-Funktion die technische Familienkennung als
-            Kundenkennung sowie Kauf- und Abostatusdaten. Das SDK
+            <strong>RevenueCat</strong> (Abo-Verwaltung) — erhält in der
+            iPhone-App die technische Familienkennung als Kundenkennung sowie
+            Kauf- und Abostatusdaten. Das SDK
             verarbeitet außerdem technische App- und Gerätedaten für die
             Kaufabwicklung. Ordilo übermittelt an RevenueCat keine
             Dokumenttexte, Chat-Inhalte oder Familiennamen.
@@ -199,11 +199,11 @@ export default function DatenschutzPage() {
           </li>
         </ul>
         <p className="text-muted-foreground">
-          Sentry und RevenueCat sind derzeit ausgeschaltet, in der App und
-          auf der Website. Wir schalten sie erst ein, wenn die jeweilige
-          Funktion startet: die Fehlerdiagnose mit dem ersten Update nach dem
-          Start, die Abo-Verwaltung mit dem Start von Ordilo Plus. Bis dahin
-          fließen an sie keine Daten.
+          RevenueCat nutzen wir nur in der iPhone-App, damit du Ordilo Plus
+          kaufen und wiederherstellen kannst. Die Website nutzt RevenueCat
+          nicht. Sentry ist derzeit ausgeschaltet, in der App und auf der
+          Website. Wir schalten die Fehlerdiagnose erst mit einem späteren
+          Update ein. Bis dahin fließen an Sentry keine Daten.
         </p>
       </Section>
 
@@ -310,7 +310,7 @@ export default function DatenschutzPage() {
       </Section>
 
       <p className="text-xs text-muted-foreground">
-        Stand: September 2026
+        Stand: Oktober 2026
       </p>
     </article>
   );

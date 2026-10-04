@@ -193,7 +193,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
           dbIsPlus: false,
           error:
             enabled && familyId && !apiKey
-              ? "RevenueCat ist nicht konfiguriert."
+              ? "Ordilo Plus ist gerade nicht verfügbar. Bitte versuch es später nochmal."
               : null,
           isLoading: false,
           offering: null,
