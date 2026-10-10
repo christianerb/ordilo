@@ -15,6 +15,9 @@ export type InboundAttachment = {
   filename: string | null;
   content_type: string;
   download_url: string;
+  size?: number;
+  content_disposition?: string | null;
+  content_id?: string | null;
 };
 
 export type InboundImportResult = {
@@ -23,12 +26,38 @@ export type InboundImportResult = {
   skippedAttachments: number;
 };
 
+/** No readable letter, receipt or form photo fits in fewer bytes than this. */
+const MIN_DOCUMENT_IMAGE_BYTES = 10 * 1024;
+/**
+ * Images embedded in the body are usually signatures, logos and social icons
+ * from the quoted thread. Apple Mail also inlines real photos, but those are
+ * hundreds of kilobytes, far above this floor.
+ */
+const MIN_INLINE_DOCUMENT_IMAGE_BYTES = 50 * 1024;
+
+/**
+ * True for images that belong to the email's layout rather than to what the
+ * family wanted to keep, e.g. Outlook's `image001.jpg` in a forwarded thread.
+ * Importing one would file a meaningless picture and, worse, skip reading the
+ * email text that actually carried the appointment.
+ */
+export function isEmailDecoration(attachment: InboundAttachment): boolean {
+  if (!attachment.content_type.toLowerCase().startsWith("image/")) return false;
+  if (typeof attachment.size !== "number") return false;
+  const inline = attachment.content_disposition?.trim().toLowerCase() === "inline";
+  const minimum = inline ? MIN_INLINE_DOCUMENT_IMAGE_BYTES : MIN_DOCUMENT_IMAGE_BYTES;
+  return attachment.size < minimum;
+}
+
 export function planInboundAttachmentImport(params: {
   attachments: readonly InboundAttachment[];
   existingAttachmentIds: ReadonlySet<string>;
   todayDocumentCount: number;
 }) {
-  const existingAttachmentCount = params.attachments.filter((attachment) =>
+  const documentAttachments = params.attachments.filter(
+    (attachment) => !isEmailDecoration(attachment),
+  );
+  const existingAttachmentCount = documentAttachments.filter((attachment) =>
     params.existingAttachmentIds.has(attachment.id),
   ).length;
   // An earlier attempt may have stored an attachment from this very email.
@@ -39,13 +68,14 @@ export function planInboundAttachmentImport(params: {
     DAILY_UPLOAD_LIMIT -
       Math.max(0, params.todayDocumentCount - existingAttachmentCount),
   );
-  const newAttachments = params.attachments.filter(
+  const newAttachments = documentAttachments.filter(
     (attachment) => !params.existingAttachmentIds.has(attachment.id),
   );
   return {
     attachmentsToImport: newAttachments.slice(0, availableSlots),
     existingAttachmentCount,
     quotaSkippedAttachments: Math.max(0, newAttachments.length - availableSlots),
+    decorationAttachments: params.attachments.length - documentAttachments.length,
   };
 }
 
@@ -96,7 +126,7 @@ export async function importInboundEmailAttachments(params: {
     existingAttachmentIds,
     todayDocumentCount: count ?? 0,
   });
-  let skippedAttachments = plan.quotaSkippedAttachments;
+  let skippedAttachments = plan.quotaSkippedAttachments + plan.decorationAttachments;
   const importedDocumentIds: string[] = [];
 
   for (const attachment of plan.attachmentsToImport) {
