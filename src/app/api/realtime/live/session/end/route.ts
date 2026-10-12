@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { recordLiveConversationEnded } from "@/lib/analytics/api-usage";
-import { recordProductEvent } from "@/lib/analytics/product-events";
+import { recordProductEvent, productPlatformFromRequest } from "@/lib/analytics/product-events";
 import { requireUser } from "@/lib/auth/require-user";
 import { LIVE_CONVERSATION_MAX_DURATION_MS } from "@/lib/billing/live-conversation";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -53,6 +53,7 @@ export async function POST(request: Request): Promise<Response> {
       userId: auth.user.id,
     }),
     recordProductEvent(supabase, {
+      platform: productPlatformFromRequest(request),
       userId: auth.user.id,
       familyId: body.family_id,
       eventName: "live_conversation_ended",

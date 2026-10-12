@@ -1,3 +1,4 @@
+import { getProductPlatform } from "./event-platform";
 import { AudioModule, setAudioModeAsync } from "expo-audio";
 import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -172,6 +173,7 @@ export function useNativeLiveConversation({
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
+              "x-ordilo-platform": getProductPlatform(),
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -500,6 +502,7 @@ export function useNativeLiveConversation({
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
+            "x-ordilo-platform": getProductPlatform(),
             "Content-Type": "application/json",
           },
           signal: setupAbort.signal,

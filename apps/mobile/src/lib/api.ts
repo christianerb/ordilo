@@ -1,3 +1,4 @@
+import { getProductPlatform } from "./event-platform";
 import { getSupabase } from "./supabase";
 import { nativeFetch } from "./native-fetch";
 
@@ -58,6 +59,7 @@ export async function apiFetch(
 
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
+  headers.set("x-ordilo-platform", getProductPlatform());
 
   const url = `${getApiUrl()}${path}`;
   let response: Response;

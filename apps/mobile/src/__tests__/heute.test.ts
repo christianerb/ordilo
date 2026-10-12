@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import {
   acceptInboundSuggestion,
   eventOccursOn,
@@ -296,7 +297,7 @@ describe("Heute mutations", () => {
       user_id: "user-1",
       family_id: "fam-1",
       event_name: "calendar_event_created",
-      properties: { source: "inbound_email" },
+      properties: { source: "inbound_email", platform: Platform.OS },
     });
   });
 

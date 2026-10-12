@@ -19,7 +19,7 @@ import {
   readFileHeaderBytes,
   sanitizeFilename,
 } from "@/lib/api/storage";
-import { recordProductEvent } from "@/lib/analytics/product-events";
+import { recordProductEvent, productPlatformFromRequest } from "@/lib/analytics/product-events";
 import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import {
   billingEntitlementsEnabled,
@@ -374,6 +374,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   await recordProductEvent(serverClient, {
+    platform: productPlatformFromRequest(request),
     userId: user.id,
     familyId,
     eventName: "document_upload_succeeded",

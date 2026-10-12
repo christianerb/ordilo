@@ -16,7 +16,8 @@ vi.mock("@/lib/analytics/api-usage", () => ({
     mocks.recordEnded(...args),
 }));
 
-vi.mock("@/lib/analytics/product-events", () => ({
+vi.mock("@/lib/analytics/product-events", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/analytics/product-events")>(),
   recordProductEvent: (...args: unknown[]) => mocks.recordProductEvent(...args),
 }));
 

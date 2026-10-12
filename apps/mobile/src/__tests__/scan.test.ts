@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { ApiError, apiFetch } from "../lib/api";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -169,7 +170,7 @@ describe("native scan helpers", () => {
     expect(FileSystem.uploadAsync).toHaveBeenCalledWith("https://ordilo.test/api/documents/upload", "file:///documents/ordilo-scan/scan-1.jpg", expect.objectContaining({
       sessionType: 0, uploadType: 1, fieldName: "file", mimeType: "image/jpeg",
       parameters: { family_id: "family-1", upload_key: "scan-1", client: "mobile_scan" },
-      headers: { Authorization: "Bearer test-token" },
+      headers: { Authorization: "Bearer test-token", "x-ordilo-platform": Platform.OS },
     }));
   });
 

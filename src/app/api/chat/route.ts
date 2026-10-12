@@ -36,7 +36,7 @@ import {
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
 import { refuseWithoutAiConsent } from "@/lib/ai/consent";
 import { redactSecretsForStorage } from "@/lib/ai/pii-redact";
-import { recordProductEvent } from "@/lib/analytics/product-events";
+import { recordProductEvent, productPlatformFromRequest } from "@/lib/analytics/product-events";
 import {
   billingEntitlementsEnabled,
   releaseMonthlyUsage,
@@ -397,6 +397,7 @@ async function handleChat(request: Request): Promise<Response> {
     void saveUserMessage(serverClient, conversationId, familyId, messageForStorage);
   }
   void recordProductEvent(serverClient, {
+    platform: productPlatformFromRequest(request),
     userId: user.id,
     familyId,
     eventName: repair ? "chat_answer_repair_started" : "chat_question_sent",
