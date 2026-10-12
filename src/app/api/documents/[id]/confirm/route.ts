@@ -42,7 +42,7 @@ import {
 import { buildEntityRows } from "@/lib/pipeline/entity-rows";
 import { canonicalizeCategoryForFamily } from "@/lib/categories-server";
 import { getErrorCode } from "@/lib/pipeline/failure-tracking";
-import { recordProductEvent } from "@/lib/analytics/product-events";
+import { recordProductEvent, productPlatformFromRequest } from "@/lib/analytics/product-events";
 
 /**
  * POST /api/documents/[id]/confirm
@@ -377,6 +377,7 @@ export async function POST(
   // Success ---------------------------------------------------------------
 
   await recordProductEvent(serverClient, {
+    platform: productPlatformFromRequest(request),
     userId: auth.user.id,
     familyId,
     eventName: "document_confirmed",

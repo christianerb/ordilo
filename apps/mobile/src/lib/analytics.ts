@@ -1,3 +1,4 @@
+import { getProductPlatform } from "./event-platform";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
 
@@ -42,7 +43,7 @@ export async function recordProductEvent(
       user_id: userId,
       family_id: familyId,
       event_name: eventName,
-      properties,
+      properties: { ...properties, platform: getProductPlatform() },
     });
   } catch {
     // Analytics must never block a user-facing action.

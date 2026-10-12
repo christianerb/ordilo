@@ -15,7 +15,7 @@ import {
   graphSearch,
   resolveAutoMode,
 } from "@/lib/ai/search";
-import { recordProductEvent } from "@/lib/analytics/product-events";
+import { recordProductEvent, productPlatformFromRequest } from "@/lib/analytics/product-events";
 
 /**
  * POST /api/search
@@ -93,6 +93,7 @@ async function handleSearch(request: Request): Promise<Response> {
   const serverClient = await createServerClient();
   const recordSearch = () =>
     recordProductEvent(serverClient, {
+      platform: productPlatformFromRequest(request),
       userId: auth.user.id,
       familyId: requestData.family_id,
       eventName: "search_completed",

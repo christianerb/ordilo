@@ -30,7 +30,7 @@ describe("document value telemetry", () => {
     expect(eq).toHaveBeenCalledWith("id", "doc-1");
     expect(insert).toHaveBeenCalledWith({
       user_id: "user-1", family_id: "family-1", event_name: "document_result_viewed",
-      properties: { document_id: "doc-1" },
+      properties: { document_id: "doc-1", platform: "web" },
     });
   });
   it("records nothing for an inaccessible document or signed-out visitor", async () => {

@@ -25,6 +25,19 @@ export type ProductEventName =
   | "task_created"
   | "task_completed";
 
+export type ProductPlatform = "web" | "ios" | "android" | "unknown";
+
+/** Self-reported measurement metadata, never an authentication signal. */
+export function productPlatformFromRequest(request: Request): ProductPlatform {
+  const value = request.headers.get("x-ordilo-platform");
+  if (value !== null) {
+    return value === "web" || value === "ios" || value === "android" ? value : "unknown";
+  }
+  // Older native clients have a bearer token but no platform header.
+  if (request.headers.has("authorization")) return "unknown";
+  return request.headers.has("sec-fetch-site") ? "web" : "unknown";
+}
+
 export async function recordProductEvent(
   client: SupabaseClient<Database>,
   {
@@ -32,7 +45,9 @@ export async function recordProductEvent(
     familyId = null,
     eventName,
     properties = {},
+    platform = typeof window === "undefined" ? "unknown" : "web",
   }: {
+    platform?: ProductPlatform;
     userId: string;
     familyId?: string | null;
     eventName: ProductEventName;
@@ -44,7 +59,7 @@ export async function recordProductEvent(
       user_id: userId,
       family_id: familyId,
       event_name: eventName,
-      properties,
+      properties: { ...properties, platform },
     });
   } catch {
     // Analytics must never block a user-facing action.

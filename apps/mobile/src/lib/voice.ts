@@ -1,3 +1,4 @@
+import { getProductPlatform } from "./event-platform";
 import { File } from "expo-file-system";
 
 import { getApiUrl } from "./api";
@@ -25,7 +26,7 @@ export async function transcribeVoiceRecording(input: {
   try {
     response = await nativeFetch(`${getApiUrl()}/api/realtime/transcribe`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, "x-ordilo-platform": getProductPlatform() },
       body,
       signal: input.signal,
     });

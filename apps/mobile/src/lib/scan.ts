@@ -1,3 +1,4 @@
+import { getProductPlatform } from "./event-platform";
 import { ApiError, apiFetch, getApiUrl } from "./api";
 import { AI_CONSENT_REQUIRED_CODE } from "./ai-consent";
 import { getSupabase } from "./supabase";
@@ -500,7 +501,7 @@ export async function uploadScannedDocument(
       fieldName: "file",
       mimeType: document.mimeType,
       parameters: { family_id: familyId, upload_key: document.id, client: "mobile_scan" },
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, "x-ordilo-platform": getProductPlatform() },
     });
   } catch {
     throw new ApiError("Keine Verbindung. Dein Dokument bleibt gespeichert.", 0);

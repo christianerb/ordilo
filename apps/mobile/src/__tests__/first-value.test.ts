@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { recordFirstValueEvent } from "../lib/first-value";
 
 const mockGetUser = jest.fn();
@@ -21,7 +22,7 @@ it("records only document identity and the selected destination", async () => {
   });
   expect(mockInsert).toHaveBeenCalledWith({
     user_id: "user-1", family_id: "family-1", event_name: "document_next_step_selected",
-    properties: { document_id: "doc-1", destination: "calendar" },
+    properties: { document_id: "doc-1", destination: "calendar", platform: Platform.OS },
   });
 });
 

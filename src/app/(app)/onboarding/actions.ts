@@ -107,6 +107,7 @@ export async function createFamily(name: string): Promise<ActionResult<Pick<Fami
   }
 
   await recordProductEvent(supabase, {
+    platform: "web",
     userId: user.id,
     familyId: family.id,
     eventName: "onboarding_step_completed",
@@ -208,6 +209,7 @@ export async function addMember(
   }
 
   await recordProductEvent(supabase, {
+    platform: "web",
     userId: user.id,
     familyId,
     eventName: "onboarding_step_completed",
@@ -288,11 +290,13 @@ export async function completeOnboarding(
 
   await Promise.all([
     recordProductEvent(supabase, {
+      platform: "web",
       userId: user.id,
       familyId,
       eventName: "onboarding_completed",
     }),
     recordProductEvent(supabase, {
+      platform: "web",
       userId: user.id,
       familyId,
       eventName: "onboarding_entry_selected",

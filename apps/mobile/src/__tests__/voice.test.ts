@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import {
   removeVoiceRecording,
   transcribeVoiceRecording,
@@ -60,7 +61,7 @@ describe("voice recording client", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "https://ordilo.example.com/api/realtime/transcribe",
       expect.objectContaining({
-        headers: { Authorization: "Bearer access-token-1" },
+        headers: { Authorization: "Bearer access-token-1", "x-ordilo-platform": Platform.OS },
         method: "POST",
       }),
     );

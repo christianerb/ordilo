@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
 
   if (isFirstTime && authData.user) {
     await recordProductEvent(supabase, {
+      platform: "web",
       userId: authData.user.id,
       eventName: "onboarding_started",
     });

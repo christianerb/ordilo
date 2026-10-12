@@ -1,4 +1,6 @@
+import { Platform } from "react-native";
 import {
+  recordProductEvent,
   recordOnboardingStartedIfFirstTime,
   recordScanFailure,
 } from "../lib/analytics";
@@ -113,7 +115,7 @@ describe("recordScanFailure", () => {
         user_id: "user-1",
         family_id: "fam-1",
         event_name: "document_upload_failed",
-        properties: { stage: "upload", reason: "network", source: "mobile_scan" },
+        properties: { stage: "upload", reason: "network", source: "mobile_scan", platform: Platform.OS },
       }),
     );
   });
@@ -134,5 +136,17 @@ describe("recordScanFailure", () => {
     await expect(
       recordScanFailure({ familyId: "fam-1", stage: "upload", reason: "server" }),
     ).resolves.toBeUndefined();
+  });
+});
+
+
+describe("platform metadata", () => {
+  it.each(["ios", "android"])("marks direct %s events and preserves existing metadata", async (os) => {
+    const spy = jest.replaceProperty(Platform, "OS", os as typeof Platform.OS);
+    try {
+      const client = makeClient({ data: null, error: null });
+      await recordProductEvent(client as never, { userId: "user", eventName: "onboarding_started", properties: { step: "start", platform: "web" } });
+      expect(client.inserts).toEqual([{ table: "product_events", rows: expect.objectContaining({ properties: { step: "start", platform: os } }) }]);
+    } finally { spy.restore(); }
   });
 });

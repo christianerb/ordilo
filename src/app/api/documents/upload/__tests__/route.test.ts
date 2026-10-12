@@ -173,6 +173,7 @@ function createUploadRequest(file: File, familyId: string): Request {
   formData.append("family_id", familyId);
   return {
     method: "POST",
+    headers: new Headers({ "sec-fetch-site": "same-origin" }),
     formData: async () => formData,
   } as unknown as Request;
 }
@@ -183,6 +184,7 @@ function createUploadRequest(file: File, familyId: string): Request {
 function createMockRequest(formData: FormData): Request {
   return {
     method: "POST",
+    headers: new Headers({ "sec-fetch-site": "same-origin" }),
     formData: async () => formData,
   } as unknown as Request;
 }

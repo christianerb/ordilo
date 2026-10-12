@@ -1,3 +1,4 @@
+import { getProductPlatform } from "./event-platform";
 import { apiJson, getApiUrl } from "./api";
 import {
   CHAT_ACTION_TARGET_LABELS,
@@ -534,6 +535,7 @@ async function streamChatRequest(
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
+      "x-ordilo-platform": getProductPlatform(),
     },
     body: JSON.stringify({
       message: input.message,

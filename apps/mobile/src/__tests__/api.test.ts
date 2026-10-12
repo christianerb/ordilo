@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { ApiError, apiFetch, apiJson } from "../lib/api";
 
 const mockGetSession = jest.fn();
@@ -40,6 +41,7 @@ describe("apiFetch", () => {
     );
     const headers = mockFetch.mock.calls[0][1].headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer access-token-1");
+    expect(headers.get("x-ordilo-platform")).toBe(Platform.OS);
   });
 
   it("preserves caller headers while adding Authorization", async () => {
@@ -48,6 +50,7 @@ describe("apiFetch", () => {
     const headers = mockFetch.mock.calls[0][1].headers as Headers;
     expect(headers.get("Content-Type")).toBe("application/json");
     expect(headers.get("Authorization")).toBe("Bearer access-token-1");
+    expect(headers.get("x-ordilo-platform")).toBe(Platform.OS);
   });
 
   it("uses Expo fetch for native multipart file uploads", async () => {
