@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { documentPrefetchQuery } from '../document-intent';
+import { documentInventoryRequest, documentPrefetchQuery } from '../document-intent';
 describe('document prefetch intent', () => {
-  it.each(['Wann läuft Hannahs Bahnding ab?', 'Was sollen wir fürs Buffet einpacken?', 'Was braucht Emma für den Sporttag?', 'Wer hat die Academy-Mitgliedschaft?', 'Was kostet die Mitgliedschaft?'])('retrieves a casually worded question: %s', question => {
+  it.each(['Wann läuft Hannahs Bahnding ab?', 'Was sollen wir fürs Buffet einpacken?', 'Was braucht Emma für den Sporttag?', 'Wer hat die Academy-Mitgliedschaft?', 'Was kostet die Mitgliedschaft?', 'Bitte suche meine Master Zeignisse vom Master an der FOM', 'Suche mein Masterzeugnis', 'Wo ist mein Bachelorzeugnis?', 'Zeugnisse meine ist'])('retrieves a casually worded question: %s', question => {
     expect(documentPrefetchQuery(question, [])).toBe(question);
   });
   it('carries the subject into a follow-up about another child', () => {
@@ -31,4 +31,21 @@ describe('document prefetch intent', () => {
     expect(documentPrefetchQuery('Wann muss sie da sein?', [{role:'user',content:'Wann läuft Hannahs Ticket ab?'},{role:'user',content:'Wie wird das Wetter?'},{role:'user',content:'Wann fährt Emmas Klassenfahrt los?'}])).toContain('Emmas Klassenfahrt');
   });
 
+});
+
+describe('metadata document inventories', () => {
+  it.each<[string, string | null]>([
+    ['Zeig mir alle Rechnungen', 'invoice'],
+    ['Bitte liste unsere Verträge', 'contract'],
+    ['Zeige alle Unterlagen', null],
+  ])('recognizes a bare inventory: %s', (question, documentType) => {
+    expect(documentInventoryRequest(question)).toEqual({documentType});
+  });
+  it.each([
+    'Bitte suche meine Master Zeignisse vom Master an der FOM',
+    'Zeig mir alle Rechnungen und ihre Fristen',
+    'Zeig mir alle Rechnungen von Emma',
+  ])('leaves scoped searches and content questions with the agent: %s', question => {
+    expect(documentInventoryRequest(question)).toBeNull();
+  });
 });

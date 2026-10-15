@@ -1,4 +1,4 @@
-const topic = /ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
+const topic = /ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|zeugnis|zeignis|zertifikat|abschluss|\bmaster\b|\bbachelor\b|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
 
 // Imperative forms with and without the trailing -e ("leg mir …", "lege mir …").
 // The optional trailing \w* keeps inflected commands ("Verschlagworte …",
@@ -50,4 +50,15 @@ export function documentPrefetchQuery(query: string, history: Array<{ role: stri
     if (!followsDocument(turn.content)) return null;
   }
   return null;
+}
+
+/** Bare inventory requests need confirmed metadata, not OCR passages. */
+export function documentInventoryRequest(query: string): { documentType: string | null } | null {
+  const match = /^(?:bitte\s+)?(?:zeig(?:e)?(?:\s+mir)?|liste(?:\s+mir)?)\s+(?:alle\s+)?(?:(?:meine|unsere|die)\s+)?(dokumente|unterlagen|papiere|rechnungen|verträge|briefe|arztbriefe|versicherungen|steuerunterlagen|schulunterlagen|zugangsdaten)[.!?]?$/iu.exec(query.trim());
+  if (!match) return null;
+  const types: Record<string, string> = {
+    rechnungen: "invoice", verträge: "contract", briefe: "letter", arztbriefe: "medical",
+    versicherungen: "insurance", steuerunterlagen: "tax", schulunterlagen: "school", zugangsdaten: "credentials",
+  };
+  return { documentType: types[match[1].toLocaleLowerCase("de-DE")] ?? null };
 }

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("@sentry/nextjs", () => ({ withScope: vi.fn(), captureException: vi.fn() }));
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
@@ -2695,28 +2697,35 @@ describe("query_calendar_events", () => {
   });
 
   it("labels multi-day and all-day events without a time", async () => {
-    const ctx = makeCalendarQueryCtx({
-      events: [{
-        ...DENTIST_EVENT,
-        id: "ev-3",
-        title: "Herbstferien",
-        starts_on: "2026-10-12",
-        ends_on: "2026-10-18",
-        all_day: true,
-        starts_time: null,
-        ends_time: null,
-        recurrence: "yearly",
-      }],
-    });
-    const result = JSON.parse(
-      await executeTool("query_calendar_events", { direction: "upcoming" }, ctx),
-    );
+    // This checks labels, not which yearly occurrence is next today.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-01T10:00:00Z"));
+    try {
+      const ctx = makeCalendarQueryCtx({
+        events: [{
+          ...DENTIST_EVENT,
+          id: "ev-3",
+          title: "Herbstferien",
+          starts_on: "2026-10-12",
+          ends_on: "2026-10-18",
+          all_day: true,
+          starts_time: null,
+          ends_time: null,
+          recurrence: "yearly",
+        }],
+      });
+      const result = JSON.parse(
+        await executeTool("query_calendar_events", { direction: "upcoming" }, ctx),
+      );
 
-    expect(result.events[0]).toMatchObject({
-      bis: "2026-10-18",
-      uhrzeit: "ganztägig",
-      wiederholung: "jährlich",
-    });
+      expect(result.events[0]).toMatchObject({
+        bis: "2026-10-18",
+        uhrzeit: "ganztägig",
+        wiederholung: "jährlich",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
