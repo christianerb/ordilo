@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const { create } = vi.hoisted(() => ({ create: vi.fn() }));
+vi.mock("@sentry/nextjs", () => ({ withScope: vi.fn(), captureException: vi.fn() }));
 vi.mock("openai", () => ({ default: class { responses = { create }; } }));
 vi.mock("@/lib/ai/search", async (load) => {
   const actual = await load<typeof import("../search")>();
   return { ...actual, hybridSearch: vi.fn(async () => [{ document_id: "10000000-0000-4000-8000-000000000001", title: "Abo-Bestätigung Hannah", chunk_text: "Kundennummer: TEST-123", score: 0.9, source: "fact" }]), graphSearch: vi.fn(async () => []) };
 });
 vi.mock("@/lib/ai/web-search", () => ({ searchPublicWeb: vi.fn(async () => ({query:"Ticket aktueller Preis",summary:"Der Beispieltarif kostet 63 Euro.",sources:[{document_id:"web-price",title:"Tarifauskunft",excerpt:"Der Beispieltarif kostet 63 Euro.",url:"https://example.org/tarif",origin:"web",score:1}]})) }));
+vi.mock("@/lib/ai/reranking", () => ({ rerankResults: vi.fn(async (_query, results) => results) }));
 import { streamAgenticAnswer } from "../chat";
+import { hybridSearch } from "../search";
+import { rerankResults } from "../reranking";
 import type { ToolContext } from "../tools";
 
 const id = "10000000-0000-4000-8000-000000000001";
@@ -28,15 +32,15 @@ function round(name: string, args: unknown) {
     yield { type: "response.completed", response: { output: [{ type: "function_call", name, arguments: JSON.stringify(args), call_id: crypto.randomUUID(), id: "fc_test", status: "completed" }] } };
   })();
 }
-function context(otherDocuments: Array<{ id: string; title: string }> = []): ToolContext {
+function context(otherDocuments: Array<{ id: string; title: string }> = [], readable = true, document = { title: "Abo-Bestätigung Hannah", text: quote }, emptyDocumentLists = false): ToolContext {
   const from = vi.fn((table: string) => {
-    const rows = table === "documents" ? [{ id, title: "Abo-Bestätigung Hannah", document_type: "contract", summary: "Ticket", category: "Mobilität" },
-      ...otherDocuments.map(document => ({ ...document, document_type: "contract", summary: "", category: "Mobilität" }))] :
-      table === "document_pages" ? [{ page_number: 2, ocr_markdown: "Bedingungen. ".repeat(80) + "\n\n" + quote }] : [];
+    const rows = table === "documents" ? [{ id, title: document.title, document_type: "contract", summary: "Ticket", category: "Mobilität", created_at: "2026-10-01T12:00:00Z" },
+      ...otherDocuments.map(document => ({ ...document, document_type: "contract", summary: "", category: "Mobilität", created_at: "2026-10-01T12:00:00Z" }))] :
+      table === "document_pages" && readable ? [{ page_number: 2, ocr_markdown: "Bedingungen. ".repeat(80) + "\n\n" + document.text }] : [];
     const chain = {
       select: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), order: vi.fn(() => chain), limit: vi.fn(() => chain),
       maybeSingle: vi.fn(async () => ({ data: rows[0] ?? null, error: null })),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows, error: null, count: rows.length }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "documents" && emptyDocumentLists ? [] : rows, error: null, count: rows.length }).then(resolve),
     };
     return chain;
   });
@@ -51,6 +55,98 @@ async function events(ctx: ToolContext, question = "das bahndings von Hannah wie
 beforeEach(() => { vi.stubEnv("OPENAI_API_KEY", "test-key"); create.mockReset(); });
 
 describe("real document tools through the chat orchestration", () => {
+  it("returns the actual Masterzeugnis and excludes an unrelated Steuer-ID on the first search", async () => {
+    const title = "Masterzeugnis Big Data & Business Analytics – Mira Beispiel";
+    const passage = "FOM Hochschule. Mira Beispiel. Master of Science in Big Data & Business Analytics.";
+    const statement = "Mira Beispiels Masterzeugnis für Big Data & Business Analytics von der FOM Hochschule liegt vor.";
+    const degree = { document_id: id, title, chunk_text: passage, score: 0.6, source: "semantic" };
+    vi.mocked(hybridSearch).mockResolvedValueOnce([
+      { document_id: '10000000-0000-4000-8000-000000000002', title: 'Steuer-ID', chunk_text: 'Steuerliche Identifikationsnummer', score: 1, source: 'semantic' }, degree,
+    ]);
+    vi.mocked(rerankResults).mockResolvedValueOnce([{...degree, score:1}]);
+    create.mockResolvedValueOnce(round('answer_from_documents', {claims:[{text:statement, document_id:id, page_number:2, quote:passage}], state:'answered'}))
+      .mockResolvedValueOnce(finalAnswer(statement));
+    const result = await events(context([], true, {title, text:passage}), 'Bitte suche meine Master Zeignisse vom Master an der FOM');
+    expect(result).toContainEqual({type:'text', content:statement});
+    const sources = result.find(event => event.type === 'sources').sources;
+    expect(sources).toHaveLength(1);
+    expect(sources[0]).toMatchObject({document_id:id, title, quote:passage, cited:true});
+  });
+
+  it("reports no verified match without showing rejected retrieval candidates", async () => {
+    vi.mocked(rerankResults).mockResolvedValueOnce([]);
+    const gap = "Ich konnte dein Masterzeugnis der FOM in den Unterlagen nicht finden.";
+    create.mockResolvedValueOnce(round('answer_from_documents', {claims:[], state:'not_found', gap}))
+      .mockResolvedValueOnce(finalAnswer(gap));
+    const result = await events(context(), 'Suche mein Masterzeugnis der FOM');
+    expect(result).toContainEqual({type:'text', content:gap});
+    expect(result).toContainEqual({type:'sources', sources:[]});
+    expect(result).toContainEqual({type:'response_state', state:'not_found'});
+  });
+
+  it("does not claim a Masterzeugnis was found when retrieval has no readable evidence", async () => {
+    const fabricated = 'Ich habe dein Masterzeugnis „Big Data & Business Analytics“ von der FOM gefunden. Auch eine Steuer-ID ist abgelegt.';
+    const ctx = context([], false);
+    ctx.sources = [{ document_id: id, title: "Steuer-ID", excerpt: "", score: 1, origin: "graph" }];
+    // A model draft naming an unrelated retrieval hit used to pass the citation check.
+    create.mockImplementation(async () => finalAnswer(fabricated));
+    const result = await events(ctx, 'Bitte suche meine Master Zeignisse vom Master an der FOM');
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).not.toContain('Ich habe dein Masterzeugnis');
+    expect(answer).toContain('nicht');
+    expect(result).toContainEqual({type:'sources', sources:[]});
+    expect(result).toContainEqual({type:'response_state', state:'not_found'});
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it("rejects a fabricated degree claim backed only by a readable Steuer-ID when relevance checking fails", async () => {
+    const taxQuote = "Steuerliche Identifikationsnummer";
+    const fabricated = "Dein Masterzeugnis der FOM ist vorhanden.";
+    const ctx = context([], true, {title:"Steuer-ID", text:taxQuote});
+    ctx.documentEvidence = [{documentId:id, title:"Steuer-ID", page:2, text:taxQuote}];
+    ctx.sources = [{document_id:id, title:"Steuer-ID", excerpt:taxQuote, score:1}];
+    vi.mocked(rerankResults).mockRejectedValueOnce(new Error("relevance unavailable"));
+    create.mockResolvedValueOnce(round('answer_from_documents', {claims:[{text:fabricated, document_id:id, page_number:2, quote:taxQuote}], state:'answered'}))
+      .mockImplementation(async () => finalAnswer(fabricated));
+    const result = await events(ctx, 'Suche mein Masterzeugnis der FOM');
+    const answer = result.filter(event => event.type === 'text' || event.type === 'replace').map(event => event.content).join('');
+    expect(answer).not.toContain(fabricated);
+    expect(result).toContainEqual({type:'sources', sources:[]});
+    expect(result).toContainEqual({type:'response_state', state:'not_found'});
+  });
+
+  it("lists confirmed invoices without OCR or model calls", async () => {
+    const ctx = context([], false, {title:"Rechnung Waschmaschine", text:""});
+    const result = await events(ctx, 'Zeig mir alle Rechnungen');
+    expect(create).not.toHaveBeenCalled();
+    expect(result.find(event => event.type === 'text').content).toContain('Rechnung Waschmaschine');
+    expect(result.find(event => event.type === 'sources').sources).toEqual([expect.objectContaining({document_id:id})]);
+    expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('answers the calendar without demanding an unrelated document answer', async () => {
+    const answer = 'In deinem Kalender sind für diese Woche keine passenden Termine eingetragen.';
+    create.mockResolvedValueOnce(round('query_calendar_events', {}))
+      .mockImplementation(async () => finalAnswer(answer));
+    const ctx = context([], false);
+    const result = await events(ctx, 'Welche Termine stehen diese Woche an?');
+    expect(result).toContainEqual({type:'tool', tool:'query_calendar_events', state:'done'});
+    expect(result).toContainEqual({type:'text', content:answer});
+    expect(result).toContainEqual({type:'sources', sources:[]});
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['Zeig mir alle Rechnungen', 'Rechnungen'],
+    ['Zeig mir alle Verträge', 'Verträge'],
+  ])('keeps the filter in an empty inventory response: %s', async (question, type) => {
+    // The head count still reports an existing document, but the filtered list is empty.
+    const result = await events(context([], false, {title:'Andere Unterlage', text:''}, true), question);
+    expect(result.find(event => event.type === 'text').content).toBe(`Ich habe noch keine bestätigten ${type} gefunden.`);
+    expect(result).toContainEqual({type:'sources', sources:[]});
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("reads past the old excerpt cutoff and returns the verified passage after synthesis", async () => {
     create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" })).mockResolvedValueOnce(finalAnswer(claim.text));
     const result = await events(context());
@@ -112,6 +208,16 @@ describe("real document tools through the chat orchestration", () => {
     // The quoted document keeps its passage instead of gaining a second,
     // quoteless entry from the listing that also found it.
     expect(sources.filter((source: { document_id: string }) => source.document_id === id)).toHaveLength(1);
+  });
+
+  it('does not attach an unrelated broad listing to a specific verified document answer', async () => {
+    const other = { id: '10000000-0000-4000-8000-000000000002', title: 'Steuer-ID' };
+    create.mockResolvedValueOnce(round('list_documents', {}))
+      .mockResolvedValueOnce(round('answer_from_documents', {claims:[claim], state:'answered'}))
+      .mockResolvedValueOnce(finalAnswer(claim.text));
+    const result = await events(context([other]), 'Wie lange gilt Hannahs Ticket?');
+    const sources = result.find(event => event.type === 'sources').sources;
+    expect(sources.map((source: {document_id: string}) => source.document_id)).toEqual([id]);
   });
 
   it('does not let final synthesis overwrite the verified document date', async () => {

@@ -106,6 +106,8 @@ export interface ToolContext {
   readPageTexts?: string[];
   documentQuestion?: string;
   documentSearchCount?: number;
+  /** Search candidates whose relevance to the request was actually checked. */
+  relevantDocumentIds?: Set<string>;
   documentAnswer?: { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found"; gap?: string };
   signal?: AbortSignal;
   timings?: Array<{ phase: string; ms: number }>;
@@ -1163,6 +1165,10 @@ export async function executeTool(
     case "answer_from_documents": {
       const answer = verifyDocumentAnswer(args, ctx.documentEvidence ?? [], ctx.preloadedFamilyMembers?.map((member) => member.name) ?? [], ctx.documentQuestion);
       if ("error" in answer) return JSON.stringify(answer);
+      const relevantIds = ctx.relevantDocumentIds;
+      if (relevantIds && answer.sources.some(source => !relevantIds.has(source.document_id))) {
+        return JSON.stringify({ error: "Diese Unterlage wurde nicht als passend zur Suchanfrage geprüft. Suche nach der tatsächlich gesuchten Unterlage oder benenne die Lücke, statt einen Fund zu behaupten." });
+      }
       ctx.documentAnswer = answer;
       ctx.responseState = answer.state;
       // Keep every lookup source in context: subsequent public queries must still
@@ -1513,6 +1519,7 @@ async function executeSearchDocuments(
   const query = String(args.query ?? "").trim();
   if (!query) return JSON.stringify({ error: "Keine Suchanfrage angegeben." });
 
+  ctx.relevantDocumentIds ??= new Set<string>();
   const expand = (ctx.documentSearchCount ?? 0) > 0;
   ctx.documentSearchCount = (ctx.documentSearchCount ?? 0) + 1;
   // Hybrid content search (facts + semantic + lexical, RRF-fused) plus
@@ -1533,22 +1540,27 @@ async function executeSearchDocuments(
     ...content.filter((r) => r.source !== "semantic"),
   ];
 
-  // Re-rank combined results using LLM-as-judge for better relevance.
-  // This catches cases where vector similarity returns high-score but
-  // low-relevance results. Re-rank before combining into ChatSource[].
+  // Judge distinct documents on the first search too. Retrieval scores and
+  // person links are candidates, not proof that the requested document exists.
   const contentSources = new Set(["semantic", "lexical", "fact", "hybrid"]);
-  const allResults = [...relevantContent, ...graph];
+  const candidates = combineSearchResults(relevantContent, graph);
   const rerankStarted = performance.now();
-  const distinctDocuments = new Set(allResults.map(result => result.document_id)).size;
-  const reranked = expand && distinctDocuments > 6 ? await rerankResults(query, allResults) : allResults;
+  const reranked = await rerankResults(query, candidates.map(source => ({
+    document_id: source.document_id,
+    title: source.title,
+    chunk_text: source.excerpt,
+    score: source.score,
+    source: source.origin === "graph" ? "graph" : "semantic",
+  })), ctx.documentQuestion ?? query);
   ctx.timings?.push({ phase: "rerank", ms: Math.round(performance.now() - rerankStarted) });
   const sources = combineSearchResults(
-    reranked.filter((r) => contentSources.has(r.source)),
-    reranked.filter((r) => !contentSources.has(r.source)),
+    reranked.filter((result) => contentSources.has(result.source)),
+    reranked.filter((result) => !contentSources.has(result.source)),
   );
 
-  // Accumulate sources for the API response.
+  // Accumulate only relevance-checked candidates for later claim verification.
   for (const s of sources) {
+    ctx.relevantDocumentIds.add(s.document_id);
     const existing = ctx.sources.findIndex((x) => x.document_id === s.document_id);
     if (existing < 0) {
       ctx.sources.push(s);

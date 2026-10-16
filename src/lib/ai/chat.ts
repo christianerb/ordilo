@@ -1,7 +1,7 @@
 import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import { comparableEvidence, normalizeFactText, readableQuote } from "./document-evidence";
-import { documentPrefetchQuery, isPureActionRequest } from "./document-intent";
+import { documentInventoryRequest, documentPrefetchQuery, isPureActionRequest } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
 import {
@@ -194,6 +194,14 @@ function isRetrievalArtefact(source: ChatSource): boolean {
   );
 }
 
+/** A failed page read must not disable verification of a document search. */
+function needsDocumentVerification(context: ToolContext): boolean {
+  return Boolean(context.documentEvidence?.length) || (
+    (context.documentSearchCount ?? 0) > 0
+    && !isPureActionRequest(context.documentQuestion ?? "")
+  );
+}
+
 /**
  * The sources shown under an answer. A verified document answer supplies
  * its own cited passages, so the documents the search merely touched on
@@ -212,10 +220,13 @@ function documentResponseSources(context: ToolContext): ChatSource[] {
         ...context.sources.filter(
           (source) =>
             source.origin === "web" ||
-            context.listedDocumentIds?.has(source.document_id),
+            (context.listedDocumentIds?.has(source.document_id)
+              && asksSeveralThings(context.documentQuestion ?? "")),
         ),
       ]
-    : context.sources;
+    : context.responseState === "not_found"
+      ? context.sources.filter(source => source.origin === "web")
+      : context.sources.filter(source => source.origin === "web" || !context.relevantDocumentIds || context.relevantDocumentIds.has(source.document_id));
 
   // A document whose passage is quoted above does not need a second,
   // quoteless entry from the listing that also found it.
@@ -357,10 +368,14 @@ export function incompleteDocumentAnswer(context: ToolContext, calledTools: Read
     context.responseState = context.responseState ?? context.documentAnswer.state ?? "partial";
     return context.documentAnswer.text;
   }
+  if (!context.documentAnswer && !context.documentEvidence?.some(page => !context.relevantDocumentIds || context.relevantDocumentIds.has(page.documentId))) {
+    context.responseState = "not_found";
+    return "Ich konnte das gesuchte Dokument nicht sicher finden. Bitte versuch es mit einem anderen Suchbegriff oder prüfe, ob es schon hochgeladen ist.";
+  }
   context.responseState = "partial";
   return context.documentAnswer
     ? `${context.documentAnswer.text}\n\nDen Rest deiner Frage konnte ich leider noch nicht sicher beantworten.`
-    : "Ich habe Unterlagen dazu gefunden, aber die gesuchte Angabe steht darin nicht klar genug. Schau am besten kurz selbst in die Fundstelle — sie ist unten verlinkt.";
+    : "Die gesuchte Angabe konnte ich in den gelesenen Unterlagen nicht klar genug belegen. Du kannst die Fundstellen unten selbst prüfen.";
 }
 
 // ---------------------------------------------------------------------------
@@ -981,22 +996,33 @@ function joinDocumentTitles(documents: ListedDocument[]): string {
   return `${titles.slice(0, -1).join(", ")} und ${titles.at(-1)}`;
 }
 
-function formatNamedMemberDocumentList(
-  personName: string,
+function formatDocumentList(
+  personName: string | null,
   listing: ReturnType<typeof parseListedDocuments>,
   voice = false,
+  documentType: string | null = null,
 ): string {
   if (listing.total === 0) {
+    if (!personName) {
+      const labels: Record<string, string> = {
+        invoice: "Rechnungen", contract: "Verträge", letter: "Briefe",
+        medical: "Arztunterlagen", insurance: "Versicherungsunterlagen",
+        tax: "Steuerunterlagen", school: "Schulunterlagen", credentials: "Zugangsdaten",
+      };
+      const label = documentType ? labels[documentType] ?? "passenden Unterlagen" : "Unterlagen";
+      return `Ich habe noch keine bestätigten ${label} gefunden.`;
+    }
     return `Zu ${personName} habe ich noch kein bestätigtes Dokument gefunden. ${personName} ist als Familienmitglied vorhanden, in den bestätigten Dokumenten wird der Name aber noch nicht genannt.`;
   }
 
   const shownDocuments = listing.documents.slice(0, voice ? 3 : 10);
   const count = listing.total;
   const noun = count === 1 ? "Dokument" : "Dokumente";
+  const personSuffix = personName ? ` zu ${personName}` : "";
   const firstSentence =
     count === 1
-      ? `Ich habe ein bestätigtes ${noun} zu ${personName} gefunden: ${joinDocumentTitles(shownDocuments)}.`
-      : `Ich habe ${count} bestätigte ${noun} zu ${personName} gefunden: ${joinDocumentTitles(shownDocuments)}.`;
+      ? `Ich habe ein bestätigtes ${noun}${personSuffix} gefunden: ${joinDocumentTitles(shownDocuments)}.`
+      : `Ich habe ${count} bestätigte ${noun}${personSuffix} gefunden: ${joinDocumentTitles(shownDocuments)}.`;
 
   const omitted = listing.documents.length - shownDocuments.length;
   if (voice) {
@@ -1015,9 +1041,10 @@ function formatNamedMemberDocumentList(
   return `${firstSentence}${visibilityHint}${truncationHint}`;
 }
 
-function streamNamedMemberDocumentList(
-  personName: string,
+function streamDocumentList(
+  personName: string | null,
   toolContext: ToolContext,
+  documentType: string | null = null,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
@@ -1030,7 +1057,7 @@ function streamNamedMemberDocumentList(
         send({ type: "tool", tool: "list_documents", state: "start" });
         const rawListing = await executeTool(
           "list_documents",
-          { person_name: personName },
+          personName ? { person_name: personName } : documentType ? { document_type: documentType } : {},
           toolContext,
         );
         const listing = parseListedDocuments(rawListing);
@@ -1038,10 +1065,11 @@ function streamNamedMemberDocumentList(
         send({ type: "tool", tool: "list_documents", state: "done" });
         send({
           type: "text",
-          content: formatNamedMemberDocumentList(
+          content: formatDocumentList(
             personName,
             listing,
             toolContext.responseMode === "voice",
+            documentType,
           ),
         });
         send({ type: "sources", sources: documentResponseSources(toolContext) });
@@ -1099,8 +1127,11 @@ export async function streamAgenticAnswer(
   toolContext.preloadedFamilyMembers = familyContext.members;
   const namedMember = namedMemberDocumentListIntent(query, familyContext.members);
   if (namedMember) {
-    return streamNamedMemberDocumentList(namedMember, toolContext);
+    return streamDocumentList(namedMember, toolContext);
   }
+
+  const inventory = documentInventoryRequest(query);
+  if (inventory) return streamDocumentList(null, toolContext, inventory.documentType);
 
   const client = getOpenAIClient();
   const voice = toolContext.responseMode === "voice";
@@ -1241,8 +1272,8 @@ export async function streamAgenticAnswer(
             // technical "max rounds" error after successful searches.
             tools: round < MAX_TOOL_ROUNDS ? (toolContext.documentEvidence?.length
               ? TOOL_DEFINITIONS.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : TOOL_DEFINITIONS) :
-              (toolContext.documentEvidence?.length && !toolContext.documentAnswer ? TOOL_DEFINITIONS.filter((tool) => tool.name === "answer_from_documents") : []),
-            tool_choice: toolContext.documentEvidence?.length && !toolContext.documentAnswer && pendingConfirmationMessage === null ? "required" : "auto",
+              (needsDocumentVerification(toolContext) && !toolContext.documentAnswer ? TOOL_DEFINITIONS.filter((tool) => tool.name === "answer_from_documents") : []),
+            tool_choice: needsDocumentVerification(toolContext) && !toolContext.documentAnswer && pendingConfirmationMessage === null ? "required" : "auto",
             stream: true,
             reasoning: { effort: reasoningEffort },
             // Family documents and conversations must not be retained by
@@ -1283,7 +1314,7 @@ export async function streamAgenticAnswer(
           const bufferAnswerText =
             voice ||
             pendingConfirmationMessage !== null ||
-            Boolean(toolContext.documentAnswer) || requiredCitationSources(toolContext).length > 0;
+            needsDocumentVerification(toolContext) || Boolean(toolContext.documentAnswer) || requiredCitationSources(toolContext).length > 0;
 
           for await (const event of openaiStream) {
             if (event.type === "error") {
@@ -1528,7 +1559,7 @@ export async function streamAgenticAnswer(
                     }
                   }
 
-                  if (card.type !== "kontakt" && sourceDocument?.document_type !== "credentials" && card.type !== "zugangsdaten" && (toolContext.documentEvidence?.length || (toolContext.sources.length > 0 && !toolContext.searchedScopes?.has("family")))) {
+                  if (card.type !== "kontakt" && sourceDocument?.document_type !== "credentials" && card.type !== "zugangsdaten" && (needsDocumentVerification(toolContext) || (toolContext.sources.length > 0 && !toolContext.searchedScopes?.has("family")))) {
                     results[i] = JSON.stringify({ error: "Nutze answer_from_documents mit der gelesenen Originalstelle, damit die Antwort und ihr Beleg gemeinsam angezeigt werden." });
                     continue;
                   }
@@ -1728,7 +1759,7 @@ export async function streamAgenticAnswer(
               `${contentChunks.join("")}${pendingRelease}`.trim();
             const citationSources = requiredCitationSources(toolContext);
             if (
-              onlySidebandTools && !toolContext.documentEvidence?.length && !toolContext.documentAnswer &&
+              onlySidebandTools && !needsDocumentVerification(toolContext) && !toolContext.documentAnswer &&
               sidebandDraft &&
               !containsHedgingLanguage(sidebandDraft) &&
               (citationSources.length === 0 ||
@@ -1806,7 +1837,7 @@ export async function streamAgenticAnswer(
             closeWithPendingCard(pendingConfirmationMessage);
             return;
           }
-          if (toolContext.documentEvidence?.length && !toolContext.documentAnswer) {
+          if (needsDocumentVerification(toolContext) && !toolContext.documentAnswer) {
             // A prose draft cannot bypass page verification. Keep the model in the
             // loop so verification never discards the other parts of the request.
             input.push({ role: "developer", content: "Prüfe die Dokumentaussagen zuerst mit answer_from_documents. Danach beantworte die gesamte Nutzerfrage, einschließlich aller weiteren Wissensbereiche." });
@@ -1915,7 +1946,7 @@ export async function streamAgenticAnswer(
           closeWithPendingCard(pendingConfirmationMessage);
           return;
         }
-        if (toolContext.documentEvidence?.length) {
+        if (needsDocumentVerification(toolContext)) {
           send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext, calledTools) });
           send({ type: "sources", sources: documentResponseSources(toolContext) });
           send({ type: "response_state", state: toolContext.responseState ?? "partial" });
@@ -1949,7 +1980,7 @@ export async function streamAgenticAnswer(
             closeWithPendingCard(pendingConfirmationMessage);
             return;
           }
-          if (toolContext.documentEvidence?.length) {
+          if (needsDocumentVerification(toolContext)) {
             send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext, calledTools) });
             send({ type: "sources", sources: documentResponseSources(toolContext) });
             send({ type: "response_state", state: toolContext.responseState ?? "partial" });
