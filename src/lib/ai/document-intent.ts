@@ -16,8 +16,15 @@ export function isPureActionRequest(query: string): boolean {
   return ACTION_VERBS.test(query.trim());
 }
 
+/** A calendar lookup alone does not request a document answer. */
+function calendarOnly(query: string): boolean {
+  return /termin(?:e[ns]?|s)?\b|\b(?:kalender|agenda)\b/iu.test(query)
+    && !/dokument|unterlag|einladung|brief|mail|vertrag|rechnung|zeugnis|zeignis|nachweis|befund|bescheinigung|ticket|fahrkarte|abholschein|zettel|schreiben|\bpdf\b/iu.test(query);
+}
+
 function excluded(query: string): boolean {
   return isPureActionRequest(query)
+    || (calendarOnly(query) && !/^und\s+(?:wann|wo|wie|bis wann)\b/iu.test(query.trim()))
     || /^(?:was ist|was bedeutet|wie funktioniert|erklär|erkläre)\b/iu.test(query.trim());
 }
 
@@ -41,12 +48,12 @@ function followsDocument(query: string): boolean {
 /** Prefetch only an explicit document question or its uninterrupted follow-up chain. */
 export function documentPrefetchQuery(query: string, history: Array<{ role: string; content: string }>): string | null {
   if (excluded(query)) return null;
-  if (topic.test(query)) return query;
+  if (topic.test(query) && !calendarOnly(query)) return query;
   if (!followsDocument(query)) return null;
   for (const turn of [...history].reverse()) {
     if (turn.role !== 'user') continue;
     if (excluded(turn.content)) return null;
-    if (topic.test(turn.content)) return `${turn.content}\nAktuelle Folgefrage: ${query}`;
+    if (topic.test(turn.content) && !calendarOnly(turn.content)) return `${turn.content}\nAktuelle Folgefrage: ${query}`;
     if (!followsDocument(turn.content)) return null;
   }
   return null;

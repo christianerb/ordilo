@@ -4,6 +4,19 @@ describe('document prefetch intent', () => {
   it.each(['Wann läuft Hannahs Bahnding ab?', 'Was sollen wir fürs Buffet einpacken?', 'Was braucht Emma für den Sporttag?', 'Wer hat die Academy-Mitgliedschaft?', 'Was kostet die Mitgliedschaft?', 'Bitte suche meine Master Zeignisse vom Master an der FOM', 'Suche mein Masterzeugnis', 'Wo ist mein Bachelorzeugnis?', 'Zeugnisse meine ist'])('retrieves a casually worded question: %s', question => {
     expect(documentPrefetchQuery(question, [])).toBe(question);
   });
+  it.each(['Welche Termine stehen diese Woche an?', 'Was steht morgen im Kalender?', 'Wann ist mein Zahnarzttermin?', 'Was ist das Datum meines Termins?'])('leaves calendar-only requests to the calendar: %s', question => {
+    expect(documentPrefetchQuery(question, [])).toBeNull();
+  });
+  it('still retrieves explicitly requested document evidence about a date', () => {
+    const question = 'Welchen Termin nennt die Einladung für Emma?';
+    expect(documentPrefetchQuery(question, [])).toBe(question);
+  });
+  it('keeps a calendar-word follow-up anchored to an invitation', () => {
+    expect(documentPrefetchQuery('Und wann ist der Termin?', [{role:'user',content:'Was steht in Emmas Einladung?'}])).toContain('Emmas Einladung');
+  });
+  it('does not carry a document topic across a standalone agenda request', () => {
+    expect(documentPrefetchQuery('Und wann?', [{role:'user',content:'Wann läuft Hannahs Ticket ab?'},{role:'user',content:'Welche Termine stehen diese Woche an?'}])).toBeNull();
+  });
   it('carries the subject into a follow-up about another child', () => {
     expect(documentPrefetchQuery('Und von Emma?', [{role:'user',content:'Wann läuft Hannahs Ticket ab?'}])).toContain('Aktuelle Folgefrage: Und von Emma?');
   });

@@ -32,7 +32,7 @@ function round(name: string, args: unknown) {
     yield { type: "response.completed", response: { output: [{ type: "function_call", name, arguments: JSON.stringify(args), call_id: crypto.randomUUID(), id: "fc_test", status: "completed" }] } };
   })();
 }
-function context(otherDocuments: Array<{ id: string; title: string }> = [], readable = true, document = { title: "Abo-Bestätigung Hannah", text: quote }): ToolContext {
+function context(otherDocuments: Array<{ id: string; title: string }> = [], readable = true, document = { title: "Abo-Bestätigung Hannah", text: quote }, emptyDocumentLists = false): ToolContext {
   const from = vi.fn((table: string) => {
     const rows = table === "documents" ? [{ id, title: document.title, document_type: "contract", summary: "Ticket", category: "Mobilität", created_at: "2026-10-01T12:00:00Z" },
       ...otherDocuments.map(document => ({ ...document, document_type: "contract", summary: "", category: "Mobilität", created_at: "2026-10-01T12:00:00Z" }))] :
@@ -40,7 +40,7 @@ function context(otherDocuments: Array<{ id: string; title: string }> = [], read
     const chain = {
       select: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), order: vi.fn(() => chain), limit: vi.fn(() => chain),
       maybeSingle: vi.fn(async () => ({ data: rows[0] ?? null, error: null })),
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows, error: null, count: rows.length }).then(resolve),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: table === "documents" && emptyDocumentLists ? [] : rows, error: null, count: rows.length }).then(resolve),
     };
     return chain;
   });
@@ -122,6 +122,29 @@ describe("real document tools through the chat orchestration", () => {
     expect(result.find(event => event.type === 'text').content).toContain('Rechnung Waschmaschine');
     expect(result.find(event => event.type === 'sources').sources).toEqual([expect.objectContaining({document_id:id})]);
     expect(result.at(-1)).toEqual({type:'done'});
+  });
+
+  it('answers the calendar without demanding an unrelated document answer', async () => {
+    const answer = 'In deinem Kalender sind für diese Woche keine passenden Termine eingetragen.';
+    create.mockResolvedValueOnce(round('query_calendar_events', {}))
+      .mockImplementation(async () => finalAnswer(answer));
+    const ctx = context([], false);
+    const result = await events(ctx, 'Welche Termine stehen diese Woche an?');
+    expect(result).toContainEqual({type:'tool', tool:'query_calendar_events', state:'done'});
+    expect(result).toContainEqual({type:'text', content:answer});
+    expect(result).toContainEqual({type:'sources', sources:[]});
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['Zeig mir alle Rechnungen', 'Rechnungen'],
+    ['Zeig mir alle Verträge', 'Verträge'],
+  ])('keeps the filter in an empty inventory response: %s', async (question, type) => {
+    // The head count still reports an existing document, but the filtered list is empty.
+    const result = await events(context([], false, {title:'Andere Unterlage', text:''}, true), question);
+    expect(result.find(event => event.type === 'text').content).toBe(`Ich habe noch keine bestätigten ${type} gefunden.`);
+    expect(result).toContainEqual({type:'sources', sources:[]});
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("reads past the old excerpt cutoff and returns the verified passage after synthesis", async () => {

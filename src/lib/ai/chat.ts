@@ -1000,9 +1000,18 @@ function formatDocumentList(
   personName: string | null,
   listing: ReturnType<typeof parseListedDocuments>,
   voice = false,
+  documentType: string | null = null,
 ): string {
   if (listing.total === 0) {
-    if (!personName) return "Ich habe noch keine bestätigten Unterlagen gefunden.";
+    if (!personName) {
+      const labels: Record<string, string> = {
+        invoice: "Rechnungen", contract: "Verträge", letter: "Briefe",
+        medical: "Arztunterlagen", insurance: "Versicherungsunterlagen",
+        tax: "Steuerunterlagen", school: "Schulunterlagen", credentials: "Zugangsdaten",
+      };
+      const label = documentType ? labels[documentType] ?? "passenden Unterlagen" : "Unterlagen";
+      return `Ich habe noch keine bestätigten ${label} gefunden.`;
+    }
     return `Zu ${personName} habe ich noch kein bestätigtes Dokument gefunden. ${personName} ist als Familienmitglied vorhanden, in den bestätigten Dokumenten wird der Name aber noch nicht genannt.`;
   }
 
@@ -1060,6 +1069,7 @@ function streamDocumentList(
             personName,
             listing,
             toolContext.responseMode === "voice",
+            documentType,
           ),
         });
         send({ type: "sources", sources: documentResponseSources(toolContext) });
