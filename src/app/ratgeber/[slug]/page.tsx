@@ -118,7 +118,7 @@ export default async function GuidePage({ params }: Props) {
             }).format(new Date(guide.updated))}
           </time>
         </p>
-        <p className="mt-8 border-l-4 border-primary pl-5 text-lg leading-relaxed">
+        <p className="mt-8 rounded-ordilo-md bg-muted p-5 text-lg leading-relaxed">
           {guide.answer}
         </p>
         <nav
