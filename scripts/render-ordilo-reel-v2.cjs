@@ -49,7 +49,7 @@ function heart(x, y, scale, color = "#DB795A") {
 function frame(t, family) {
   let scene = t < 4 ? 0 : t < 8 ? 1 : t < 14 ? 2 : t < 18 ? 3 : 4;
   let local = t - [0, 4, 8, 14, 18][scene];
-  let out = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs><filter id="shadow" x="-30%" y="-30%" width="160%" height="180%"><feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#193232" flood-opacity="0.08"/></filter></defs>`;
+  let out = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs><filter id="shadow" x="-30%" y="-30%" width="160%" height="180%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#193232" flood-opacity="0.08"/></filter></defs>`;
   out += rect(0, 0, W, H, scene === 4 ? "#E4ECDF" : "#F7F5F1", 0);
   out += `<circle cx="${900 + 30 * Math.sin(t)}" cy="950" r="570" fill="${scene === 4 ? "#D3E0CF" : "#EFE8DC"}"/><circle cx="60" cy="1300" r="280" fill="#F2DFD3" opacity="0.6"/>`;
   out +=
@@ -75,9 +75,9 @@ function frame(t, family) {
       ease((local - 0.8) * 2),
     );
     const tasks = [
-      ["Kita-Brief?!", 125, 580, -6, "#FFFFFF"],
+      ["Kita-Brief?!", 125, 580, -6, "#FDFCFA"],
       ["Turnbeutel!", 515, 730, 5, "#EBC39B"],
-      ["Wer holt ab?", 120, 850, -3, "#FFFFFF"],
+      ["Wer holt ab?", 120, 850, -3, "#FDFCFA"],
     ];
     tasks.forEach(([label, x, y, angle, bg], i) => {
       const p = spring(local - i * 0.45);
@@ -104,7 +104,7 @@ function frame(t, family) {
       text(90, 320, "Der Ausflug?", 80) + text(90, 416, "Erst morgen.", 80);
     const p = spring(local * 1.2);
     let card =
-      rect(0, 0, 850, 770, "#FFFFFF", 35) +
+      rect(0, 0, 850, 770, "#FDFCFA", 35) +
       pill(50, 45, "Kita · Beispiel", "#EFE8DC", "#305460", 330) +
       text(50, 185, "Unser Ausflug", 59) +
       text(50, 265, "Treffpunkt: morgen, 9:00", 38, "#625D54");
@@ -143,7 +143,7 @@ function frame(t, family) {
         90 + (1 - p) * 1000,
         y,
         1,
-        rect(0, 0, 900, 225, "#FFFFFF", 30) +
+        rect(0, 0, 900, 225, "#FDFCFA", 30) +
           pill(30, 30, num, "#EFE8DC", "#193232", 65) +
           text(125, 79, title, 43) +
           text(125, 147, sub, 34, "#625D54"),
@@ -171,7 +171,7 @@ function frame(t, family) {
       90,
       550 + (1 - p) * 200,
       1,
-      rect(0, 0, 900, 390, "#FFFFFF", 32) +
+      rect(0, 0, 900, 390, "#FDFCFA", 32) +
         text(45, 80, "Rückmeldung abgeben", 49) +
         pill(45, 125, "Heute", "#F8E4D8", "#A74A24", 180) +
         text(45, 260, "Sam übernimmt.", 55) +
@@ -304,6 +304,10 @@ async function main() {
   await fs.copyFile(
     path.join(root, "src/assets/fonts/Figtree.ttf"),
     path.join(output, "Figtree.ttf"),
+  );
+  await fs.copyFile(
+    path.join(root, "src/assets/fonts/OFL.txt"),
+    path.join(output, "Figtree-OFL.txt"),
   );
   const config = path.join(os.tmpdir(), "ordilo-reel-fonts.conf");
   await fs.writeFile(
