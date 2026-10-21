@@ -76,7 +76,7 @@ async function main() {
           { style: { display: "flex", flexDirection: "column", gap: 38 } },
           text(slide.label, {
             fontSize: 25,
-            letterSpacing: 2,
+            letterSpacing: 0,
             color: dark ? "#F0B4A0" : "#305460",
           }),
           text(slide.title, {
