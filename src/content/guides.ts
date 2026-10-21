@@ -1,3 +1,5 @@
+import { listicleGuides } from "./listicle-guides";
+
 /** Editorial source of truth. Dates describe the text, not an invented review. */
 export interface Guide {
   slug: string;
@@ -258,6 +260,7 @@ Zum Start genügt ein unkritischer Beispielbrief. Scanne ihn, suche ihn erneut u
       "kita-schulbriefe-organisieren",
     ],
   },
+  ...listicleGuides,
 ];
 
 export function getGuide(slug: string): Guide | undefined {

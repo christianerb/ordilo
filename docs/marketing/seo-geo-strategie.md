@@ -2,8 +2,13 @@
 
 Stand: 21. Oktober 2026. Ziel: Familien erreichen, die ihren Papierkram gemeinsam
 organisieren möchten, und sie bis zum ersten nützlichen Dokument begleiten.
-Keine Ranking-, Installations- oder KI-Zitat-Garantie. Suchvolumen, Keyword Difficulty,
-Search-Console-Daten und AI-Visibility-Baselines sind noch **nicht erhoben**.
+Keine Ranking-, Installations- oder KI-Zitat-Garantie. Ergänzung vom selben Tag:
+25 Keyword-Spannen aus Google Keyword Planner stehen in
+`keyword-planner-2026-10-21.csv`; Priorisierung und drei zusätzliche Artikel in
+`listicles-und-carousels.md`. Keyword Difficulty, Search-Console-Daten und
+AI-Visibility-Baselines sind weiterhin **nicht erhoben**. Die folgenden Abschnitte
+dokumentieren den ursprünglichen Startplan mit drei Artikeln; die Ergänzung erhöht
+den Bestand auf sechs.
 
 ## 1. Befund und Prioritäten
 
