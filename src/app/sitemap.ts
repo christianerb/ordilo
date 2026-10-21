@@ -1,12 +1,22 @@
 import type { MetadataRoute } from "next";
-
-const publicPages = ["", "/datenschutz", "/impressum"] as const;
+import { guides } from "@/content/guides";
+import { SITE_URL } from "@/lib/marketing";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return publicPages.map((path, index) => ({
-    url: `https://ordilo.de${path}`,
-    lastModified: new Date(),
-    changeFrequency: index === 0 ? "weekly" : "yearly",
-    priority: index === 0 ? 1 : 0.3,
-  }));
+  // Omit lastModified where no reliable editorial date is recorded.
+  const pages = [
+    "",
+    "/ratgeber",
+    "/hilfe",
+    "/datenschutz",
+    "/impressum",
+    "/nutzungsbedingungen",
+  ];
+  return [
+    ...pages.map((path) => ({ url: `${SITE_URL}${path}` })),
+    ...guides.map((guide) => ({
+      url: `${SITE_URL}/ratgeber/${guide.slug}`,
+      lastModified: guide.updated,
+    })),
+  ];
 }

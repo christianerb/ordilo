@@ -2,14 +2,20 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import { LandingPage } from "../landing-page";
+import { APP_STORE_URL } from "@/lib/marketing";
 
 describe("LandingPage", () => {
-  it("renders the hero promise and the primary CTA to /login", () => {
+  it("offers the live iPhone app and keeps the browser entry available", () => {
     render(<LandingPage />);
     expect(screen.getByText(/Dokumenten-App/)).toBeDefined();
     const cta = screen.getByTestId("landing-cta-hero");
-    expect(cta.textContent).toContain("Ordilo kostenlos starten");
-    expect(cta.getAttribute("href")).toBe("/login");
+    expect(cta.textContent).toContain("Kostenlos im App Store laden");
+    expect(cta.getAttribute("href")).toBe(APP_STORE_URL);
+    expect(
+      screen
+        .getByRole("link", { name: "Im Browser starten" })
+        .getAttribute("href"),
+    ).toBe("/login");
   });
 
   it("renders the mobile scan-to-answer journey", () => {
@@ -28,7 +34,9 @@ describe("LandingPage", () => {
   it("keeps supporting mascots still and gives FAQ state visible continuity", () => {
     const { container } = render(<LandingPage />);
 
-    expect(container.querySelectorAll(".landing-mascot-static")).toHaveLength(3);
+    expect(container.querySelectorAll(".landing-mascot-static")).toHaveLength(
+      3,
+    );
     expect(container.querySelectorAll(".landing-faq-answer")).toHaveLength(4);
     expect(container.querySelectorAll(".landing-faq-chevron")).toHaveLength(4);
   });
@@ -38,7 +46,10 @@ describe("LandingPage", () => {
     expect(
       screen.getByText(/Deine privatesten Papiere verdienen/),
     ).toBeDefined();
-    expect(screen.getAllByText(/Server in der EU/).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Dokumenten- und Kontospeicher in der EU/),
+    ).toBeDefined();
+    expect(screen.getByText(/außerhalb der EU verarbeitet/)).toBeDefined();
     expect(screen.getByText(/Verschlüsselt auf dem Weg/)).toBeDefined();
   });
 
@@ -66,9 +77,7 @@ describe("LandingPage", () => {
     expect(screen.getByText(/Buchbar in der iPhone-App/)).toBeDefined();
     expect(screen.queryByText(/Noch nicht buchbar/)).toBeNull();
     expect(screen.queryByText(/Nach der Beta/)).toBeNull();
-    expect(
-      screen.queryByRole("link", { name: /Plus buchen/i }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: /Plus buchen/i })).toBeNull();
 
     const cta = screen.getByTestId("landing-cta-pricing");
     expect(cta.textContent).toContain("Kostenlos starten");
@@ -95,8 +104,8 @@ describe("LandingPage", () => {
 
   it("repeats the CTA at the bottom", () => {
     render(<LandingPage />);
-    expect(
-      screen.getByTestId("landing-cta-bottom").getAttribute("href"),
-    ).toBe("/login");
+    expect(screen.getByTestId("landing-cta-bottom").getAttribute("href")).toBe(
+      APP_STORE_URL,
+    );
   });
 });

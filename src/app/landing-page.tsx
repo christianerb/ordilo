@@ -19,21 +19,29 @@ import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 
+import {
+  APP_STORE_URL,
+  publisher,
+  serializeJsonLd,
+  SITE_URL,
+} from "@/lib/marketing";
+import { guides } from "@/content/guides";
+
 const faqItems = [
   {
     question: "Was ist der Unterschied zu einem Cloud-Ordner?",
     answer:
-      "Ein Cloud-Ordner speichert Dateien. Ordilo versteht, was darin steht: Beträge, Fristen, Personen und wichtige Nummern. Du fragst und bekommst eine Antwort statt einer Trefferliste.",
+      "Ein Cloud-Ordner ist vor allem eine Dateiablage. Ordilo ergänzt eure Familienablage um erkannte Angaben und Antworten mit Fundstellen. Du prüfst die Angaben und kannst später nach Beträgen, Terminen oder Nummern fragen.",
   },
   {
     question: "Kann das nicht auch ChatGPT?",
     answer:
-      "Bei einem allgemeinen Chat müsstest du Dokumente immer wieder hochladen. Ordilo baut daraus eine geschützte Familienablage, merkt sich bestätigte Informationen und erinnert dich an Fristen.",
+      "Auch allgemeine KI-Chats können Dokumente auswerten. Ordilo verbindet die Fragen zu euren Unterlagen mit einer gemeinsamen Familienablage, bestätigten Angaben und Aufgaben. Welche Lösung passt, hängt davon ab, wie ihr Dokumente gemeinsam nutzen möchtet.",
   },
   {
     question: "Wer kann meine Dokumente lesen?",
     answer:
-      "Nur deine Familie hat Zugriff auf die private Ablage. Für die Dokumentenanalyse arbeiten geprüfte KI-Partner unter Auftragsverarbeitung. Sie lernen nicht aus deinen Daten.",
+      "Eingeladene Personen in eurem Familienbereich können die gemeinsamen Unterlagen nutzen. Für KI-Funktionen werden Inhalte nach deiner Einwilligung an Dienstleister wie OpenAI und Datalab übermittelt, auch in die USA. Details findest du in der Datenschutzerklärung.",
   },
   {
     question: "Was kostet Ordilo?",
@@ -45,11 +53,29 @@ const faqItems = [
 const structuredData = {
   "@context": "https://schema.org",
   "@graph": [
+    publisher,
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      name: "Ordilo",
+      url: SITE_URL,
+      inLanguage: "de-DE",
+      publisher: { "@id": publisher["@id"] },
+    },
     {
       "@type": "SoftwareApplication",
       name: "Ordilo",
       applicationCategory: "ProductivityApplication",
-      operatingSystem: "iOS, Android, Web",
+      operatingSystem: "iOS, Web",
+      downloadUrl: APP_STORE_URL,
+      publisher: { "@id": publisher["@id"] },
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "EUR",
+        description:
+          "Scannen und Fragen kostenlos; Live-Gespräch optional mit Ordilo Plus.",
+      },
       description:
         "Ordilo ist die mobile Dokumenten-App für Familien. Sie liest Briefe, Rechnungen und Verträge, beantwortet Fragen und erinnert an Fristen.",
       isAccessibleForFree: true,
@@ -74,7 +100,7 @@ export function LandingPage() {
     <main className="relative isolate min-h-dvh overflow-hidden bg-[var(--auth-background)] text-foreground">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
       />
 
       <div
@@ -103,12 +129,23 @@ export function LandingPage() {
               className="landing-wordmark"
               labelClassName="text-xl font-semibold tracking-[-0.03em] text-[var(--warm-white)]"
             />
-            <Link
-              href="/login"
-              className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+            <nav
+              aria-label="Hauptnavigation"
+              className="flex items-center gap-1 sm:gap-3"
             >
-              Anmelden
-            </Link>
+              <Link
+                href="/ratgeber"
+                className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 text-sm font-medium text-white/80 hover:text-white"
+              >
+                Ratgeber
+              </Link>
+              <Link
+                href="/login"
+                className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                Anmelden
+              </Link>
+            </nav>
           </header>
 
           <div className="relative grid items-center lg:grid-cols-[0.92fr_1.08fr]">
@@ -117,6 +154,9 @@ export function LandingPage() {
                 className="max-w-xl font-semibold leading-[0.95] tracking-[-0.04em]"
                 style={{ fontSize: "clamp(3rem, 11vw, 5.25rem)" }}
               >
+                <span className="mb-4 block text-base font-medium leading-normal tracking-normal text-white/75">
+                  Dokumente für die Familie.
+                </span>
                 Scannen.
                 <br />
                 Fragen.
@@ -131,27 +171,36 @@ export function LandingPage() {
               </p>
 
               <div className="mt-5 flex flex-col gap-3 sm:mt-7 sm:flex-row sm:items-center">
-                <Link
-                  href="/login"
+                <a
+                  href={APP_STORE_URL}
                   className="focus-ring press-scale inline-flex min-h-12 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-ordilo-sm bg-[var(--warm-white)] px-6 text-sm font-semibold text-[var(--petrol-darker)] transition-colors hover:bg-[var(--auth-sage)]"
                   data-testid="landing-cta-hero"
                 >
-                  Ordilo kostenlos starten
+                  Kostenlos im App Store laden
                   <ArrowRight className="size-4" aria-hidden="true" />
+                </a>
+                <Link
+                  href="/login"
+                  className="focus-ring py-3 text-sm text-white/80 underline underline-offset-4"
+                >
+                  Im Browser starten
                 </Link>
-                <p className="text-sm text-white/65">
-                  Ohne Kreditkarte. Ohne Passwort.
-                </p>
               </div>
 
               <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm text-white/75 sm:mt-8">
                 <li className="flex items-center gap-2">
-                  <Lock className="size-4 text-[var(--auth-sage)]" aria-hidden="true" />
+                  <Lock
+                    className="size-4 text-[var(--auth-sage)]"
+                    aria-hidden="true"
+                  />
                   Private Familienablage
                 </li>
                 <li className="flex items-center gap-2">
-                  <ShieldCheck className="size-4 text-[var(--auth-sage)]" aria-hidden="true" />
-                  Server in der EU
+                  <ShieldCheck
+                    className="size-4 text-[var(--auth-sage)]"
+                    aria-hidden="true"
+                  />
+                  KI nur mit Einwilligung
                 </li>
               </ul>
             </div>
@@ -242,7 +291,10 @@ export function LandingPage() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center gap-3 rounded-ordilo-sm bg-[var(--auth-sage)] px-4 py-3 text-sm text-[var(--petrol-darker)]">
-                  <CalendarClock className="size-5 shrink-0" aria-hidden="true" />
+                  <CalendarClock
+                    className="size-5 shrink-0"
+                    aria-hidden="true"
+                  />
                   <span>
                     <strong>Erinnerung gesetzt:</strong> 30 Tage vorher
                   </span>
@@ -296,6 +348,7 @@ export function LandingPage() {
         </section>
 
         <section
+          id="preise"
           className="px-5 pb-14 sm:px-4 sm:pb-20 lg:pb-24"
           aria-labelledby="pricing-heading"
         >
@@ -420,8 +473,10 @@ export function LandingPage() {
                 Deine privatesten Papiere verdienen mehr als ein Versprechen.
               </h2>
               <p className="mt-4 max-w-xl text-base leading-relaxed text-white/70">
-                Ordilo ist für Familien gebaut, nicht für Werbung. Deine
-                Dokumente bleiben verschlüsselt und werden nicht verkauft.
+                Eure Ablage ist privat. Bevor Inhalte an KI-Dienste gehen, fragt
+                Ordilo nach deiner Einwilligung. Dabei können Daten auch
+                außerhalb der EU verarbeitet werden. Hier erklären wir, welche
+                Dienste beteiligt sind und welche Möglichkeiten du hast.
               </p>
               <Link
                 href="/datenschutz"
@@ -433,7 +488,7 @@ export function LandingPage() {
             </div>
             <ul className="grid gap-px bg-white/10 sm:grid-cols-3 lg:grid-cols-1">
               {[
-                "Server in der Europäischen Union",
+                "Dokumenten- und Kontospeicher in der EU",
                 "Verschlüsselt auf dem Weg und im Speicher",
                 "Keine Werbung und kein Verkauf deiner Daten",
               ].map((item) => (
@@ -441,7 +496,10 @@ export function LandingPage() {
                   key={item}
                   className="flex min-h-20 items-center gap-3 bg-[var(--petrol-darker)] px-6 py-5 text-sm text-white/85"
                 >
-                  <Check className="size-5 shrink-0 text-[var(--auth-sage)]" aria-hidden="true" />
+                  <Check
+                    className="size-5 shrink-0 text-[var(--auth-sage)]"
+                    aria-hidden="true"
+                  />
                   {item}
                 </li>
               ))}
@@ -459,6 +517,39 @@ export function LandingPage() {
                 <FaqItem key={item.question} {...item} />
               ))}
             </div>
+          </div>
+        </section>
+
+        <section
+          className="px-5 pb-14 sm:px-4 sm:pb-20"
+          aria-labelledby="ratgeber-heading"
+        >
+          <div className="mx-auto max-w-3xl">
+            <h2
+              id="ratgeber-heading"
+              className="text-3xl font-semibold tracking-tight"
+            >
+              Papierkram organisieren. Gemeinsam.
+            </h2>
+            <p className="mt-4 leading-relaxed text-muted-foreground">
+              Von Kita-Briefen bis zur digitalen Familienablage: Unsere Ratgeber
+              helfen euch beim ersten Schritt, auch ohne App.
+            </p>
+            <ul className="mt-6 divide-y divide-border border-y border-border">
+              {guides.map((guide) => (
+                <li key={guide.slug} className="py-5">
+                  <Link
+                    href={`/ratgeber/${guide.slug}`}
+                    className="focus-ring text-lg font-semibold text-primary underline-offset-4 hover:underline"
+                  >
+                    {guide.title}
+                  </Link>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    {guide.description}
+                  </p>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
@@ -485,30 +576,57 @@ export function LandingPage() {
               Der erste Scan dauert weniger als eine Minute. Danach ist jede
               Antwort nur eine Frage entfernt.
             </p>
-            <Link
-              href="/login"
+            <a
+              href={APP_STORE_URL}
               className="focus-ring press-scale mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-ordilo-sm bg-[var(--petrol)] px-7 text-sm font-semibold text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)]"
               data-testid="landing-cta-bottom"
             >
-              Ordilo kostenlos starten
+              Kostenlos im App Store laden
               <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+            </a>
           </div>
         </section>
 
         <footer className="flex flex-col items-center gap-3 px-5 py-6 text-center text-xs text-muted-foreground sm:flex-row sm:justify-between">
           <p>© {new Date().getFullYear()} Ordilo · Dein Familiengedächtnis</p>
-          <nav className="flex flex-wrap items-center justify-center gap-1" aria-label="Kontakt und Rechtliches">
-            <a href="mailto:info@ordilo.de" className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground">
+          <nav
+            className="flex flex-wrap items-center justify-center gap-1"
+            aria-label="Kontakt und Rechtliches"
+          >
+            <Link
+              href="/hilfe"
+              className="focus-ring inline-flex min-h-11 items-center px-3 hover:text-foreground"
+            >
+              Hilfe
+            </Link>
+            <Link
+              href="/ratgeber"
+              className="focus-ring inline-flex min-h-11 items-center px-3 hover:text-foreground"
+            >
+              Ratgeber
+            </Link>
+            <a
+              href="mailto:info@ordilo.de"
+              className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground"
+            >
               Kontakt
             </a>
-            <Link href="/impressum" className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground">
+            <Link
+              href="/impressum"
+              className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground"
+            >
               Impressum
             </Link>
-            <Link href="/nutzungsbedingungen" className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground">
+            <Link
+              href="/nutzungsbedingungen"
+              className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground"
+            >
               Nutzungsbedingungen
             </Link>
-            <Link href="/datenschutz" className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground">
+            <Link
+              href="/datenschutz"
+              className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground"
+            >
               Datenschutz
             </Link>
           </nav>
@@ -522,11 +640,16 @@ function MobileAppPreview() {
   return (
     <div className="landing-phone-enter relative z-10 w-full max-w-[360px] translate-y-5 sm:max-w-[390px] sm:translate-y-8 lg:translate-y-10">
       <div className="rounded-t-[28px] border-x-[6px] border-t-[6px] border-[var(--graphite)] bg-[var(--warm-white)] px-4 pb-9 pt-4 text-[var(--graphite)] shadow-[0_16px_40px_rgba(25,50,50,0.22)]">
-        <div className="mx-auto h-5 w-24 rounded-full bg-[var(--graphite)]" aria-hidden="true" />
+        <div
+          className="mx-auto h-5 w-24 rounded-full bg-[var(--graphite)]"
+          aria-hidden="true"
+        />
 
         <div className="mt-6 flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-[var(--mist-dark)]">Guten Morgen</p>
+            <p className="text-xs font-medium text-[var(--mist-dark)]">
+              Guten Morgen
+            </p>
             <p className="mt-0.5 text-xl font-semibold text-[var(--petrol-darker)]">
               Was liegt heute an?
             </p>
@@ -542,8 +665,12 @@ function MobileAppPreview() {
               <BellRing className="size-4" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-xs font-medium text-[var(--apricot-text)]">Ordilo hat etwas bemerkt</p>
-              <p className="text-sm font-semibold text-[var(--graphite)]">Kündigungsfrist in 30 Tagen</p>
+              <p className="text-xs font-medium text-[var(--apricot-text)]">
+                Ordilo hat etwas bemerkt
+              </p>
+              <p className="text-sm font-semibold text-[var(--graphite)]">
+                Kündigungsfrist in 30 Tagen
+              </p>
             </div>
           </div>
           <div className="landing-app-reveal landing-app-reveal--document flex items-center gap-3 px-4 py-4">
@@ -551,10 +678,17 @@ function MobileAppPreview() {
               <FileText className="size-5" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">Mobilfunkvertrag Lea</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Heute erkannt · bestätigt</p>
+              <p className="truncate text-sm font-semibold">
+                Mobilfunkvertrag Lea
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Heute erkannt · bestätigt
+              </p>
             </div>
-            <ChevronDown className="size-4 -rotate-90 text-[var(--mist-dark)]" aria-hidden="true" />
+            <ChevronDown
+              className="size-4 -rotate-90 text-[var(--mist-dark)]"
+              aria-hidden="true"
+            />
           </div>
         </div>
 
@@ -581,7 +715,10 @@ function MobileAppPreview() {
               key={label}
               className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-ordilo-sm bg-[var(--sand)] text-xs font-medium text-[var(--petrol-darker)]"
             >
-              <Icon className="size-5 text-[var(--petrol)]" aria-hidden="true" />
+              <Icon
+                className="size-5 text-[var(--petrol)]"
+                aria-hidden="true"
+              />
               {label}
             </span>
           ))}
@@ -596,7 +733,10 @@ function JourneyStep({
   title,
   text,
 }: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
+  icon: React.ComponentType<{
+    className?: string;
+    "aria-hidden"?: boolean | "true";
+  }>;
   title: string;
   text: string;
 }) {
@@ -607,7 +747,9 @@ function JourneyStep({
       </span>
       <div className="md:mt-5">
         <h3 className="text-lg font-semibold">{title}</h3>
-        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{text}</p>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          {text}
+        </p>
       </div>
     </li>
   );
@@ -618,7 +760,10 @@ function FamilyBenefit({
   title,
   text,
 }: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
+  icon: React.ComponentType<{
+    className?: string;
+    "aria-hidden"?: boolean | "true";
+  }>;
   title: string;
   text: string;
 }) {
@@ -626,18 +771,14 @@ function FamilyBenefit({
     <article className="bg-[var(--surface-box)] p-6 sm:p-7">
       <Icon className="size-5 text-[var(--petrol)]" aria-hidden="true" />
       <h3 className="mt-4 text-base font-semibold">{title}</h3>
-      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{text}</p>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+        {text}
+      </p>
     </article>
   );
 }
 
-function FaqItem({
-  question,
-  answer,
-}: {
-  question: string;
-  answer: string;
-}) {
+function FaqItem({ question, answer }: { question: string; answer: string }) {
   return (
     <details className="group">
       <summary className="focus-ring flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 rounded-ordilo-sm py-3 text-base font-semibold [&::-webkit-details-marker]:hidden">

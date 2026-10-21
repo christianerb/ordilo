@@ -18,9 +18,7 @@ test("unauthenticated visit to a protected route redirects to /login", async ({
 test("login page renders the email form", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("textbox")).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Loslegen/i }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Loslegen/i })).toBeVisible();
 });
 
 test("PWA manifest is served and names the app", async ({ request }) => {
@@ -45,11 +43,15 @@ test("PWA icons referenced by the manifest actually resolve", async ({
 test("unauthenticated visit to / shows the landing page", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/$/);
-  await expect(
-    page.getByTestId("landing-cta-hero"),
-  ).toBeVisible();
-  // The CTA leads into the login flow.
-  await page.getByTestId("landing-cta-hero").click();
+  await expect(page.getByTestId("landing-cta-hero")).toBeVisible();
+  await expect(page.getByTestId("landing-cta-hero")).toHaveAttribute(
+    "href",
+    /apps\.apple\.com\/de\/app\/.*6805133943/,
+  );
+  // Browser users retain a separate route into the web app.
+  await page
+    .getByRole("link", { name: "Im Browser starten", exact: true })
+    .click();
   await expect(page).toHaveURL(/\/login/);
 });
 
@@ -61,4 +63,32 @@ test("legal pages render their content", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Datenschutzerklärung" }),
   ).toBeVisible();
+});
+
+test("public guides expose crawlable content and canonical metadata without login", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/ratgeber");
+  await page
+    .getByRole("link", {
+      name: "Papierkram organisieren: eine Ablage für die Familie",
+      exact: true,
+    })
+    .click();
+  await expect(page).toHaveURL(/\/ratgeber\/papierkram-organisieren-familie$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "https://ordilo.de/ratgeber/papierkram-organisieren-familie",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Quellen und Einordnung" }),
+  ).toBeVisible();
+  const response = await request.get("/ratgeber/unbekannter-artikel");
+  expect(response.status()).toBe(404);
+  const sitemap = await request.get("/sitemap.xml");
+  expect(await sitemap.text()).toContain(
+    "https://ordilo.de/ratgeber/papierkram-organisieren-familie",
+  );
 });

@@ -3,30 +3,13 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPostAuthDestination } from "@/lib/auth/routing";
 import { LandingPage } from "./landing-page";
+import { publicMetadata } from "@/lib/marketing";
 
-export const metadata: Metadata = {
-  title: "Ordilo — Dokumente scannen, fragen, erledigt",
-  description:
-    "Die mobile Dokumenten-App für Familien: Briefe scannen, Ordilo fragen und wichtige Fristen automatisch im Blick behalten. Privat, verschlüsselt und auf Servern in der EU.",
-  alternates: {
-    canonical: "/",
-  },
-  openGraph: {
-    type: "website",
-    locale: "de_DE",
-    url: "https://ordilo.de",
-    siteName: "Ordilo",
-    title: "Ordilo — Scannen. Fragen. Erledigt.",
-    description:
-      "Die Dokumenten-App, die den Papierkram deiner Familie versteht.",
-  },
-  twitter: {
-    card: "summary",
-    title: "Ordilo — Scannen. Fragen. Erledigt.",
-    description:
-      "Die Dokumenten-App, die den Papierkram deiner Familie versteht.",
-  },
-};
+export const metadata: Metadata = publicMetadata(
+  "Dokumenten-App für Familien: scannen & fragen | Ordilo",
+  "Briefe scannen, Dokumente gemeinsam ablegen und Antworten mit Fundstelle finden. Für iPhone und Web: Scannen und Fragen kostenlos, Live-Gespräch optional.",
+  "/",
+);
 
 /**
  * Root page.
