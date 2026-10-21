@@ -148,5 +148,83 @@
         "kind": "end"
       }
     ]
+  },
+  {
+    "id": "04-mental-load",
+    "article": "/ratgeber/mental-load-familie",
+    "caption": "„Sag einfach, was ich machen soll.“ Klingt hilfreich. Lässt aber die Planung bei derselben Person. Drei Ansätze: Denkarbeit sichtbar machen, ganze Aufgaben übernehmen, Ansprüche gemeinsam vereinfachen. Fangt mit einem einzigen Vorgang an. Speichern und gemeinsam ausprobieren. #MentalLoad #Familienalltag #Familienorganisation #CareArbeit #Ordilo",
+    "slides": [
+      {
+        "label": "3 Ansätze für weniger Denkarbeit",
+        "title": "Du bist kein\nFamilien-\nHelpdesk.",
+        "body": "Wer erinnert eigentlich die Person,\ndie an alles denkt?",
+        "kind": "cover"
+      },
+      {
+        "label": "1 · Sichtbar machen",
+        "title": "Auch Denken\nist Arbeit.",
+        "body": "Nicht nur „Ausflug bezahlen“.\nAuch: Brief lesen, Frist merken,\nRückfrage klären. Alles aufschreiben."
+      },
+      {
+        "label": "2 · Ganz übernehmen",
+        "title": "Eine Aufgabe.\nVon A bis Z.",
+        "body": "Wer übernimmt, besorgt auch die Infos,\nbehält die Frist im Blick und meldet,\nwenn es erledigt ist."
+      },
+      {
+        "label": "3 · Gemeinsam vereinfachen",
+        "title": "Muss das\nwirklich sein?",
+        "body": "Was kann weg? Was darf einfacher sein?\nEin belegtes Brot braucht\nkein Projektmanagement."
+      },
+      {
+        "label": "Ein kleiner Anfang",
+        "title": "Nehmt euch\neine Sache.",
+        "body": "Welcher Vorgang wechselt diese Woche\nkomplett die Verantwortung?\nOrdilo hilft beim Dokumententeil.",
+        "kind": "end"
+      }
+    ]
+  },
+  {
+    "id": "05-familienorganisation",
+    "article": "/ratgeber/familienalltag-organisieren-tipps",
+    "caption": "Fünf kleine Regeln gegen „Ich dachte, du …“. Ein gemeinsamer Ort für Termine. Zuständigkeit mit Namen. Der nächste Schritt direkt am Brief. Zehn Minuten Wochenabgleich. Platz für Plan B. Sucht euch eine Regel aus, die euren Alltag leichter machen könnte. #Familienorganisation #Familienalltag #Wochenplanung #Elternalltag #Ordilo",
+    "slides": [
+      {
+        "label": "5 Tipps für Familienorganisation",
+        "title": "„Ich dachte,\ndu …“",
+        "body": "Der inoffizielle Soundtrack\ndes Familienalltags.",
+        "kind": "cover"
+      },
+      {
+        "label": "1 · Ein gemeinsamer Stand",
+        "title": "Ein Termin.\nEin Ort.",
+        "body": "Sammelt verbindliche Termine\nin einem gemeinsamen Kalender.\nÄnderungen gehören auch dorthin."
+      },
+      {
+        "label": "2 · Namen statt Hoffnung",
+        "title": "Wer macht’s\nwirklich?",
+        "body": "„Wir müssen noch“ ist kein Name.\nKlärt, wer den nächsten Schritt\nbis wann übernimmt."
+      },
+      {
+        "label": "3 · Direkt am Dokument",
+        "title": "Brief da.\nSchritt klar.",
+        "body": "Nach dem Lesen festhalten:\nWas ist zu tun? Bis wann?\nWo liegt das Original?"
+      },
+      {
+        "label": "4 · Kurz abgleichen",
+        "title": "Zehn Minuten.\nEine Woche.",
+        "body": "Schaut gemeinsam auf Termine,\noffene Rückmeldungen und Engpässe.\nNicht erst morgens an der Haustür."
+      },
+      {
+        "label": "5 · Luft lassen",
+        "title": "Plan B ist\nauch ein Plan.",
+        "body": "Nicht jeden Nachmittag vollpacken.\nKlärt bei wichtigen Terminen,\nwer im Notfall einspringen kann."
+      },
+      {
+        "label": "Heute ausprobieren",
+        "title": "Eine Regel\nreicht zuerst.",
+        "body": "Welche spart euch diese Woche\neine Rückfrage?\nSpeichern und weiterteilen.",
+        "kind": "end"
+      }
+    ]
   }
 ]

@@ -134,7 +134,7 @@ async function main() {
   }
   await sharp({
     create: {
-      width: 1512,
+      width: Math.max(...packs.map((pack) => pack.slides.length)) * 216,
       height: packs.length * 270,
       channels: 3,
       background: "#F7F5F1",
@@ -145,7 +145,7 @@ async function main() {
     .toFile(path.join(output, "uebersicht.png"));
   await fs.writeFile(
     path.join(output, "README.txt"),
-    "3 Instagram-Carousels, jeweils 7 PNGs in 1080 × 1350. Reihenfolge 01 bis 07. Captions und Alt-Texte je Ordner. Nicht veröffentlicht oder eingeplant. Artikel-Links erst nach Website-Deployment verwenden.\n",
+    `${packs.length} Instagram-Carousels, ${previews.length} PNGs in 1080 × 1350. Nummerierte Reihenfolge je Ordner. Captions und Alt-Texte je Ordner. Nicht veröffentlicht oder eingeplant. Artikel-Links erst nach Website-Deployment verwenden.\n`,
   );
   console.log(`Rendered ${previews.length} slides to ${output}`);
 }

@@ -1,4 +1,5 @@
 import { listicleGuides } from "./listicle-guides";
+import { practicalGuides } from "./practical-guides";
 
 /** Editorial source of truth. Dates describe the text, not an invented review. */
 export interface Guide {
@@ -261,6 +262,7 @@ Zum Start genügt ein unkritischer Beispielbrief. Scanne ihn, suche ihn erneut u
     ],
   },
   ...listicleGuides,
+  ...practicalGuides,
 ];
 
 export function getGuide(slug: string): Guide | undefined {
