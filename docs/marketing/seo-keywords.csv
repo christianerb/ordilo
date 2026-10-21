@@ -1,0 +1,34 @@
+keyword,cluster,intent,target,priority,evidence,status
+Dokumenten App Familie,Produkt,App finden,/,P0,Produktpositionierung,Hypothese ohne Volumen
+Familienablage App,Produkt,App finden,/,P0,Produktpositionierung,Hypothese ohne Volumen
+Dokumente gemeinsam verwalten,Produkt,App finden,/,P0,Produktfunktion,Hypothese ohne Volumen
+Papierkram organisieren Familie,Organisation,Anleitung,/ratgeber/papierkram-organisieren-familie,P0,SERP-Stichprobe 2026-10-21,Artikel erstellt
+Papierkram sortieren,Organisation,Anleitung,/ratgeber/papierkram-organisieren-familie,P1,verwandte Intent-Hypothese,im Artikel gebündelt
+private Ordnerstruktur,Organisation,Vorlage,/ratgeber/papierkram-organisieren-familie,P1,SERP-Stichprobe 2026-10-21,im Artikel gebündelt
+digitale Familienablage,Organisation,Anleitung,/ratgeber/papierkram-organisieren-familie,P0,Produktnähe,im Artikel gebündelt
+Unterlagen organisieren Familie,Organisation,Anleitung,/ratgeber/papierkram-organisieren-familie,P1,verwandte Intent-Hypothese,im Artikel gebündelt
+Papierkram gemeinsam aufteilen,Organisation,Anleitung,/ratgeber/papierkram-organisieren-familie,P1,verwandte Intent-Hypothese,im Artikel gebündelt
+Kita Briefe organisieren,Elternpost,Anleitung,/ratgeber/kita-schulbriefe-organisieren,P0,Produktnähe und Elternbrief-SERP,Artikel erstellt
+Schulbriefe organisieren,Elternpost,Anleitung,/ratgeber/kita-schulbriefe-organisieren,P0,Produktnähe und Elternbrief-SERP,Artikel erstellt
+Elternbriefe organisieren,Elternpost,Anleitung,/ratgeber/kita-schulbriefe-organisieren,P0,SERP-Stichprobe 2026-10-21,Artikel erstellt
+Elternbrief Termine übernehmen,Elternpost,Aufgabe lösen,/ratgeber/kita-schulbriefe-organisieren,P1,verwandte Intent-Hypothese,im Artikel gebündelt
+Kita Rückmeldung vergessen,Elternpost,Problem lösen,/ratgeber/kita-schulbriefe-organisieren,P1,Alltagsproblem-Hypothese,im Artikel gebündelt
+Schulpost digital ablegen,Elternpost,Anleitung,/ratgeber/kita-schulbriefe-organisieren,P1,verwandte Intent-Hypothese,im Artikel gebündelt
+Dokumente scannen iPhone,Scannen,Anleitung,/ratgeber/dokumente-scannen-iphone,P1,Apple Support und SERP-Stichprobe,Artikel erstellt
+Brief mit iPhone scannen,Scannen,Anleitung,/ratgeber/dokumente-scannen-iphone,P1,Apple Support,im Artikel gebündelt
+mehrere Seiten scannen iPhone,Scannen,Anleitung,/ratgeber/dokumente-scannen-iphone,P1,Apple Support,im Artikel gebündelt
+Notizen Dokumente scannen,Scannen,Anleitung,/ratgeber/dokumente-scannen-iphone,P1,Apple Support,im Artikel gebündelt
+Scanner oder Dokumenten App,Scannen,Entscheidung,/ratgeber/dokumente-scannen-iphone,P1,Produktabgrenzung,im Artikel gebündelt
+Dokumente digitalisieren Familie,Scannen,Anleitung,/ratgeber/private-dokumente-digitalisieren,P1,Produktnähe,im neuen Digitalisierungsartikel gebündelt
+Ordilo kostenlos,Marke,Preis prüfen,/#preise,P0,verifizierte App-Store-Angaben,Bestand
+Ordilo Kosten,Marke,Preis prüfen,/#preise,P0,verifizierte App-Store-Angaben,Bestand
+Ordilo Plus Preis,Marke,Preis prüfen,/#preise,P0,verifizierte App-Store-Angaben,Bestand
+Ordilo Hilfe,Marke,Support,/hilfe,P0,Supportbedarf,Hilfeseite erstellt
+Ordilo Datenschutz,Marke,Vertrauen,/datenschutz,P0,Produktprüfung,Bestand
+Ordilo iPhone,Marke,Download,/,P0,App-Store-Verfügbarkeit,CTA ergänzt
+Fragen an eigene Dokumente,Produkt,App finden,/,P1,Produktfunktion,Hypothese ohne Volumen
+Vertragsunterlagen organisieren,Verträge,Anleitung,noch offen,P2,Themenhypothese,Recherche erforderlich
+Kundennummer im Dokument finden,Verträge,Aufgabe lösen,noch offen,P2,Produktfunktion,Recherche erforderlich
+Wochenplan Familie,Wochenplanung,Vorlage,/ratgeber/wochenplan-familie,P0,Keyword Planner 2026-10-21 Spanne 1000–10000,Artikel und Carousel erstellt
+private Dokumente digitalisieren,Digitalisieren,Anleitung,/ratgeber/private-dokumente-digitalisieren,P1,Keyword Planner 2026-10-21 Spanne 100–1000,Artikel und Carousel erstellt
+Familienalltag organisieren,Familienorganisation,Anleitung,/ratgeber/familienalltag-organisieren-tipps,P1,Keyword Planner 2026-10-21 Spanne 10–100,Artikel und Carousel erstellt

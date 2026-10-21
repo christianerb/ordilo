@@ -1,0 +1,50 @@
+{
+  "stories": [
+    {
+      "title": "„Sag einfach,\nwas ich machen\nsoll.“",
+      "body": "Auch das Ansagen ist Arbeit.\nBesser: einen Vorgang komplett übernehmen.\nMit Infos, Frist und Rückmeldung.",
+      "label": "Mental Load · Zum Weiterteilen"
+    },
+    {
+      "title": "3 Dinge, die ihr\nheute klären\nkönnt.",
+      "body": "1  Wer denkt bisher an alles?\n2  Wer übernimmt welchen ganzen Vorgang?\n3  Was darf diese Woche einfacher sein?",
+      "label": "Familienalltag · Zum Speichern"
+    },
+    {
+      "title": "Kita-Brief weg.\nUnd jetzt?",
+      "body": "Im vereinbarten Ablageort suchen.\nKeine Frist aus dem Gedächtnis raten.\nAktuelle Kopie bei der Kita erfragen.\nDann: nächsten Schritt und Zuständigkeit klären.",
+      "label": "Was mache ich, wenn …?"
+    },
+    {
+      "title": "Beide dachten,\nder andere\nmacht’s.",
+      "body": "Erst den offenen Schritt klären.\nDann einen Namen und Termin festhalten.\nFürs nächste Mal: Verantwortung ausdrücklich\nübergeben, statt still voraussetzen.",
+      "label": "Was mache ich, wenn …?"
+    }
+  ],
+  "reel": [
+    {
+      "title": "Du bist kein\nFamilien-\nHelpdesk.",
+      "body": "3 Ansätze für weniger Denkarbeit"
+    },
+    {
+      "title": "„Sag einfach,\nwas ich tun soll.“",
+      "body": "Auch das Ansagen ist Arbeit."
+    },
+    {
+      "title": "1 · Denkarbeit\nsichtbar machen.",
+      "body": "Brief lesen. Frist merken. Rückfrage klären."
+    },
+    {
+      "title": "2 · Ganze Vorgänge\nübernehmen.",
+      "body": "Mit Infos, Frist und Rückmeldung."
+    },
+    {
+      "title": "3 · Gemeinsam\nvereinfachen.",
+      "body": "Was kann weg? Was darf leichter sein?"
+    },
+    {
+      "title": "Eine Sache.\nDiese Woche.",
+      "body": "Speichern und gemeinsam ausprobieren.\nOrdilo hilft beim Dokumententeil."
+    }
+  ]
+}
