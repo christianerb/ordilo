@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ordilo · 27 Tabs offen</title>
+    <style>
+      @font-face {
+        font-family: Figtree;
+        src: url("Figtree.ttf");
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f7f5f1;
+        color: #193232;
+        font-family: Figtree, system-ui, sans-serif;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+      }
+      header {
+        max-width: 1100px;
+        margin: auto;
+        padding: 30px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header strong {
+        font-size: 24px;
+      }
+      header span {
+        color: #625d54;
+        font-size: 14px;
+      }
+      main {
+        max-width: 1100px;
+        margin: auto;
+        padding: 20px 24px 60px;
+        display: grid;
+        grid-template-columns: minmax(260px, 400px) 1fr;
+        gap: 70px;
+        align-items: center;
+      }
+      video {
+        width: 100%;
+        max-height: 78vh;
+        border-radius: 26px;
+        background: #efe8dc;
+        box-shadow: 0 20px 70px #19323216;
+      }
+      h1 {
+        font-size: clamp(38px, 5vw, 62px);
+        letter-spacing: -2px;
+        line-height: 1.05;
+        margin: 20px 0;
+      }
+      p {
+        font-size: 18px;
+        line-height: 1.6;
+        color: #625d54;
+      }
+      .tag {
+        display: inline-block;
+        border-radius: 20px;
+        padding: 8px 14px;
+        background: #efe8dc;
+        font-size: 13px;
+      }
+      .demo {
+        margin-top: 30px;
+        background: white;
+        padding: 25px;
+        border-radius: 24px;
+        box-shadow: 0 12px 40px #1932320a;
+      }
+      .demo h2 {
+        margin: 0 0 10px;
+        font-size: 25px;
+      }
+      .steps {
+        display: flex;
+        gap: 7px;
+        margin: 20px 0;
+      }
+      .steps span {
+        height: 5px;
+        flex: 1;
+        background: #efe8dc;
+        border-radius: 3px;
+      }
+      .steps .done {
+        background: #305460;
+      }
+      .btn {
+        padding: 14px 18px;
+        border: 0;
+        border-radius: 14px;
+        background: #193232;
+        color: #fdfcfa;
+        transition:
+          transform 0.2s,
+          background 0.2s;
+      }
+      .btn:hover {
+        transform: translateY(-3px);
+        background: #305460;
+      }
+      .btn:focus-visible {
+        outline: 3px solid #e46018;
+        outline-offset: 4px;
+      }
+      .secondary {
+        background: #efe8dc;
+        color: #193232;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .notice {
+        background: #f8e4d8;
+        padding: 16px;
+        border-radius: 14px;
+        margin: 15px 0;
+        font-size: 18px;
+      }
+      .fine {
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .illustration {
+        width: 150px;
+        float: right;
+        margin-top: -20px;
+      }
+      .pop {
+        animation: pop 0.5s cubic-bezier(0.2, 1.5, 0.5, 1);
+      }
+      @keyframes pop {
+        from {
+          opacity: 0;
+          transform: translateY(15px) scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @media (max-width: 760px) {
+        main {
+          grid-template-columns: 1fr;
+          gap: 30px;
+        }
+        video {
+          max-height: 70vh;
+        }
+        header {
+          gap: 20px;
+        }
+        h1 {
+          font-size: 42px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Ordilo</strong
+      ><span>Neue Stilrichtung · Illustration &amp; Motion</span>
+    </header>
+    <main>
+      <div>
+        <video
+          controls
+          playsinline
+          preload="metadata"
+          poster="szene-1.png"
+          aria-label="Ordilo Reel: 27 Tabs offen"
+        >
+          <source src="ordilo-27-tabs.mp4" type="video/mp4" />
+        </video>
+        <p class="fine">
+          23 Sekunden · mit eigener Tonspur · auch ohne Ton verständlich
+        </p>
+      </div>
+      <section>
+        <span class="tag">Ein kleiner Moment aus dem Familienalltag</span>
+        <h1>27 Tabs offen.<br />Einer spielt Flöte.</h1>
+        <p>
+          Aus einem „Denkst du dran?“ wird eine klare Absprache. Mit etwas
+          Humor, warmen Figuren und einem Schritt, den man heute ausprobieren
+          kann.
+        </p>
+        <div class="demo">
+          <img
+            class="illustration"
+            src="familie-floete.png"
+            alt="Zwei Eltern lesen mit ihrem flötenspielenden Kind einen Brief."
+          />
+          <h2>Probier den Ablauf.</h2>
+          <p class="fine">
+            Klickbares Alltagsbeispiel, keine echte App-Oberfläche. Es werden
+            keine Daten gespeichert.
+          </p>
+          <div class="steps" aria-hidden="true">
+            <span id="s0"></span><span id="s1"></span><span id="s2"></span>
+          </div>
+          <div id="content" aria-live="polite"></div>
+        </div>
+        <p class="fine">
+          Die Story-Versionen können in Instagram um Umfrage- oder Frage-Sticker
+          ergänzt werden. Diese Vorschau veröffentlicht nichts.
+        </p>
+      </section>
+    </main>
+    <script>
+      const content = document.getElementById("content");
+      let step = 0;
+      function show() {
+        document
+          .querySelectorAll(".steps span")
+          .forEach((el, i) => el.classList.toggle("done", i < step));
+        content.classList.remove("pop");
+        void content.offsetWidth;
+        content.classList.add("pop");
+        if (step === 0)
+          content.innerHTML =
+            '<p>Ein Kita-Brief ist da. Wo landet er?</p><div class="actions"><button class="btn" data-next="1">Gemeinsam ablegen →</button></div>';
+        if (step === 1)
+          content.innerHTML =
+            '<div class="notice">Ausflug: morgen, 9:00 Uhr.<br>Rückmeldung: <strong>heute abgeben.</strong></div><p>Welche Angabe braucht zuerst eure Aufmerksamkeit?</p><div class="actions"><button class="btn secondary" data-wrong>Der Ausflug morgen</button><button class="btn" data-next="2">Die Rückmeldung heute</button></div><p class="fine" id="feedback"></p>';
+        if (step === 2)
+          content.innerHTML =
+            '<p>Frist am Beispielbrief geprüft. Jetzt braucht es eine ausdrückliche Übernahme.</p><div class="actions"><button class="btn" data-next="3">„Ich übernehme bis zur Abgabe.“</button></div>';
+        if (step === 3)
+          content.innerHTML =
+            '<div class="notice">✓ Übernahme geklärt. Danke. Wirklich.</div><p>Gemeinsam abgelegt. Frist geprüft. Zuständigkeit besprochen. Genau dieser kleine Ablauf ist die Idee.</p><button class="btn secondary" data-next="0">Noch einmal ausprobieren</button>';
+        content.querySelectorAll("[data-next]").forEach((b) =>
+          b.addEventListener("click", () => {
+            step = Number(b.dataset.next);
+            show();
+          }),
+        );
+        const wrong = content.querySelector("[data-wrong]");
+        if (wrong)
+          wrong.addEventListener("click", () => {
+            document.getElementById("feedback").textContent =
+              "Fast: Der Ausflug ist morgen, die Rückmeldung ist schon heute fällig. Beides hat einen eigenen Zeitpunkt.";
+          });
+      }
+      show();
+    </script>
+  </body>
+</html>
