@@ -226,5 +226,141 @@
         "kind": "end"
       }
     ]
+  },
+  {
+    "id": "06-familienkalender",
+    "article": "/ratgeber/familienkalender-organisieren",
+    "caption": "Kalender voll. Zuständigkeit leer. Ein Eintrag ist noch keine Zusage. Ja. Aber hat die Person auch zugesagt? Zuständigkeit vereinbaren, dann eintragen. Ort, Weg und Vorbereitung mitdenken. Rückgabefristen gehören vor den Termin, nicht erst auf den Ausflugstag. Quelle prüfen, Kalender aktualisieren, betroffene Personen informieren. Nicht auf stilles Mitlesen hoffen. Speichern und gemeinsam ausprobieren. #Familienkalender #Familienorganisation #Elternalltag #Wochenplanung #Ordilo",
+    "slides": [
+      {
+        "label": "Ordilo Ratgeber",
+        "title": "Kalender voll.\nZuständigkeit leer.",
+        "body": "Ein Eintrag ist noch keine Zusage.",
+        "kind": "cover"
+      },
+      {
+        "label": "1 · Absprechen",
+        "title": "„Steht doch\nim Kalender.“",
+        "body": "Ja. Aber hat die Person auch zugesagt?\nZuständigkeit vereinbaren,\ndann eintragen."
+      },
+      {
+        "label": "2 · Vollständig planen",
+        "title": "15:30 Termin.\nWann los?",
+        "body": "Ort, Weg und Vorbereitung mitdenken.\nRückgabefristen gehören vor den Termin,\nnicht erst auf den Ausflugstag."
+      },
+      {
+        "label": "3 · Änderungen klären",
+        "title": "Neue Uhrzeit.\nAlle im Bild?",
+        "body": "Quelle prüfen, Kalender aktualisieren,\nbetroffene Personen informieren.\nNicht auf stilles Mitlesen hoffen."
+      },
+      {
+        "label": "Heute ausprobieren",
+        "title": "Ein Kalender.\nEin klarer Stand.",
+        "body": "Probiert die Vorlage mit einem Termin.\nOrdilo hilft, den Brief dazu wiederzufinden.",
+        "kind": "end"
+      }
+    ]
+  },
+  {
+    "id": "07-haushaltsplan",
+    "article": "/ratgeber/haushaltsplan-familie",
+    "caption": "Der Wäschekorb führt sich nicht selbst. Drei Regeln für einen brauchbaren Haushaltsplan. Gehört Trocknen und Einräumen dazu? Klärt den ganzen Vorgang, nicht nur den ersten Handgriff. Täglich kochen und einmal Müll rausbringen sind nicht automatisch gleich aufwendig. Zeit und Möglichkeiten mitdenken. Rechtzeitig melden. Umfang reduzieren oder ausdrücklich neu verteilen. Stille Übergaben zählen nicht. Speichern und gemeinsam ausprobieren. #Haushaltsplan #MentalLoad #Familienorganisation #CareArbeit #Ordilo",
+    "slides": [
+      {
+        "label": "Ordilo Ratgeber",
+        "title": "Der Wäschekorb\nführt sich\nnicht selbst.",
+        "body": "Drei Regeln für einen brauchbaren Haushaltsplan.",
+        "kind": "cover"
+      },
+      {
+        "label": "1 · Ganz übernehmen",
+        "title": "Waschen ist\nnicht fertig.",
+        "body": "Gehört Trocknen und Einräumen dazu?\nKlärt den ganzen Vorgang,\nnicht nur den ersten Handgriff."
+      },
+      {
+        "label": "2 · Aufwand beachten",
+        "title": "Drei Aufgaben.\nGleich viel?",
+        "body": "Täglich kochen und einmal Müll rausbringen\nsind nicht automatisch gleich aufwendig.\nZeit und Möglichkeiten mitdenken."
+      },
+      {
+        "label": "3 · Ausfälle ansprechen",
+        "title": "Heute klappt’s\nnicht. Und jetzt?",
+        "body": "Rechtzeitig melden. Umfang reduzieren\noder ausdrücklich neu verteilen.\nStille Übergaben zählen nicht."
+      },
+      {
+        "label": "Heute ausprobieren",
+        "title": "Ein Vorgang.\nEine klare Zusage.",
+        "body": "Nehmt euch zuerst eine Aufgabe vor.\nSpeichern und gemeinsam ausprobieren.",
+        "kind": "end"
+      }
+    ]
+  },
+  {
+    "id": "08-putzplan",
+    "article": "/ratgeber/putzplan-vorlage",
+    "caption": "Euer Putzplan braucht einen Plan B. Für Wochen, in denen das Leben dazwischenkommt. Welche Räume? Welche Aufgaben? Legt gemeinsam fest, was wirklich dazugehört. Für volle Wochen vorher klären: Was ist nötig, was kann warten? Nicht denselben Plan schneller erzwingen. Wenn ein Fenster ausfällt: reduzieren, übergeben oder einen konkreten neuen Zeitpunkt vereinbaren. Speichern und gemeinsam ausprobieren. #Putzplan #HaushaltOrganisieren #Familienalltag #Organisation #Ordilo",
+    "slides": [
+      {
+        "label": "Ordilo Ratgeber",
+        "title": "Euer Putzplan\nbraucht\neinen Plan B.",
+        "body": "Für Wochen, in denen das Leben dazwischenkommt.",
+        "kind": "cover"
+      },
+      {
+        "label": "1 · Konkret werden",
+        "title": "„Wohnung machen“\nist ziemlich groß.",
+        "body": "Welche Räume? Welche Aufgaben?\nLegt gemeinsam fest,\nwas wirklich dazugehört."
+      },
+      {
+        "label": "2 · Realistisch planen",
+        "title": "Weniger Zeit?\nWeniger Aufgaben.",
+        "body": "Für volle Wochen vorher klären:\nWas ist nötig, was kann warten?\nNicht denselben Plan schneller erzwingen."
+      },
+      {
+        "label": "3 · Bewusst verschieben",
+        "title": "Morgen. Morgen.\nÜbermorgen.",
+        "body": "Wenn ein Fenster ausfällt:\nreduzieren, übergeben oder einen\nkonkreten neuen Zeitpunkt vereinbaren."
+      },
+      {
+        "label": "Heute ausprobieren",
+        "title": "Eine Vorlage.\nEure Regeln.",
+        "body": "Passend zu eurem Haushalt ausfüllen.\nEin Blatt Papier reicht zum Start.",
+        "kind": "end"
+      }
+    ]
+  },
+  {
+    "id": "09-ordnerstruktur",
+    "article": "/ratgeber/ordnerstruktur-private-dokumente",
+    "caption": "„Wichtig_final2“ war kein guter Plan. So findet auch jemand anderes eure Dokumente. Wenige Bereiche, die ihr beide versteht. Nicht für jede Ausnahme einen neuen Unterordner. Ein verständlicher Name hilft auch außerhalb der ursprünglichen App. Aktuelle und alte Fassungen unterscheiden. Eine berechtigte Person suchen lassen. Ohne Zuruf. Wo sie hängen bleibt, verbessert ihr die Ablage. Speichern und gemeinsam ausprobieren. #Ordnerstruktur #Dokumente #Papierkram #Familienorganisation #Ordilo",
+    "slides": [
+      {
+        "label": "Ordilo Ratgeber",
+        "title": "„Wichtig_final2“\nwar kein\nguter Plan.",
+        "body": "So findet auch jemand anderes eure Dokumente.",
+        "kind": "cover"
+      },
+      {
+        "label": "1 · Verständlich ordnen",
+        "title": "Wohnen. Kinder.\nAnschaffungen.",
+        "body": "Wenige Bereiche, die ihr beide versteht.\nNicht für jede Ausnahme\neinen neuen Unterordner."
+      },
+      {
+        "label": "2 · Klar benennen",
+        "title": "Datum. Absender.\nAnlass.",
+        "body": "Ein verständlicher Name hilft auch\naußerhalb der ursprünglichen App.\nAktuelle und alte Fassungen unterscheiden."
+      },
+      {
+        "label": "3 · Wirklich testen",
+        "title": "Findet’s jemand\nanderes?",
+        "body": "Eine berechtigte Person suchen lassen.\nOhne Zuruf. Wo sie hängen bleibt,\nverbessert ihr die Ablage."
+      },
+      {
+        "label": "Heute ausprobieren",
+        "title": "Zehn Dokumente.\nEin erster Test.",
+        "body": "Nicht das ganze Archiv auf einmal.\nOrdilo hilft beim Scannen und Wiederfinden.",
+        "kind": "end"
+      }
+    ]
   }
 ]

@@ -1,4 +1,5 @@
 import { listicleGuides } from "./listicle-guides";
+import { expandedGuides } from "./expanded-guides";
 import { practicalGuides } from "./practical-guides";
 
 /** Editorial source of truth. Dates describe the text, not an invented review. */
@@ -37,7 +38,7 @@ Unser Vorschlag für den ersten Durchgang: Sortiere in **zu erledigen**, **auf R
       {
         id: "kategorien",
         title: "Welche Kategorien braucht eine Familienablage?",
-        body: `Wähle Kategorien, die ihr beide ohne Erklärung versteht. Diese kleine Struktur ist ein Ausgangspunkt; streicht Bereiche, die ihr nicht braucht.
+        body: `Wähle Kategorien, die ihr beide ohne Erklärung versteht. Diese kleine Struktur ist ein Ausgangspunkt; streicht Bereiche, die ihr nicht braucht. Eine ausführliche [Ordnerstruktur mit Dateinamen und Suchtest](/ratgeber/ordnerstruktur-private-dokumente) hilft bei der Umsetzung.
 
 | Bereich | Typische Unterlagen | Suchhilfe |
 | --- | --- | --- |
@@ -263,6 +264,7 @@ Zum Start genügt ein unkritischer Beispielbrief. Scanne ihn, suche ihn erneut u
   },
   ...listicleGuides,
   ...practicalGuides,
+  ...expandedGuides,
 ];
 
 export function getGuide(slug: string): Guide | undefined {

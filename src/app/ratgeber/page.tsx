@@ -12,8 +12,8 @@ import {
 } from "@/components/ordilo/marketing/public-shell";
 
 export const metadata = publicMetadata(
-  "Papierkram im Familienalltag: Ratgeber | Ordilo",
-  "Praktische Anleitungen für eure Familienablage: Papierkram organisieren, Kita-Briefe im Blick behalten und Dokumente mit dem iPhone scannen.",
+  "Familienorganisation und Papierkram: Ratgeber | Ordilo",
+  "Ratgeber und kostenlose Vorlagen für Familienorganisation, Kalender, Haushaltsplan, Mental Load und Dokumente. Direkt lesen, kopieren und ausprobieren.",
   "/ratgeber",
 );
 
@@ -49,7 +49,8 @@ export default function GuidesPage() {
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
         Ein Brief, drei Termine, fünf offene Fragen? Hier findet ihr Anleitungen
-        für Papierkram, Kita-Post und eine Ablage, die ihr beide versteht.
+        für Familienorganisation, gemeinsame Aufgaben und eine Ablage, die ihr
+        beide versteht. Mit Vorlagen zum Kopieren und Herunterladen.
       </p>
       <div className="mt-12 divide-y divide-border border-y border-border">
         {guides.map((guide, index) => (
@@ -61,7 +62,7 @@ export default function GuidesPage() {
               className="text-lg font-medium text-primary"
               aria-hidden="true"
             >
-              0{index + 1}
+              {String(index + 1).padStart(2, "0")}
             </span>
             <div>
               <p className="text-sm text-muted-foreground">{guide.topic}</p>
