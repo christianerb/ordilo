@@ -100,7 +100,7 @@ export default async function GuidePage({ params }: Props) {
           Ratgeber
         </Link>
       </nav>
-      <article className="mx-auto max-w-3xl">
+      <article className="mx-auto max-w-3xl [overflow-wrap:anywhere]">
         <p className="text-sm font-medium text-primary">{guide.topic}</p>
         <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
           {guide.title}

@@ -92,3 +92,22 @@ test("public guides expose crawlable content and canonical metadata without logi
     "https://ordilo.de/ratgeber/papierkram-organisieren-familie",
   );
 });
+
+test("long German guide headings and filenames fit narrow screens", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  for (const slug of [
+    "familienorganisation-was-tun-wenn",
+    "ordnerstruktur-private-dokumente",
+  ]) {
+    await page.goto(`/ratgeber/${slug}`);
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const widths = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }));
+    expect(widths.content, slug).toBeLessThanOrEqual(widths.viewport);
+  }
+});
