@@ -100,6 +100,16 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const isOnboarding = pathname === "/onboarding" || pathname.startsWith("/onboarding/");
   const isWelcome = pathname === "/willkommen" || pathname.startsWith("/willkommen/");
 
+  // The landing page is static, so signed-in visitors are sent into the
+  // app here. /home's own guard below routes them on to onboarding or the
+  // welcome intro when needed.
+  if (user && pathname === "/" && request.method === "GET") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/home";
+    url.search = "";
+    return redirectWithCookies(url, supabaseResponse);
+  }
+
   // Unauthenticated → redirect to /login
   if (!user && isProtected) {
     const url = request.nextUrl.clone();

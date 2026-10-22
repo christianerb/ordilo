@@ -1,44 +1,12 @@
-import { ImageResponse } from "next/og";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { OG_SIZE, renderOgImage } from "@/lib/og-image";
 
 export const alt = "Ordilo – Dokumente für die Familie";
-export const size = { width: 1200, height: 630 };
+export const size = OG_SIZE;
 export const contentType = "image/png";
 
 export default async function Image() {
-  const font = await readFile(join(process.cwd(), "src/assets/fonts/Figtree.ttf"));
-  return new ImageResponse(
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        width: "100%",
-        height: "100%",
-        padding: 72,
-        background: "#193232",
-        color: "#FDFCFA",
-        fontFamily: "Figtree",
-        fontWeight: 600,
-      }}
-    >
-      <div style={{ display: "flex", fontSize: 36 }}>Ordilo</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <div style={{ fontSize: 72, fontWeight: 600, letterSpacing: -3 }}>
-          Papierkram rein. Kopf frei.
-        </div>
-        <div style={{ fontSize: 32, color: "#D3CEC5" }}>
-          Briefe scannen. Antworten finden. Gemeinsam dran denken.
-        </div>
-      </div>
-      <div style={{ display: "flex", fontSize: 26, color: "#F0B4A0" }}>
-        Die Dokumenten-App für Familien · ordilo.de
-      </div>
-    </div>,
-    {
-      ...size,
-      fonts: [{ name: "Figtree", data: font, weight: 600, style: "normal" }],
-    },
-  );
+  return renderOgImage({
+    title: "Papierkram rein. Kopf frei.",
+    subtitle: "Briefe scannen. Antworten finden. Gemeinsam dran denken.",
+  });
 }

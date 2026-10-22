@@ -253,3 +253,24 @@ Personalisierung dokumentieren; keine KI-Zitate als zugesicherte Folge verkaufen
 
 Ergänzend wurden die aktuelle Ordilo-Datenschutzerklärung im Repository,
 die App-Store-Connect-Angaben und die bestehenden Landingpage-Tests geprüft.
+
+## Ergänzung 22. Oktober 2026: Technik, Produktbeweis, Cluster
+
+- **Performance:** Öffentliche Seiten (`/ratgeber`, `/hilfe`, `/ueber-uns`, Rechtstexte,
+  `robots.txt`, `sitemap.xml`, `llms.txt`, OG-Bilder) laufen ohne Supabase-Middleware.
+  `/` ist statisch; nur mit Auth-Cookie prüft die Middleware die Sitzung und leitet
+  Angemeldete nach `/home` weiter. Regeln in `src/lib/public-routes.ts`.
+- **Entität:** Organization (mit Anschrift, Gründer, Kontakt), Person, MobileApplication
+  (drei Angebote, Screenshots, Video) und VideoObject als verbundener Graph mit `@id`s in
+  `src/lib/marketing.ts`. Neue Seite `/ueber-uns` mit Verantwortlichem und Redaktionsgrundsätzen.
+- **Produktbeweis:** Galerie mit echten App-Store-Ansichten (erfundene Beispieldaten) und
+  komprimiertem App-Vorschauvideo; Vergleichstabelle Cloud-Ordner / KI-Chat / Ordilo; FAQ
+  „Was ist Ordilo?“ und „Android?“.
+- **Ratgeber:** eigenes OG-Bild je Artikel (`/ratgeber/<slug>/og`), Cluster „Brief verstehen“
+  (8 Artikel, `src/content/document-guides.ts`) und zwei faire Vergleiche
+  (`src/content/comparison-guides.ts`). Gesetzes-Links vor Livegang stichprobenartig öffnen.
+- **GEO-Infrastruktur:** `llms.txt` (aus den sichtbaren Fakten generiert), IndexNow-Schlüssel
+  unter `public/<key>.txt`, Ping per `node scripts/indexnow.mjs` nach Deployments.
+  Entity- und Verzeichnis-Kit: `entity-und-verzeichnisse.md`.
+- **App Store:** native Bewertungsabfrage nach positiven Momenten (`apps/mobile/src/lib/app-review.ts`).
+  `aggregateRating` erst ins Schema, wenn echte Bewertungen vorliegen.

@@ -26,7 +26,9 @@ export default function GuidesPage() {
           __html: serializeJsonLd({
             "@context": "https://schema.org",
             "@type": "CollectionPage",
+            "@id": `${SITE_URL}/ratgeber#collection`,
             name: "Ordilo Ratgeber",
+            inLanguage: "de-DE",
             url: `${SITE_URL}/ratgeber`,
             publisher,
             mainEntity: {

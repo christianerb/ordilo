@@ -197,6 +197,7 @@ export const expandedGuides: Guide[] = [
       "papierkram-organisieren-familie",
       "private-dokumente-digitalisieren",
       "familienorganisation-was-tun-wenn",
+      "unterlagen-aufbewahren-wie-lange",
     ],
   },
 ];

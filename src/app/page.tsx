@@ -1,7 +1,4 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getPostAuthDestination } from "@/lib/auth/routing";
 import { LandingPage } from "./landing-page";
 import { publicMetadata } from "@/lib/marketing";
 
@@ -14,20 +11,10 @@ export const metadata: Metadata = publicMetadata(
 /**
  * Root page.
  *
- * Authenticated users are redirected to their post-auth destination
- * (onboarding or /home). Unauthenticated visitors get the landing page —
- * the public face of the product, with its CTA leading to /login.
+ * Rendered statically so visitors and crawlers get the landing page from
+ * the CDN. Signed-in users never see it: the middleware redirects them to
+ * /home (and from there to onboarding when needed) before this renders.
  */
-export default async function HomePage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (user) {
-    const { destination } = await getPostAuthDestination(supabase);
-    redirect(destination);
-  }
-
+export default function HomePage() {
   return <LandingPage />;
 }

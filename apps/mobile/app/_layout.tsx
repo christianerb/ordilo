@@ -26,6 +26,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { AiConsentProvider } from "@/src/lib/ai-consent-context";
 import { AppLockProvider } from "@/src/lib/app-lock";
+import { noteAppLaunched } from "@/src/lib/app-review";
 import { BillingProvider } from "@/src/lib/billing";
 import { SessionProvider, useSession } from "@/src/lib/session";
 import { FamilyProvider, useFamily } from "@/src/lib/family-context";
@@ -85,6 +86,11 @@ function RootLayout() {
   useEffect(() => {
     if (fontError) throw fontError;
   }, [fontError]);
+
+  // Starts the "not in the first days" clock for the rating request.
+  useEffect(() => {
+    void noteAppLaunched();
+  }, []);
 
   useEffect(() => {
     if (fontsLoaded) {

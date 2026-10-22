@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -20,14 +21,24 @@ import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 
 import {
+  APP_PREVIEW_VIDEO,
   APP_STORE_URL,
+  appPreviewVideoSchema,
+  founder,
   publisher,
+  SCREENSHOTS,
+  softwareApplication,
   serializeJsonLd,
   SITE_URL,
 } from "@/lib/marketing";
 import { guides } from "@/content/guides";
 
 const faqItems = [
+  {
+    question: "Was ist Ordilo?",
+    answer:
+      "Ordilo ist eine Dokumenten-App für Familien aus Hamburg. Du scannst Briefe, Rechnungen und Verträge oder leitest sie per E-Mail weiter. Ordilo liest sie, legt sie in eurem gemeinsamen Familienbereich ab, beantwortet Fragen mit Fundstelle und erinnert an Fristen.",
+  },
   {
     question: "Was ist der Unterschied zu einem Cloud-Ordner?",
     answer:
@@ -48,7 +59,41 @@ const faqItems = [
     answer:
       "Scannen, Fragen stellen und an Fristen erinnern lassen ist kostenlos. Mit Ordilo Plus sprichst du in der iPhone-App live mit Ordilo über eure Unterlagen. Plus kostet 7,99 € im Monat oder 79,99 € im Jahr und gilt für die ganze Familie.",
   },
+  {
+    question: "Gibt es Ordilo für Android?",
+    answer:
+      "Ordilo gibt es als iPhone-App und im Browser unter ordilo.de. Mit einem Android-Handy kannst du Ordilo im Browser nutzen.",
+  },
 ] as const;
+
+const comparisonRows = [
+  {
+    need: "Briefe gemeinsam ablegen",
+    folder: "Ja, mit festen Ordnernamen",
+    chat: "Nein, Dateien liegen im Chat",
+    ordilo: "Ja, im Familienbereich",
+  },
+  {
+    need: "Fragen an alle eigenen Unterlagen",
+    folder: "Nur Suche nach Wörtern",
+    chat: "Für hochgeladene Dateien im Chat",
+    ordilo: "Ja, mit Fundstelle im Dokument",
+  },
+  {
+    need: "An Fristen erinnern",
+    folder: "Nein",
+    chat: "Nein",
+    ordilo: "Ja, für erkannte Fristen",
+  },
+  {
+    need: "Angaben vor dem Speichern prüfen",
+    folder: "Nicht vorgesehen",
+    chat: "Nicht vorgesehen",
+    ordilo: "Ja, du bestätigst Beträge und Termine",
+  },
+] as const;
+
+const FEATURED_GUIDE_COUNT = 6;
 
 const structuredData = {
   "@context": "https://schema.org",
@@ -61,26 +106,11 @@ const structuredData = {
       url: SITE_URL,
       inLanguage: "de-DE",
       publisher: { "@id": publisher["@id"] },
+      about: { "@id": softwareApplication["@id"] },
     },
-    {
-      "@type": "SoftwareApplication",
-      name: "Ordilo",
-      applicationCategory: "ProductivityApplication",
-      operatingSystem: "iOS, Web",
-      downloadUrl: APP_STORE_URL,
-      publisher: { "@id": publisher["@id"] },
-      offers: {
-        "@type": "Offer",
-        price: "0",
-        priceCurrency: "EUR",
-        description:
-          "Scannen und Fragen kostenlos; Live-Gespräch optional mit Ordilo Plus.",
-      },
-      description:
-        "Ordilo ist die mobile Dokumenten-App für Familien. Sie liest Briefe, Rechnungen und Verträge, beantwortet Fragen und erinnert an Fristen.",
-      isAccessibleForFree: true,
-      url: "https://ordilo.de",
-    },
+    founder,
+    softwareApplication,
+    appPreviewVideoSchema,
     {
       "@type": "FAQPage",
       mainEntity: faqItems.map((item) => ({
@@ -507,6 +537,130 @@ export function LandingPage() {
           </div>
         </section>
 
+        <section
+          className="px-5 pb-4 pt-14 sm:px-4 sm:pt-20"
+          aria-labelledby="screenshots-heading"
+        >
+          <div className="mx-auto max-w-5xl">
+            <h2
+              id="screenshots-heading"
+              className="text-3xl font-semibold leading-tight tracking-[-0.03em] sm:text-4xl"
+            >
+              So sieht Ordilo aus.
+            </h2>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Echte App-Ansichten mit erfundenen Beispieldaten.
+            </p>
+            <ul className="-mx-5 mt-8 flex snap-x snap-mandatory gap-5 overflow-x-auto px-5 pb-4 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-5">
+              <li className="w-[62%] shrink-0 snap-center sm:w-auto">
+                <figure>
+                  <video
+                    src={APP_PREVIEW_VIDEO.src}
+                    poster={APP_PREVIEW_VIDEO.poster}
+                    width={APP_PREVIEW_VIDEO.width}
+                    height={APP_PREVIEW_VIDEO.height}
+                    controls
+                    muted
+                    playsInline
+                    preload="none"
+                    aria-label={APP_PREVIEW_VIDEO.description}
+                    className="h-auto w-full rounded-ordilo-md bg-muted shadow-card"
+                  />
+                  <figcaption className="mt-3 text-sm leading-snug text-muted-foreground">
+                    {APP_PREVIEW_VIDEO.title}
+                  </figcaption>
+                </figure>
+              </li>
+              {SCREENSHOTS.map((shot) => (
+                <li key={shot.src} className="w-[62%] shrink-0 snap-center sm:w-auto">
+                  <figure>
+                    <Image
+                      src={shot.src}
+                      width={shot.width}
+                      height={shot.height}
+                      alt={shot.alt}
+                      sizes="(min-width: 1024px) 12rem, (min-width: 640px) 30vw, 62vw"
+                      className="h-auto w-full rounded-ordilo-md shadow-card"
+                    />
+                    <figcaption className="mt-3 text-sm leading-snug text-muted-foreground">
+                      {shot.caption}
+                    </figcaption>
+                  </figure>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <section
+          className="px-5 py-14 sm:px-4 sm:py-20"
+          aria-labelledby="kurz-erklaert-heading"
+        >
+          <div className="mx-auto max-w-4xl">
+            <div>
+              <p className="text-sm font-semibold text-primary">
+                Ordilo kurz erklärt
+              </p>
+              <h2
+                id="kurz-erklaert-heading"
+                className="mt-3 text-3xl font-semibold leading-tight tracking-[-0.03em] sm:text-4xl"
+              >
+                Cloud-Ordner, KI-Chat oder Ordilo?
+              </h2>
+              <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground">
+                Ordilo ist eine Dokumenten-App für Familien. Sie verbindet eine
+                gemeinsame Ablage mit Antworten aus euren eigenen Unterlagen.
+                So unterscheidet sie sich von anderen Lösungen:
+              </p>
+              <div className="mt-7 overflow-x-auto rounded-ordilo-sm border border-border bg-[var(--surface-box)]">
+                <table className="w-full min-w-[36rem] text-left text-sm">
+                  <caption className="sr-only">
+                    Vergleich von Cloud-Ordner, KI-Chat und Ordilo
+                  </caption>
+                  <thead>
+                    <tr className="bg-muted">
+                      <th scope="col" className="p-3 font-semibold">
+                        Was du brauchst
+                      </th>
+                      <th scope="col" className="p-3 font-semibold">
+                        Cloud-Ordner
+                      </th>
+                      <th scope="col" className="p-3 font-semibold">
+                        Allgemeiner KI-Chat
+                      </th>
+                      <th scope="col" className="p-3 font-semibold text-primary">
+                        Ordilo
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {comparisonRows.map((row) => (
+                      <tr key={row.need} className="border-t border-border">
+                        <th scope="row" className="p-3 font-medium">
+                          {row.need}
+                        </th>
+                        <td className="p-3 text-muted-foreground">{row.folder}</td>
+                        <td className="p-3 text-muted-foreground">{row.chat}</td>
+                        <td className="p-3 font-medium">{row.ordilo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                Mehr dazu im{" "}
+                <Link
+                  href="/ratgeber"
+                  className="focus-ring text-primary underline underline-offset-4"
+                >
+                  Ratgeber
+                </Link>
+                . Wer wenig Post bekommt, ist mit einem Ordner oft gut bedient.
+              </p>
+            </div>
+          </div>
+        </section>
+
         <section className="px-5 py-14 sm:px-4 sm:py-20">
           <div className="mx-auto max-w-3xl">
             <h2 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
@@ -536,7 +690,7 @@ export function LandingPage() {
               helfen euch beim ersten Schritt, auch ohne App.
             </p>
             <ul className="mt-6 divide-y divide-border border-y border-border">
-              {guides.map((guide) => (
+              {guides.slice(0, FEATURED_GUIDE_COUNT).map((guide) => (
                 <li key={guide.slug} className="py-5">
                   <Link
                     href={`/ratgeber/${guide.slug}`}
@@ -550,6 +704,13 @@ export function LandingPage() {
                 </li>
               ))}
             </ul>
+            <Link
+              href="/ratgeber"
+              className="focus-ring mt-6 inline-flex min-h-11 items-center gap-2 rounded-ordilo-sm text-sm font-semibold text-primary underline underline-offset-4"
+            >
+              Alle {guides.length} Ratgeber ansehen
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
           </div>
         </section>
 
@@ -598,6 +759,12 @@ export function LandingPage() {
               className="focus-ring inline-flex min-h-11 items-center px-3 hover:text-foreground"
             >
               Hilfe
+            </Link>
+            <Link
+              href="/ueber-uns"
+              className="focus-ring inline-flex min-h-11 items-center px-3 hover:text-foreground"
+            >
+              Über uns
             </Link>
             <Link
               href="/ratgeber"
