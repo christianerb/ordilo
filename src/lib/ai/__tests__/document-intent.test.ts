@@ -82,7 +82,7 @@ describe('topic document list requests', () => {
   it.each(['Welche Dokumente habe ich vom Kindergarten?', 'Welche Unterlagen haben wir zur Krankenversicherung?', 'Zeig mir alle Dokumente zur Schule', 'Was haben wir alles zum Auto?', 'Welche Rechnungen gibt es von den Stadtwerken?'])('lists the papers on a topic: %s', question => {
     expect(documentTopicListRequest(question)).toBe(true);
   });
-  it.each(['Welche Unterlagen brauche ich für den Kita-Antrag?', 'Welche Dokumente muss ich mitbringen?', 'Welche Unterlagen fehlen noch?', 'Was steht im Kita-Gutschein?', 'Welche Krankenkasse hat Emma?'])('leaves needs and content questions to the agent: %s', question => {
+  it.each(['Welche Unterlagen brauche ich für den Kita-Antrag?', 'Welche Dokumente muss ich mitbringen?', 'Welche Unterlagen fehlen noch?', 'Was steht im Kita-Gutschein?', 'Welche Krankenkasse hat Emma?', 'Und welche Unterlagen haben wir dazu?', 'Welche Dokumente gibt es davon?', 'Was haben wir alles zu ihr?'])('leaves needs and content questions to the agent: %s', question => {
     expect(documentTopicListRequest(question)).toBe(false);
   });
 });

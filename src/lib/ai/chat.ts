@@ -35,6 +35,7 @@ import {
   CHAT_VOICE_REASONING_EFFORT,
 } from "@/lib/ai/models";
 import { truncateHistory } from "@/lib/ai/chat-history";
+import { RERANK_TOP_K } from "@/lib/ai/reranking";
 
 /**
  * Appended to the system prompt for turns delegated by the Live
@@ -1285,9 +1286,14 @@ async function topicDocumentList(
     shown.map((source) => ({ document_id: source.document_id, titel: source.title ?? null })),
   );
   const count = listed.length;
-  const intro = count === 1
-    ? `Dazu habe ich ein Dokument gefunden: ${titles}.`
-    : `Dazu habe ich ${count} Dokumente gefunden: ${titles}.`;
+  // The re-rank judges at most RERANK_TOP_K candidates, so a full page is a
+  // selection, not the complete count.
+  const capped = found.length >= RERANK_TOP_K;
+  const intro = capped
+    ? `Hier sind die ${count} passendsten Dokumente dazu: ${titles}. Es kann noch weitere geben — frag gern genauer nach.`
+    : count === 1
+      ? `Dazu habe ich ein Dokument gefunden: ${titles}.`
+      : `Dazu habe ich ${count} Dokumente gefunden: ${titles}.`;
   const omitted = count - shown.length;
   const text = omitted > 0
     ? `${intro} ${voice ? "Alle weiteren stehen auf dem Bildschirm." : `Die weiteren ${omitted} kannst du unten öffnen.`}`
@@ -1355,7 +1361,9 @@ export async function streamAgenticAnswer(
   const inventory = documentInventoryRequest(query);
   if (inventory) return streamDocumentList(null, toolContext, inventory.documentType);
 
-  if (familyContext.documentCount > 0 && documentTopicListRequest(query)) {
+  // A second part ("… und wann laufen sie ab?") needs the agent: the list
+  // alone would silently drop it.
+  if (familyContext.documentCount > 0 && documentTopicListRequest(query) && !asksSeveralThings(query)) {
     const topicList = await topicDocumentList(query, toolContext);
     if (topicList) return topicList;
   }

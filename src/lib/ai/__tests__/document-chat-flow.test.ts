@@ -7,7 +7,7 @@ vi.mock("@/lib/ai/search", async (load) => {
   return { ...actual, hybridSearch: vi.fn(async () => [{ document_id: "10000000-0000-4000-8000-000000000001", title: "Abo-Bestätigung Hannah", chunk_text: "Kundennummer: TEST-123", score: 0.9, source: "fact" }]), graphSearch: vi.fn(async () => []) };
 });
 vi.mock("@/lib/ai/web-search", () => ({ searchPublicWeb: vi.fn(async () => ({query:"Ticket aktueller Preis",summary:"Der Beispieltarif kostet 63 Euro.",sources:[{document_id:"web-price",title:"Tarifauskunft",excerpt:"Der Beispieltarif kostet 63 Euro.",url:"https://example.org/tarif",origin:"web",score:1}]})) }));
-vi.mock("@/lib/ai/reranking", () => ({ rerankResults: vi.fn(async (_query, results) => results) }));
+vi.mock("@/lib/ai/reranking", () => ({ RERANK_TOP_K: 10, rerankResults: vi.fn(async (_query, results) => results) }));
 import { streamAgenticAnswer } from "../chat";
 import { hybridSearch } from "../search";
 import { rerankResults } from "../reranking";
@@ -561,6 +561,24 @@ describe("topic document lists", () => {
       type: "text",
       content: "Dazu habe ich 3 Dokumente gefunden: „Zugangscode Schulfotos“ (2×) und „Schulmanager“. Du kannst sie unten öffnen.",
     });
+  });
+
+  it("keeps a list question with a second part in the agent flow", async () => {
+    create.mockResolvedValueOnce(finalAnswer("Die Unterlagen laufen unterschiedlich lange."));
+    const result = await events(context(), "Welche Unterlagen haben wir zur Krankenversicherung und wann laufen sie ab?");
+    expect(create).toHaveBeenCalled();
+    expect(result.some(event => event.type === "text" && /^(?:Dazu habe ich|Hier sind die)/u.test(event.content))).toBe(false);
+  });
+
+  it("calls a full page of hits a selection, not the complete count", async () => {
+    const many = Array.from({ length: 10 }, (_, i) =>
+      hit(`10000000-0000-4000-8000-0000000000${String(10 + i)}`, `Schulbrief ${i + 1}`, 0.9));
+    vi.mocked(hybridSearch).mockResolvedValueOnce(many);
+    vi.mocked(rerankResults).mockResolvedValueOnce(many);
+    const result = await events(context(), "Zeig mir alle Dokumente zur Schule");
+    const text = result.find(event => event.type === "text").content as string;
+    expect(text).toMatch(/^Hier sind die 10 passendsten Dokumente dazu: /u);
+    expect(text).toContain("Es kann noch weitere geben");
   });
 
   it.each([

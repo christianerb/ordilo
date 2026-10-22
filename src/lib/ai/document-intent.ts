@@ -96,7 +96,27 @@ const LIST_NOUNS = "dokumente|unterlagen|papiere|briefe|bescheide|rechnungen|ver
 export function documentTopicListRequest(query: string): boolean {
   const text = query.trim();
   if (/\b(?:brauch|benötig|muss|müssen|soll|sollte|fehl|einreich|mitbring)\p{L}*/iu.test(text)) return false;
-  return new RegExp(`^(?:und\\s+)?(?:welche|was für)\\s+(?:${LIST_NOUNS})\\s+(?:habe ich|hab ich|haben wir|gibt es|liegen|sind)\\b`, "iu").test(text)
-    || new RegExp(`^(?:bitte\\s+)?(?:zeig(?:e)?|liste)(?:\\s+mir)?\\s+(?:alle\\s+)?(?:(?:meine|unsere|die)\\s+)?(?:${LIST_NOUNS})\\s+(?:zu|zum|zur|vom|von|über|aus)\\b`, "iu").test(text)
-    || /^(?:und\s+)?was haben wir (?:alles\s+)?(?:zu|zum|zur|vom|von|über)\b/iu.test(text);
+  const match = new RegExp(`^(?:und\\s+)?(?:welche|was für)\\s+(?:${LIST_NOUNS})\\s+(?:habe ich|hab ich|haben wir|gibt es|liegen|sind)\\b`, "iu").exec(text)
+    ?? new RegExp(`^(?:bitte\\s+)?(?:zeig(?:e)?|liste)(?:\\s+mir)?\\s+(?:alle\\s+)?(?:(?:meine|unsere|die)\\s+)?(?:${LIST_NOUNS})\\s+(?=zu|zum|zur|vom|von|über|aus)`, "iu").exec(text)
+    ?? /^(?:und\s+)?was haben wir (?:alles\s+)?(?=zu|zum|zur|vom|von|über)/iu.exec(text);
+  if (!match) return false;
+  // The topic must be in the question itself: "Und welche Unterlagen haben
+  // wir dazu?" names none, and a search for "dazu" would list whatever
+  // ranks first. Such follow-ups stay with the agent, which reads the
+  // conversation.
+  const topicWords = text
+    .slice(match[0].length)
+    .toLocaleLowerCase("de-DE")
+    .match(/\p{L}[\p{L}-]*/gu)
+    ?.filter((word) => word.length >= 3 && !TOPIC_FILLER_WORDS.has(word)) ?? [];
+  return topicWords.length > 0;
 }
+
+/** Words around a list request that name no topic. */
+const TOPIC_FILLER_WORDS = new Set([
+  "zum", "zur", "vom", "von", "über", "aus", "dem", "den", "der", "die", "das",
+  "ihr", "ihm", "ihn", "sie", "uns", "mir", "dir", "alle", "alles", "noch",
+  "dazu", "davon", "dafür", "darüber", "damit", "daraus", "dort", "hierzu",
+  "dies", "diese", "diesem", "diesen", "dieser", "dieses", "denen", "deren",
+  "eigentlich", "insgesamt", "bisher", "schon", "überhaupt",
+]);
