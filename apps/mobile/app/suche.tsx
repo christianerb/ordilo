@@ -101,6 +101,7 @@ import {
 } from "@/src/lib/conversations";
 import { buildPersonalChatStarters } from "@ordilo/chat-contract";
 import { AiConsentProvider, useAiConsent } from "@/src/lib/ai-consent-context";
+import { notePositiveMoment } from "@/src/lib/app-review";
 import { useBilling } from "@/src/lib/billing";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
@@ -506,6 +507,7 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
       let receivedDone = false;
       let receivedReady = false;
       let receivedError = false;
+      let receivedSources = false;
       let pendingText = "";
       let accumulatedText = "";
       let textFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -559,6 +561,9 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
               applyChatEvent(message, event),
             );
             if (event.type === "answer_ready") receivedReady = true;
+            if (event.type === "sources" && event.sources.length > 0) {
+              receivedSources = true;
+            }
             if (event.type === "done") {
               receivedDone = true;
               chatOperationIds.current.delete(assistantMessage.id);
@@ -566,6 +571,11 @@ function SucheScreenContent({ consentSheet }: { consentSheet: ReactNode }) {
                 Haptics.NotificationFeedbackType.Success,
               );
               void refreshConversations();
+              // Positive moment: a grounded answer with sources. Not during
+              // Live voice turns or answer repairs.
+              if (receivedSources && !receivedError && !voice && !repair) {
+                void notePositiveMoment("chat_answer_with_sources");
+              }
             } else if (event.type === "error") {
               receivedError = true;
             }

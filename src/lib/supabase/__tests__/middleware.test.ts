@@ -514,6 +514,23 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
     expect(response.headers.get("location")).toContain("/login");
   });
 
+  it("sends a signed-in visitor of the static landing page into the app", async () => {
+    setupMock({ user: { id: "user-1", email: "test@ordilo.test" } });
+
+    const response = await updateSession(createMockRequest("/"));
+
+    expect(response.status).toBe(307);
+    expect(new URL(response.headers.get("location")!).pathname).toBe("/home");
+  });
+
+  it("leaves the landing page alone when the session cookie is invalid", async () => {
+    setupMock({ user: null });
+
+    const response = await updateSession(createMockRequest("/"));
+
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("redirects unauthenticated user from /home to /login", async () => {
     setupMock({ user: null });
 

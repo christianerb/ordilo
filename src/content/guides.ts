@@ -1,6 +1,8 @@
 import { listicleGuides } from "./listicle-guides";
 import { expandedGuides } from "./expanded-guides";
 import { practicalGuides } from "./practical-guides";
+import { documentGuides } from "./document-guides";
+import { comparisonGuides } from "./comparison-guides";
 
 /** Editorial source of truth. Dates describe the text, not an invented review. */
 export interface Guide {
@@ -94,7 +96,11 @@ Ein Scan ist außerdem kein pauschaler Grund, Papier wegzuwerfen. Klärt für da
         note: "Informationen zur Verarbeitung und zum gemeinsamen Zugriff.",
       },
     ],
-    related: ["kita-schulbriefe-organisieren", "dokumente-scannen-iphone"],
+    related: [
+      "kita-schulbriefe-organisieren",
+      "dokumente-scannen-iphone",
+      "unterlagen-aufbewahren-wie-lange",
+    ],
   },
   {
     slug: "kita-schulbriefe-organisieren",
@@ -171,7 +177,11 @@ Wenn ihr erst eine gemeinsame Ablage aufbauen wollt, beginnt mit der [Papierkram
         note: "Vor dem Speichern und Teilen personenbezogener Unterlagen beachten.",
       },
     ],
-    related: ["papierkram-organisieren-familie", "dokumente-scannen-iphone"],
+    related: [
+      "papierkram-organisieren-familie",
+      "dokumente-scannen-iphone",
+      "kita-gebuehrenbescheid-verstehen",
+    ],
   },
   {
     slug: "dokumente-scannen-iphone",
@@ -265,6 +275,8 @@ Zum Start genügt ein unkritischer Beispielbrief. Scanne ihn, suche ihn erneut u
   ...listicleGuides,
   ...practicalGuides,
   ...expandedGuides,
+  ...comparisonGuides,
+  ...documentGuides,
 ];
 
 export function getGuide(slug: string): Guide | undefined {

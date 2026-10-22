@@ -7,7 +7,7 @@ import { APP_STORE_URL } from "@/lib/marketing";
 describe("LandingPage", () => {
   it("offers the live iPhone app and keeps the browser entry available", () => {
     render(<LandingPage />);
-    expect(screen.getByText(/Dokumenten-App/)).toBeDefined();
+    expect(screen.getAllByText(/Dokumenten-App/).length).toBeGreaterThan(0);
     const cta = screen.getByTestId("landing-cta-hero");
     expect(cta.textContent).toContain("Kostenlos im App Store laden");
     expect(cta.getAttribute("href")).toBe(APP_STORE_URL);
@@ -37,8 +37,8 @@ describe("LandingPage", () => {
     expect(container.querySelectorAll(".landing-mascot-static")).toHaveLength(
       3,
     );
-    expect(container.querySelectorAll(".landing-faq-answer")).toHaveLength(4);
-    expect(container.querySelectorAll(".landing-faq-chevron")).toHaveLength(4);
+    expect(container.querySelectorAll(".landing-faq-answer")).toHaveLength(6);
+    expect(container.querySelectorAll(".landing-faq-chevron")).toHaveLength(6);
   });
 
   it("renders the privacy promise with concrete trust facts", () => {
@@ -107,5 +107,43 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("landing-cta-bottom").getAttribute("href")).toBe(
       APP_STORE_URL,
     );
+  });
+
+  it("explains Ordilo next to alternatives with a real app screenshot", () => {
+    render(<LandingPage />);
+    expect(
+      screen.getByRole("table", {
+        name: "Vergleich von Cloud-Ordner, KI-Chat und Ordilo",
+      }),
+    ).toBeDefined();
+    expect(screen.getAllByRole("img", { name: /^Ordilo/ }).length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByText("Echte App-Ansichten mit erfundenen Beispieldaten.")).toBeDefined();
+  });
+
+  it("publishes one connected entity graph for search and AI answers", () => {
+    const { container } = render(<LandingPage />);
+    const graph = JSON.parse(
+      container.querySelector('script[type="application/ld+json"]')!
+        .textContent!,
+    )["@graph"] as { "@type": string; offers?: unknown[] }[];
+    const types = graph.map((node) => node["@type"]);
+    expect(types).toEqual(
+      expect.arrayContaining([
+        "Organization",
+        "Person",
+        "MobileApplication",
+        "VideoObject",
+        "FAQPage",
+      ]),
+    );
+    const app = graph.find((node) => node["@type"] === "MobileApplication");
+    expect(app?.offers).toHaveLength(3);
+  });
+
+  it("links to every guide via the guide index instead of listing all", () => {
+    render(<LandingPage />);
+    expect(
+      screen.getByRole("link", { name: /Alle \d+ Ratgeber ansehen/ }).getAttribute("href"),
+    ).toBe("/ratgeber");
   });
 });

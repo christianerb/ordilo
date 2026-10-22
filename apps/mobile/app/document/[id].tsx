@@ -6,6 +6,7 @@ import { loadCorrectionBaseline, saveDocumentCorrections, type CorrectionBaselin
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
+import { notePositiveMoment } from "@/src/lib/app-review";
 import { confirmedDocumentOutcomes } from "@/src/lib/document-review";
 import { loadPersistedScanQueue } from "@/src/lib/scan";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -384,6 +385,8 @@ export default function DocumentReviewScreen() {
       refreshLibraryDocuments();
       refreshOfflineCopyQuietly(id);
       setConfirmed(result);
+      // Positive moment: a saved document may earn the native rating sheet.
+      void notePositiveMoment("document_confirmed");
       if (family) void loadPersistedScanQueue(family.id).then((queue) => setRemainingImports(queue.length)).catch(() => setRemainingImports(0));
     } catch {
       await fail();

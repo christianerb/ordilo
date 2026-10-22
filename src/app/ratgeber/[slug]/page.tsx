@@ -5,8 +5,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { guides, getGuide } from "@/content/guides";
 import {
+  FOUNDER_NAME,
+  founder,
   publicMetadata,
   publisher,
+  softwareApplication,
   serializeJsonLd,
   SITE_URL,
 } from "@/lib/marketing";
@@ -22,6 +25,10 @@ export function generateStaticParams() {
 
 type Props = { params: Promise<{ slug: string }> };
 
+function guideImageUrl(slug: string) {
+  return `${SITE_URL}/ratgeber/${slug}/og`;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const guide = getGuide((await params).slug);
   if (!guide) notFound();
@@ -29,6 +36,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     `${guide.title} | Ordilo`,
     guide.description,
     `/ratgeber/${guide.slug}`,
+    { url: guideImageUrl(guide.slug), alt: guide.title },
   );
   return {
     ...metadata,
@@ -48,6 +56,7 @@ export default async function GuidePage({ params }: Props) {
     "@context": "https://schema.org",
     "@graph": [
       publisher,
+      founder,
       {
         "@type": "BlogPosting",
         "@id": `${url}#article`,
@@ -58,8 +67,13 @@ export default async function GuidePage({ params }: Props) {
         dateModified: guide.updated,
         author: { "@id": publisher["@id"] },
         publisher: { "@id": publisher["@id"] },
+        accountablePerson: { "@id": founder["@id"] },
+        mentions: { "@id": softwareApplication["@id"] },
+        isPartOf: { "@id": `${SITE_URL}/ratgeber#collection` },
+        articleSection: guide.topic,
+        abstract: guide.answer,
         mainEntityOfPage: url,
-        image: `${SITE_URL}/opengraph-image`,
+        image: guideImageUrl(guide.slug),
         citation: guide.sources.map((source) =>
           source.url.startsWith("/") ? `${SITE_URL}${source.url}` : source.url,
         ),
@@ -110,7 +124,11 @@ export default async function GuidePage({ params }: Props) {
           <Link className="underline underline-offset-4" href="/impressum">
             Ordilo
           </Link>
-          , dem Anbieter der App · Textstand:{" "}
+          , dem Anbieter der App · Verantwortlich:{" "}
+          <Link className="underline underline-offset-4" href="/ueber-uns">
+            {FOUNDER_NAME}
+          </Link>{" "}
+          · Textstand:{" "}
           <time dateTime={guide.updated}>
             {new Intl.DateTimeFormat("de-DE", {
               dateStyle: "long",
