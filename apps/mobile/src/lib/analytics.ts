@@ -22,7 +22,8 @@ export type ProductEventName =
   | "chat_question_sent"
   | "search_completed"
   | "task_created"
-  | "task_completed";
+  | "task_completed"
+  | "app_opened";
 
 export async function recordProductEvent(
   client: SupabaseClient,
@@ -113,5 +114,43 @@ export async function recordOnboardingStartedIfFirstTime(
     }
   } catch {
     // Analytics must never block login.
+  }
+}
+
+/**
+ * Record that the app was opened today — at most one event per user and
+ * UTC day (same rule as the web, src/lib/analytics/product-events.ts).
+ * Called on every Heute load; the lookup keeps it to one row per day.
+ */
+export async function recordDailyAppOpen(
+  familyId: string | null,
+  now: Date = new Date(),
+): Promise<void> {
+  try {
+    const client = getSupabase();
+    const {
+      data: { session },
+    } = await client.auth.getSession();
+    const userId = session?.user.id;
+    if (!userId) return;
+
+    const dayStart = new Date(now);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const { data, error } = await client
+      .from("product_events")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("event_name", "app_opened")
+      .gte("occurred_at", dayStart.toISOString())
+      .limit(1);
+    if (error || (data && data.length > 0)) return;
+
+    await recordProductEvent(client, {
+      userId,
+      familyId,
+      eventName: "app_opened",
+    });
+  } catch {
+    // Analytics must never block a user-facing action.
   }
 }

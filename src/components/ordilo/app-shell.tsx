@@ -13,6 +13,7 @@ import {
   writeCollapsedPreference,
 } from "@/components/ordilo/app-shell-shared";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { recordDailyAppOpen } from "@/lib/analytics/product-events";
 import { AiConsentProvider } from "@/lib/ai/consent-context";
 import { ScanProvider } from "@/lib/scan/scan-context";
 import {
@@ -74,6 +75,14 @@ export function AppShell({
   recentQueries?: string[];
 }) {
   const hasServerData = initialCollections !== undefined;
+
+  // One "app opened" event per user and day once a family exists — the
+  // layout persists across navigations, so this runs per full page load.
+  useMountEffect(() => {
+    if (!familyId) return;
+    void recordDailyAppOpen(createClient(), { familyId });
+  });
+
   return (
     <TooltipProvider delayDuration={300}>
       <AiConsentProvider>

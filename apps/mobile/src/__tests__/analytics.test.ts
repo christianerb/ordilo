@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import {
+  recordDailyAppOpen,
   recordProductEvent,
   recordOnboardingStartedIfFirstTime,
   recordScanFailure,
@@ -148,5 +149,63 @@ describe("platform metadata", () => {
       await recordProductEvent(client as never, { userId: "user", eventName: "onboarding_started", properties: { step: "start", platform: "web" } });
       expect(client.inserts).toEqual([{ table: "product_events", rows: expect.objectContaining({ properties: { step: "start", platform: os } }) }]);
     } finally { spy.restore(); }
+  });
+});
+
+describe("recordDailyAppOpen", () => {
+  function makeClient(alreadyToday: boolean) {
+    const inserts: unknown[] = [];
+    const lookup: Record<string, jest.Mock> = {};
+    lookup.select = jest.fn(() => lookup);
+    lookup.eq = jest.fn(() => lookup);
+    lookup.gte = jest.fn(() => lookup);
+    lookup.limit = jest.fn(async () => ({
+      data: alreadyToday ? [{ id: "event-1" }] : [],
+      error: null,
+    }));
+    const client = {
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: { user: { id: "user-1" } } },
+        })),
+      },
+      from: jest.fn(() => ({
+        ...lookup,
+        insert: jest.fn(async (row: unknown) => {
+          inserts.push(row);
+          return { error: null };
+        }),
+      })),
+    };
+    return { client, inserts, lookup };
+  }
+
+  it("records one app_opened per UTC day", async () => {
+    const { client, inserts, lookup } = makeClient(false);
+    jest.mocked(getSupabase).mockReturnValue(client as never);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T09:30:00Z"));
+    expect(lookup.gte).toHaveBeenCalledWith("occurred_at", "2026-10-22T00:00:00.000Z");
+    expect(inserts).toEqual([
+      {
+        user_id: "user-1",
+        family_id: "family-1",
+        event_name: "app_opened",
+        properties: { platform: Platform.OS },
+      },
+    ]);
+  });
+
+  it("skips the write when today's open already exists", async () => {
+    const { client, inserts } = makeClient(true);
+    jest.mocked(getSupabase).mockReturnValue(client as never);
+    await recordDailyAppOpen("family-1");
+    expect(inserts).toEqual([]);
+  });
+
+  it("never throws", async () => {
+    jest.mocked(getSupabase).mockImplementation(() => {
+      throw new Error("no client");
+    });
+    await expect(recordDailyAppOpen("family-1")).resolves.toBeUndefined();
   });
 });

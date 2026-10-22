@@ -45,7 +45,7 @@ function dateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-async function listAllUsers(): Promise<User[]> {
+export async function listAllUsers(): Promise<User[]> {
   const admin = createAdminClient();
   const users: User[] = [];
   let page = 1;

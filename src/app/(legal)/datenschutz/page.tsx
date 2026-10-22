@@ -75,8 +75,18 @@ export default function DatenschutzPage() {
           <li>
             <strong>Technische Nutzungsdaten:</strong> Zeitpunkt der Anmeldung
             sowie inhaltsfreie Ereignisse wie Upload, Suche, Chat-Frage,
-            Aufgabe oder Kalendertermin. Wir speichern dabei keine
+            Aufgabe, Kalendertermin, Einladung oder das Öffnen der App
+            (höchstens einmal am Tag). Wir speichern dabei keine
             Dokumentinhalte, Dateinamen, Suchbegriffe oder Chat-Nachrichten.
+          </li>
+          <li>
+            <strong>Herkunft der Anmeldung:</strong> Wenn du ein Konto
+            anlegst, merken wir uns einmalig, wie du zu Ordilo gekommen
+            bist: die Website, von der du kamst (nur der Name, z. B.
+            „google.com“), die erste Ordilo-Seite und Kampagnen-Angaben aus
+            dem Link (z. B. „utm_source“). Dafür nutzen wir keine Cookies
+            und speichern nichts auf deinem Gerät. So sehen wir, welche
+            Wege Familien wirklich zu Ordilo führen.
           </li>
           <li>
             <strong>Käufe und Abos:</strong> In der iPhone-App nutzen wir die

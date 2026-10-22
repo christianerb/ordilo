@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import {
+  attributionQuery,
+  classifyChannel,
+  cleanHost,
+  parseStoredAttribution,
+  readAttribution,
+} from "../attribution";
+
+const page = (overrides: Partial<Parameters<typeof readAttribution>[0]> = {}) =>
+  readAttribution({
+    search: "",
+    referrer: "",
+    ownHost: "ordilo.de",
+    pathname: "/",
+    ...overrides,
+  });
+
+describe("readAttribution", () => {
+  it("keeps UTM parameters, the external referrer host and the landing path", () => {
+    expect(
+      page({
+        search: "?utm_source=Newsletter&utm_medium=email&utm_campaign=herbst-2026",
+        referrer: "https://www.google.com/search?q=kindergeld",
+        pathname: "/ratgeber/kindergeld",
+      }),
+    ).toEqual({
+      source: "newsletter",
+      medium: "email",
+      campaign: "herbst-2026",
+      referrer: "google.com",
+      landing: "/ratgeber/kindergeld",
+    });
+  });
+
+  it("prefers carried parameters over the current page", () => {
+    expect(
+      page({
+        search: "?ref=chatgpt.com&lp=/ratgeber/steuer",
+        referrer: "https://ordilo.de/ratgeber/steuer",
+        pathname: "/login",
+      }),
+    ).toEqual({ referrer: "chatgpt.com", landing: "/ratgeber/steuer" });
+  });
+
+  it("ignores its own host as a referrer", () => {
+    expect(page({ referrer: "https://www.ordilo.de/", pathname: "/login" })).toEqual({
+      landing: "/login",
+    });
+    expect(page({ referrer: "https://app.ordilo.de/x" })).toEqual({ landing: "/" });
+  });
+
+  it("drops click ids but remembers that the click was paid", () => {
+    const attribution = page({ search: "?gclid=abc123secret" });
+    expect(attribution.paid_click).toBe("google");
+    expect(JSON.stringify(attribution)).not.toContain("abc123secret");
+  });
+
+  it("treats an fbclid without campaign tags as organic", () => {
+    expect(page({ search: "?fbclid=xyz" }).paid_click).toBeUndefined();
+    expect(page({ search: "?fbclid=xyz&utm_medium=paid_social" }).paid_click).toBe("meta");
+  });
+
+  it("rejects landing paths that are not plain same-site paths", () => {
+    expect(page({ search: "?lp=//evil.example" }).landing).toBe("/");
+    expect(page({ search: "?lp=https://evil.example" }).landing).toBe("/");
+    expect(page({ search: "?lp=/ratgeber/x?email=a@b.de" }).landing).toBe("/ratgeber/x");
+  });
+
+  it("caps and cleans free-text values", () => {
+    const attribution = page({ search: `?utm_campaign=${"a".repeat(300)}<script>` });
+    expect(attribution.campaign).toHaveLength(100);
+    expect(attribution.campaign).not.toContain("<");
+  });
+
+  it("recognises an invite entry", () => {
+    expect(page({ search: "?via=invite" }).via).toBe("invite");
+    expect(page({ search: "?via=admin" }).via).toBeUndefined();
+  });
+});
+
+describe("attributionQuery", () => {
+  it("round-trips through readAttribution on the login page", () => {
+    const original = page({
+      search: "?utm_source=instagram&utm_medium=social&gclid=1",
+      referrer: "https://l.instagram.com/",
+      pathname: "/ratgeber/kita",
+    });
+    const carried = page({ search: `?${attributionQuery(original)}`, pathname: "/login" });
+    expect(carried).toEqual(original);
+  });
+
+  it("is empty when there is nothing to carry", () => {
+    expect(attributionQuery({})).toBe("");
+  });
+});
+
+describe("cleanHost", () => {
+  it("reduces URLs to bare hosts", () => {
+    expect(cleanHost("https://www.Example.org/path?q=1")).toBe("example.org");
+    expect(cleanHost("not a host")).toBeUndefined();
+    expect(cleanHost("javascript:alert(1)")).toBeUndefined();
+  });
+});
+
+describe("parseStoredAttribution", () => {
+  it("re-cleans client-written metadata", () => {
+    expect(
+      parseStoredAttribution({
+        source: "Google",
+        referrer: "https://www.bing.com/",
+        landing: "//evil",
+        via: "hacker",
+        extra: "dropped",
+      }),
+    ).toEqual({ source: "google", referrer: "bing.com" });
+  });
+
+  it("returns null for missing or malformed metadata", () => {
+    expect(parseStoredAttribution(undefined)).toBeNull();
+    expect(parseStoredAttribution("google")).toBeNull();
+    expect(parseStoredAttribution([])).toBeNull();
+  });
+});
+
+describe("classifyChannel", () => {
+  it.each([
+    [null, "unbekannt"],
+    [{}, "direkt"],
+    [{ landing: "/" }, "direkt"],
+    [{ via: "invite" as const, referrer: "google.com" }, "einladung"],
+    [{ via: "app" as const }, "app"],
+    [{ paid_click: "google" as const, referrer: "google.com" }, "bezahlt"],
+    [{ source: "google", medium: "cpc" }, "bezahlt"],
+    [{ source: "brevo", medium: "newsletter" }, "email"],
+    [{ source: "instagram" }, "social"],
+    [{ referrer: "l.instagram.com" }, "social"],
+    [{ referrer: "google.de" }, "suche"],
+    [{ referrer: "news.google.com" }, "suche"],
+    [{ referrer: "ecosia.org" }, "suche"],
+    [{ referrer: "chatgpt.com" }, "ki_assistent"],
+    [{ referrer: "gemini.google.com" }, "ki_assistent"],
+    [{ source: "chatgpt" }, "ki_assistent"],
+    [{ source: "podcast-xy" }, "kampagne"],
+    [{ referrer: "elternforum.de" }, "verweis"],
+  ])("%j → %s", (attribution, channel) => {
+    expect(classifyChannel(attribution)).toBe(channel);
+  });
+});

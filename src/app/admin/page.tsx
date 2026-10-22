@@ -7,6 +7,7 @@ import { AdminOverviewTab } from "./overview-tab";
 import { AdminUsersTab } from "./users-tab";
 import { AdminActivityTab } from "./activity-tab";
 import { AdminCostsTab } from "./costs-tab";
+import { AdminGrowthTab } from "./growth-tab";
 
 export const metadata = {
   title: "Plattformübersicht | Ordilo",
@@ -15,6 +16,7 @@ export const metadata = {
 
 const TABS = [
   { key: "uebersicht", label: "Übersicht" },
+  { key: "wachstum", label: "Wachstum" },
   { key: "nutzer", label: "Nutzer" },
   { key: "aktivitaet", label: "Aktivität" },
   { key: "kosten", label: "Kosten" },
@@ -93,6 +95,7 @@ export default async function AdminDashboardPage({
         </nav>
 
         {tab === "uebersicht" && <AdminOverviewTab days={days} />}
+        {tab === "wachstum" && <AdminGrowthTab days={days} />}
         {tab === "nutzer" && <AdminUsersTab page={page} />}
         {tab === "aktivitaet" && <AdminActivityTab days={days} />}
         {tab === "kosten" && <AdminCostsTab />}

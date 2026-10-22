@@ -23,7 +23,10 @@ export type ProductEventName =
   | "live_conversation_ended"
   | "search_completed"
   | "task_created"
-  | "task_completed";
+  | "task_completed"
+  | "invite_created"
+  | "invite_accepted"
+  | "app_opened";
 
 export type ProductPlatform = "web" | "ios" | "android" | "unknown";
 
@@ -60,6 +63,48 @@ export async function recordProductEvent(
       family_id: familyId,
       event_name: eventName,
       properties: { ...properties, platform },
+    });
+  } catch {
+    // Analytics must never block a user-facing action.
+  }
+}
+
+/**
+ * Record that the user opened the app today — at most one event per user
+ * and UTC day, so "aktiv" can count visits that trigger no other action
+ * (reading Heute, checking a due date). Best effort, never throws.
+ */
+export async function recordDailyAppOpen(
+  client: SupabaseClient<Database>,
+  {
+    familyId = null,
+    platform = typeof window === "undefined" ? "unknown" : "web",
+    now = new Date(),
+  }: { familyId?: string | null; platform?: ProductPlatform; now?: Date } = {},
+): Promise<void> {
+  try {
+    const {
+      data: { session },
+    } = await client.auth.getSession();
+    const userId = session?.user.id;
+    if (!userId) return;
+
+    const dayStart = new Date(now);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const { data, error } = await client
+      .from("product_events")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("event_name", "app_opened")
+      .gte("occurred_at", dayStart.toISOString())
+      .limit(1);
+    if (error || (data && data.length > 0)) return;
+
+    await recordProductEvent(client, {
+      userId,
+      familyId,
+      eventName: "app_opened",
+      platform,
     });
   } catch {
     // Analytics must never block a user-facing action.

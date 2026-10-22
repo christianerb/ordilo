@@ -63,6 +63,7 @@ describe("requestInviteSignIn", () => {
       email: "familie@example.com",
       options: {
         emailRedirectTo: "https://ordilo.example/auth/callback",
+        data: { signup_attribution: { via: "invite" } },
       },
     });
   });
@@ -87,6 +88,7 @@ describe("requestInviteSignIn", () => {
       email: "familie@example.com",
       options: {
         emailRedirectTo: "https://app.ordilo.de/auth/callback",
+        data: { signup_attribution: { via: "invite" } },
       },
     });
   });
@@ -100,6 +102,7 @@ describe("requestInviteSignIn", () => {
       email: "familie@example.com",
       options: {
         emailRedirectTo: "https://app.ordilo.de/auth/callback",
+        data: { signup_attribution: { via: "invite" } },
       },
     });
   });
@@ -119,6 +122,7 @@ describe("requestInviteSignIn", () => {
       email: "familie@example.com",
       options: {
         emailRedirectTo: "http://localhost:3000/auth/callback",
+        data: { signup_attribution: { via: "invite" } },
       },
     });
   });
