@@ -133,54 +133,105 @@ ohne die eigenen zu doppeln.
 
 ## Aus dem Wettbewerb
 
-Herkunft und Quellen:
-[`brainstorms/2026-10-22-wettbewerb-ki-dokumente.md`](./brainstorms/2026-10-22-wettbewerb-ki-dokumente.md).
+Herkunft, Quellen und Priorisierung:
+[`brainstorms/2026-10-22-wettbewerb-ki-dokumente.md`](./brainstorms/2026-10-22-wettbewerb-ki-dokumente.md)
+(Abschnitt 7). Reihenfolge hier = Priorität dort.
 
 ### Erinnerungen lange vor einer Frist
 
 **Was fehlt.** Der Tages-Digest (`src/lib/digest.ts`) schaut nur
 `DIGEST_HORIZON_DAYS = 7` Tage voraus. Kündigungsfristen, Vertragsenden
 oder ein ablaufender Ausweis brauchen Wochen bis Monate Vorlauf. HENOS
-erinnert fest 90, 30 und 7 Tage vorher, Dokufox erinnert bei
-Kündigungsfristen per E-Mail.
+erinnert fest 90, 30 und 7 Tage vorher (E-Mail höchstens einmal pro Woche
+als Sammelmail), Dokufox, Papero und fileee ebenfalls.
 
 **Warum es heute geht.** Wer eine Frist kennt, kann eine Aufgabe mit
 früherem Datum anlegen. Das ist aber Handarbeit, genau die, die Ordilo
 abnehmen soll.
 
-**Was es kostet.** Vorlauf-Stufen pro Fristtyp (z. B. Kündigung 90/30/7,
-Rechnung 7/1), Speicherung der bereits gesendeten Stufen, Ausspielung über
-Digest und Push. Copy: „In 30 Tagen endet die Kündigungsfrist für …".
+**Was es kostet.** Vorlauf-Stufen pro Fristtyp (Kündigung 90/30/7,
+Ausweis 6/3/1 Monate, Rechnung 7/1), Speicherung der bereits gesendeten
+Stufen, Ausspielung über Digest und Push. Copy: „In 30 Tagen endet die
+Kündigungsfrist für …".
 
 ---
 
-### Vorsorge-Dokumente erstellen
+### „Was muss ich tun?" auf der Prüfkarte
 
-**Was fehlt.** Vorsorgevollmacht, Patientenverfügung und Testament mit
-geführten Fragen in Alltagssprache als PDF-Entwurf erstellen. HENOS bietet
-das ohne Anmeldung an, als Einstieg ins Produkt.
+**Was fehlt.** Ein Satz in einfacher Sprache, was der Brief will, plus
+nächster Schritt und Frist. BuroBrain und kdoc bauen ihr ganzes
+Versprechen darauf.
+
+**Warum es heute geht.** Die Prüfkarte zeigt die erkannten Angaben; die
+Frist steht drin, die Handlung muss man selbst ableiten.
+
+**Was es kostet.** Ein zusätzliches Feld in der Extraktion, eine Zeile
+oben auf der Karte, optional „Als Aufgabe übernehmen".
+
+---
+
+### Vorsorge und Notfall
+
+**Was fehlt.** Drei Bausteine, die zusammen „Gedächtnis der Familie"
+glaubwürdig machen:
+
+- Vorsorge-Generator (Vorsorgevollmacht, Patienten-, Betreuungs-,
+  Sorgerechtsverfügung, Testament) mit geführten Fragen nach den
+  Textbausteinen des Bundesjustizministeriums. HENOS bietet das ohne
+  Anmeldung an.
+- Checkliste „Was fehlt euch noch?" pro Bereich (Quicken LifeHub).
+- Notfall-Zugriff für eine Vertrauensperson (Trustworthy Legacy Access,
+  Quicken Co-Owner).
 
 **Warum es heute geht.** Ordilo verwaltet vorhandene Dokumente; dass
 etwas fehlt, sieht die Familie bisher nicht.
 
 **Was es kostet.** Rechtlich geprüfte Vorlagen (Haftung, Formvorschriften:
 ein Testament muss handschriftlich oder notariell sein, ein PDF ist nur
-Entwurf), Fragebogen-Flow, PDF-Erzeugung, danach als Dokument im
-Familienarchiv ablegen. Dazu passend: „Was fehlt euch noch?" als Hinweis im
-Archiv.
+Entwurf), Fragebogen-Flow, PDF-Erzeugung, Ablage im Familienarchiv.
+Notfall-Zugriff braucht ein Rollen- und Freigabe-Konzept mit Wartezeit.
+
+---
+
+### Teilen nach außen
+
+**Was fehlt.** Einzelne Dokumente oder Sammlungen per Link mit
+Ablaufdatum und Zugriffsprotokoll teilen, auch mit Leuten ohne Konto
+(Steuerberater:in, Oma). Vorbilder: Trustworthy SecureLinks, Adrina Trust
+Circle.
+
+**Warum es heute geht.** Man kann die Datei herunterladen und
+weiterschicken. Dann ist sie aber aus der Hand.
+
+**Was es kostet.** Signierte, widerrufbare Links, eine Lese-Ansicht ohne
+Login, Protokoll. Auch ein Weg, über den neue Nutzer kommen.
 
 ---
 
 ### Fixkosten aus Verträgen
 
-**Was fehlt.** Eine Übersicht der monatlichen Fixkosten aus erkannten
-Verträgen (Strom, Handy, Versicherungen). Dokufox wirbt damit.
+**Was fehlt.** Monatliche Fixkosten aus erkannten Verträgen, verknüpft
+mit Kündigungsfristen, dazu ein Kündigungsschreiben auf Knopfdruck
+(Dokufox: „bezahlt sich selbst").
 
-**Warum es heute geht.** Beträge und Laufzeiten werden schon extrahiert;
-es fehlt nur die Sicht darauf.
+**Warum es heute geht.** Verträge und Policen liegen schon als
+Inventar (`family_inventory_items`) vor; es fehlt nur die Sicht darauf.
 
-**Was es kostet.** Normalisierung auf Monatsbeträge, eine Liste im Archiv,
-Verknüpfung mit Kündigungsfristen (siehe oben).
+**Was es kostet.** Normalisierung auf Monatsbeträge, eine Liste,
+Brief-Vorlage.
+
+---
+
+### Überweisung per QR-Code
+
+**Was fehlt.** Aus einer erkannten Rechnung einen GiroCode (EPC-QR)
+erzeugen, den die Banking-App scannt (Aktly).
+
+**Warum es heute geht.** IBAN und Betrag kann man aus der Prüfkarte
+abschreiben.
+
+**Was es kostet.** IBAN, Empfänger, Betrag und Verwendungszweck liegen
+meist schon als Fakten vor; QR-Erzeugung ist eine kleine Bibliothek.
 
 ---
 
@@ -192,6 +243,6 @@ bietet das als PWA.
 
 **Warum es heute geht.** Die meisten Fragen entstehen mit Netz.
 
-**Was es kostet.** In der nativen App: verschlüsselter lokaler Speicher
-(Secure Store / verschlüsselte Dateien), „Offline verfügbar"-Schalter am
-Dokument, biometrische Sperre (steht schon in `PRODUCT.md` als optional).
+**Was es kostet.** In der nativen App: verschlüsselter lokaler Speicher,
+„Offline verfügbar"-Schalter am Dokument, biometrische Sperre (steht
+schon in `PRODUCT.md` als optional).
