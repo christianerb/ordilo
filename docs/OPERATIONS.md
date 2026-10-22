@@ -84,11 +84,30 @@ Opt-out: `PIPELINE_MODE=sync` setzen (dann treibt wieder ausschließlich
 der Client die Pipeline; die Job-Queue bleibt ungenutzt).
 
 Zusätzlich als Backstop für gestrandete Jobs (z. B. Function mitten im
-OCR gekillt): ein täglicher Cron auf `GET /api/jobs/run` (siehe
-`vercel.json`, 05:00 UTC). Dafür muss `CRON_SECRET` gesetzt sein (oder
-`JOBS_RUNNER_SECRET` — der Worker akzeptiert beide). Auf einem
-Vercel-Pro-Plan den Cron gern auf `*/1 * * * *` verdichten; alternativ
-pg_cron + pg_net in Supabase.
+OCR gekillt), für den Label-Embedding-Backfill des Wissensgraphen und für
+Erinnerungen ruft **pg_cron in Supabase** alle 5 Minuten
+`POST /api/jobs/run` und (2 Minuten versetzt) `GET /api/notifications/run`
+auf (Migration `0095_scheduler_pg_cron.sql`, über pg_net).
+
+Einmalig einrichten — im Supabase SQL-Editor, nicht in einer Migration,
+weil es Secrets sind:
+
+```sql
+select vault.create_secret('<Wert von JOBS_RUNNER_SECRET>', 'jobs_runner_secret');
+select vault.create_secret('https://<Produktions-Domain>', 'app_origin');
+```
+
+Solange beide fehlen, tun die Cron-Jobs nichts. Ein dritter Job löscht
+täglich Laufprotokolle älter als 7 Tage. Prüfen:
+`select * from cron.job_run_details order by start_time desc limit 5;`
+und `select * from net._http_response order by created desc limit 5;`.
+
+Der GitHub-Workflow „Job Runner" (`*/5`) und der tägliche Vercel-Cron
+(`vercel.json`, 05:00 UTC) laufen als weitere Backstops weiter. GitHub
+drosselt so häufige Schedules allerdings stark (gemessen: etwa alle
+5 Stunden), deshalb ist pg_cron der eigentliche Takt. Für alle Wege muss
+`CRON_SECRET` oder `JOBS_RUNNER_SECRET` gesetzt sein — der Worker
+akzeptiert beide.
 
 Der Worker ist idempotent und nebenläufigkeitssicher (FOR UPDATE SKIP
 LOCKED) — häufiges Aufrufen ist billig. Die client-getriggerten
