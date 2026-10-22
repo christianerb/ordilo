@@ -38,6 +38,8 @@ describe("acceptedNaturalAnswer", () => {
     ["names an unread long institution", "Emma ist bei der Audi BKK und der Techniker Krankenkasse versichert."],
     ["adds an unread number", "Emma ist seit 2019 bei der Audi BKK krankenversichert."],
     ["hedges", "Emma ist vermutlich bei der Audi BKK krankenversichert."],
+    ["reverses the claim", "Emma ist nicht bei der Audi BKK krankenversichert."],
+    ["reverses it with kein", "Emma hat keine Versicherung bei der Audi BKK."],
   ])("rejects an answer that %s", (_name, answer) => {
     expect(acceptedNaturalAnswer(answer, context(), input, today)).toBeNull();
   });
@@ -48,6 +50,12 @@ describe("acceptedNaturalAnswer", () => {
     ctx.documentAnswer!.sources[0].highlight = undefined;
     expect(acceptedNaturalAnswer("Emmas Mitgliedschaft bei der Audi BKK endet am 31.07.2026.", ctx, input, today)).toBeNull();
     expect(acceptedNaturalAnswer("Emmas Mitgliedschaft bei der Audi BKK ist am 31.07.2026 abgelaufen.", ctx, input, today)).not.toBeNull();
+  });
+
+  it("keeps a negation the claim itself carries", () => {
+    const ctx = context("Emma ist nicht mehr bei der Audi BKK krankenversichert.");
+    expect(acceptedNaturalAnswer("Emma ist nicht mehr bei der **Audi BKK** krankenversichert.", ctx, input, today)).not.toBeNull();
+    expect(acceptedNaturalAnswer("Emma ist bei der Audi BKK krankenversichert.", ctx, input, today)).toBeNull();
   });
 
   it("needs a verified document answer", () => {

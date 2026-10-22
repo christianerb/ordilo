@@ -453,7 +453,27 @@ delete from public.knowledge_nodes n
 --     (first large-model node: 2026-07-20 ~06:04 UTC). A cleared vector is
 --     re-embedded by the backfill; clearing a vector that was already
 --     current only costs one extra embedding call.
-update public.knowledge_nodes
-  set label_embedding = null
-  where label_embedding is not null
-    and created_at < timestamptz '2026-07-20 07:00:00+00';
+--
+--     created_at alone cannot tell an old vector from one the backfill
+--     already replaced, so the reset runs once: `data_repairs` records it,
+--     and a replay of this migration leaves the new vectors alone.
+create table if not exists public.data_repairs (
+  key        text primary key,
+  applied_at timestamptz not null default now()
+);
+
+alter table public.data_repairs enable row level security;
+
+do $$
+begin
+  insert into public.data_repairs (key)
+    values ('0094_legacy_label_vectors')
+    on conflict (key) do nothing;
+  if found then
+    update public.knowledge_nodes
+      set label_embedding = null
+      where label_embedding is not null
+        and created_at < timestamptz '2026-07-20 07:00:00+00';
+  end if;
+end;
+$$;

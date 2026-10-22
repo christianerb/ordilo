@@ -276,6 +276,13 @@ const ANSWER_FRAME_WORDS = new Set([
 /** Words that introduce a person's name. */
 const PERSON_TITLE = /^(?:herr|herrn|frau|dr\.?|prof\.?)$/iu;
 
+/** Words that turn a statement into its opposite. */
+const NEGATION = /(?<![\p{L}])(?:nicht|kein|keine|keinen|keinem|keiner|keines|nie|niemals|nichts|weder|noch nie|ohne)(?![\p{L}])/giu;
+
+function negationCount(text: string): number {
+  return normalizeEvidence(text).match(NEGATION)?.length ?? 0;
+}
+
 /**
  * The model's own wording of a verified document answer, accepted as the
  * turn's final answer only when it says nothing the verified claims and
@@ -307,6 +314,16 @@ export function acceptedNaturalAnswer(
 
   const answerNumbers = new Set(numericTokens(text));
   if (!numericTokens(documentAnswer.text).every((number) => answerNumbers.has(number))) return null;
+
+  // "nicht", "kein" & co. flip a claim while every name and number stays:
+  // "Emma ist nicht bei der Audi BKK versichert" still carries Emma and the
+  // highlight. A rewording keeps the claims' negations, no more, no fewer.
+  if (
+    (documentAnswer.state === "answered" || documentAnswer.state === "conflict") &&
+    negationCount(text) !== negationCount(documentAnswer.text)
+  ) {
+    return null;
+  }
 
   const answerFacts = normalizeFactText(text);
   for (const source of documentAnswer.sources) {
