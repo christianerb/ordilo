@@ -73,3 +73,13 @@ export function documentInventoryRequest(query: string): { documentType: string 
   };
   return { documentType: types[match[1].toLocaleLowerCase("de-DE")] ?? null };
 }
+
+/**
+ * A question that asks which papers there are ("Welche Dokumente habe ich
+ * vom Kindergarten?") rather than what one of them says. Its answer lists
+ * several documents.
+ */
+export function documentListQuestion(query: string): boolean {
+  return /\b(?:welche|alle|was für|wie viele)\b[^?]*\b(?:dokumente|unterlagen|papiere|briefe|bescheide|rechnungen|verträge|belege)\b/iu.test(query)
+    || /\bwas haben wir (?:alles|zu|von|vom|über)\b/iu.test(query);
+}

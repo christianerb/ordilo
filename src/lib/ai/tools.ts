@@ -171,8 +171,8 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         } },
         state: { type: "string", enum: ["answered", "partial", "conflict", "not_found"] },
         gap: { type: "string", description: "Optional: konkrete Lücke oder Widerspruch, höchstens eine gezielte Rückfrage. Keine neuen Fakten." },
-        answer: { type: "string", description: "Deine fertige Endantwort an die Familie. Fülle sie im Normalfall IMMER aus — immer dann, wenn die Nutzerfrage nur nach dem fragt, was in den Unterlagen steht, auch bei not_found oder partial. Ist alles belegt, endet das Gespräch damit ohne weiteren Schritt; schlägt die Prüfung fehl, bekommst du die Fehlermeldung wie sonst auch. Nur leer lassen, wenn die Frage zusätzlich etwas anderes verlangt (Aufgabe anlegen, Websuche, Kalender) oder du danach bewusst noch eine weitere Unterlage lesen willst. Ordilo-Ton, Du-Form, zwei bis drei verbundene Sätze: der Fakt mit der Unterlage beim Namen im ersten, ein kurzer menschlicher Schlusston danach. Natürlich formuliert statt Claim-Wiederholung: Pronomen statt wiederholter voller Namen. Jede Zahl, jedes Datum, jede Hervorhebung und jede Person der Claims muss vorkommen; nichts, was nicht in Claims oder gelesenen Seiten steht, keine Berechnung. Ein Datum vor heute steht in der Vergangenheit (\"ist am 31.07.2026 abgelaufen\"). Bei not_found oder partial: sag klar und freundlich, was fehlt." },
-      }, required: ["claims", "state", "answer"] },
+        answer: { type: "string", description: "Die fertige Endantwort an die Familie (Ordilo-Ton, 2–3 Sätze, Pronomen statt wiederholter Namen), wenn sie die ganze Frage beantwortet; sonst leer. Nur Belegtes, mit allen Zahlen, Daten und Personen der Claims; ein Datum vor heute in der Vergangenheit." },
+      }, required: ["claims", "state"] },
     },
   },
   {
@@ -1116,6 +1116,21 @@ export const TOOL_DEFINITIONS: OpenAI.Responses.FunctionTool[] =
       strict: false,
     };
   });
+
+/**
+ * The tool list for a question that lists several papers: the same tools,
+ * but `answer_from_documents` without its final-wording field. Asked to
+ * prove three documents AND phrase the list in one call, the model was
+ * observed circling in reasoning until the round timed out (15 s, every
+ * time); such answers go through the regular final round instead.
+ */
+export const LIST_TOOL_DEFINITIONS: OpenAI.Responses.FunctionTool[] = TOOL_DEFINITIONS.map((tool) => {
+  if (tool.name !== "answer_from_documents" || !tool.parameters) return tool;
+  const parameters = tool.parameters as { properties?: Record<string, unknown> };
+  const { answer: _answer, ...properties } = parameters.properties ?? {};
+  void _answer;
+  return { ...tool, parameters: { ...tool.parameters, properties } };
+});
 
 // ---------------------------------------------------------------------------
 // Tool executors

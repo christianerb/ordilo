@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { documentInventoryRequest, documentPrefetchQuery } from '../document-intent';
+import { documentInventoryRequest, documentListQuestion, documentPrefetchQuery } from '../document-intent';
 describe('document prefetch intent', () => {
   it.each(['Wann läuft Hannahs Bahnding ab?', 'Was sollen wir fürs Buffet einpacken?', 'Was braucht Emma für den Sporttag?', 'Wer hat die Academy-Mitgliedschaft?', 'Was kostet die Mitgliedschaft?', 'Bitte suche meine Master Zeignisse vom Master an der FOM', 'Suche mein Masterzeugnis', 'Wo ist mein Bachelorzeugnis?', 'Zeugnisse meine ist'])('retrieves a casually worded question: %s', question => {
     expect(documentPrefetchQuery(question, [])).toBe(question);
@@ -66,5 +66,14 @@ describe('metadata document inventories', () => {
     'Zeig mir alle Rechnungen von Emma',
   ])('leaves scoped searches and content questions with the agent: %s', question => {
     expect(documentInventoryRequest(question)).toBeNull();
+  });
+});
+
+describe('document list questions', () => {
+  it.each(['Welche Dokumente habe ich vom Kindergarten?', 'Welche Unterlagen gibt es zu Emma?', 'Zeig alle Rechnungen von Stadtwerke', 'Was haben wir alles zur Kita?'])('recognises %s', question => {
+    expect(documentListQuestion(question)).toBe(true);
+  });
+  it.each(['Welche Krankenkasse hat Emma?', 'Was steht in der Einkommenserklärung von Hanna?', 'Wann läuft der Kita-Gutschein aus?'])('leaves a single-paper question alone: %s', question => {
+    expect(documentListQuestion(question)).toBe(false);
   });
 });

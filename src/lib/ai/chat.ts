@@ -1,7 +1,7 @@
 import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import { comparableEvidence, normalizeEvidence, normalizeFactText, pastDateStatedAsFuture, readableQuote } from "./document-evidence";
-import { documentInventoryRequest, documentPrefetchQuery, isPureActionRequest } from "./document-intent";
+import { documentInventoryRequest, documentListQuestion, documentPrefetchQuery, isPureActionRequest } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
 import {
@@ -23,6 +23,7 @@ import {
 } from "@/lib/ai/search";
 import {
   TOOL_DEFINITIONS,
+  LIST_TOOL_DEFINITIONS,
   executeTool,
   CONFIRMATION_TOOLS,
   type ToolContext,
@@ -430,6 +431,15 @@ export function unsupportedAnswerNumbers(
     (number) => !supported.has(number),
   );
 }
+
+/**
+ * Reasoning items one forced tool round may produce before it counts as
+ * stuck. A healthy round emits one or two; a degenerate one alternates
+ * reasoning and text dozens of times until the round timeout. Cutting it
+ * early lets the next round (with its corrective nudge) start seconds
+ * sooner.
+ */
+const MAX_FORCED_ROUND_REASONING_ITEMS = 8;
 
 /** Tools a round may call and still end the turn with its verified answer. */
 const DIRECT_ANSWER_ROUND_TOOLS = new Set([
@@ -1259,6 +1269,7 @@ export async function streamAgenticAnswer(
     ? CHAT_VOICE_REASONING_EFFORT
     : CHAT_REASONING_EFFORT;
   const promptCacheKey = voice ? "ordilo-chat-voice" : "ordilo-chat";
+  const toolDefinitions = documentListQuestion(query) ? LIST_TOOL_DEFINITIONS : TOOL_DEFINITIONS;
 
   const input: OpenAI.Responses.ResponseInput = [
     ...truncatedHistory.map((m) => ({
@@ -1381,6 +1392,7 @@ export async function streamAgenticAnswer(
               ? [toolContext.signal, AbortSignal.timeout(ROUND_TIMEOUT_MS)]
               : [AbortSignal.timeout(ROUND_TIMEOUT_MS)],
           );
+          const forcedToolRound = needsDocumentVerification(toolContext) && !toolContext.documentAnswer && pendingConfirmationMessage === null;
           const openaiStream = await client.responses.create({
             model: CHAT_MODEL,
             instructions: systemPrompt,
@@ -1389,9 +1401,9 @@ export async function streamAgenticAnswer(
             // round without tools. This bounds latency without ending in a
             // technical "max rounds" error after successful searches.
             tools: round < MAX_TOOL_ROUNDS ? (toolContext.documentEvidence?.length
-              ? TOOL_DEFINITIONS.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : TOOL_DEFINITIONS) :
-              (needsDocumentVerification(toolContext) && !toolContext.documentAnswer ? TOOL_DEFINITIONS.filter((tool) => tool.name === "answer_from_documents") : []),
-            tool_choice: needsDocumentVerification(toolContext) && !toolContext.documentAnswer && pendingConfirmationMessage === null ? "required" : "auto",
+              ? toolDefinitions.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : toolDefinitions) :
+              (needsDocumentVerification(toolContext) && !toolContext.documentAnswer ? toolDefinitions.filter((tool) => tool.name === "answer_from_documents") : []),
+            tool_choice: forcedToolRound ? "required" : "auto",
             stream: true,
             reasoning: { effort: reasoningEffort },
             // Family documents and conversations must not be retained by
@@ -1437,7 +1449,19 @@ export async function streamAgenticAnswer(
             pendingConfirmationMessage !== null ||
             needsDocumentVerification(toolContext) || Boolean(toolContext.documentAnswer) || requiredCitationSources(toolContext).length > 0;
 
+          let forcedRoundReasoningItems = 0;
           for await (const event of openaiStream) {
+            if (
+              forcedToolRound &&
+              event.type === "response.output_item.added" &&
+              event.item.type === "reasoning" &&
+              ++forcedRoundReasoningItems > MAX_FORCED_ROUND_REASONING_ITEMS
+            ) {
+              // Stuck: leaving the loop closes the stream; with no tool
+              // call the round falls through to the verification nudge.
+              (toolContext.timings ??= []).push({ phase: "stuck_round_cut", ms: Math.round(performance.now() - modelStarted) });
+              break;
+            }
             if (event.type === "error") {
               throw new ChatError(
                 event.message,

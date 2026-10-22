@@ -488,3 +488,41 @@ describe("verified document answer that already carries the final wording", () =
     expect(create).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("forced document rounds that would stall", () => {
+  it("offers no final-wording field when the question lists several papers", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    await events(context(), "Welche Unterlagen habe ich zu Hannahs Bahnding?");
+    const offered = create.mock.calls[0][0].tools.find((tool: { name: string }) => tool.name === "answer_from_documents");
+    expect(offered.parameters.properties).not.toHaveProperty("answer");
+    expect(offered.parameters.properties).toHaveProperty("claims");
+  });
+
+  it("keeps the final-wording field for a question about one paper", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    await events(context());
+    const offered = create.mock.calls[0][0].tools.find((tool: { name: string }) => tool.name === "answer_from_documents");
+    expect(offered.parameters.properties).toHaveProperty("answer");
+  });
+
+  it("cuts a round that circles in reasoning instead of waiting for its timeout", async () => {
+    let drained = 0;
+    const stuck = (async function* () {
+      for (let i = 0; i < 40; i++) {
+        drained++;
+        yield { type: "response.output_item.added", item: { type: "reasoning", id: `rs_${i}` } };
+      }
+      yield { type: "response.completed", response: { output: [] } };
+    })();
+    create.mockResolvedValueOnce(stuck)
+      .mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    const ctx = context();
+    const result = await events(ctx);
+    expect(drained).toBeLessThan(12);
+    expect(ctx.timings?.some((timing) => timing.phase === "stuck_round_cut")).toBe(true);
+    expect(result).toContainEqual({ type: "text", content: `${claim.text} Damit ist das Ticket geklärt.` });
+  });
+});
