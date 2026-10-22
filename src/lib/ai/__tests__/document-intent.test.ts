@@ -4,6 +4,12 @@ describe('document prefetch intent', () => {
   it.each(['Wann läuft Hannahs Bahnding ab?', 'Was sollen wir fürs Buffet einpacken?', 'Was braucht Emma für den Sporttag?', 'Wer hat die Academy-Mitgliedschaft?', 'Was kostet die Mitgliedschaft?', 'Bitte suche meine Master Zeignisse vom Master an der FOM', 'Suche mein Masterzeugnis', 'Wo ist mein Bachelorzeugnis?', 'Zeugnisse meine ist'])('retrieves a casually worded question: %s', question => {
     expect(documentPrefetchQuery(question, [])).toBe(question);
   });
+  it.each(['Welche Krankenkasse hat Emma?', 'Wann läuft der Kita-Gutschein aus?', 'Wie ist meine Steuer-ID?', 'Was steht in der Einkommenserklärung von Hanna?', 'Was stand im Bescheid vom Bezirksamt?'])('retrieves a question about a family paper: %s', question => {
+    expect(documentPrefetchQuery(question, [])).toBe(question);
+  });
+  it.each(['Wie ist die Telefonnummer vom Kinderarzt?', 'Wie lautet das Passwort für Netflix?', 'Welche Fristen laufen bald ab?', 'Was muss ich diese Woche erledigen?'])('leaves contact, credential and task questions to their tools: %s', question => {
+    expect(documentPrefetchQuery(question, [])).toBeNull();
+  });
   it.each(['Welche Termine stehen diese Woche an?', 'Was steht morgen im Kalender?', 'Wann ist mein Zahnarzttermin?', 'Was ist das Datum meines Termins?'])('leaves calendar-only requests to the calendar: %s', question => {
     expect(documentPrefetchQuery(question, [])).toBeNull();
   });

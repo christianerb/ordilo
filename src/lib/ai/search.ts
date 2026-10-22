@@ -861,58 +861,50 @@ export async function graphSearch(
   query: string,
   familyId: string,
 ): Promise<SearchResult[]> {
-  // 1. Fetch family members to detect who the query is about — by name,
-  //    by possessive, or by relationship ("meiner Tochter").
+  // Independent lookups start together. The LLM query expansion (synonyms
+  // for the traversal) rarely beats the rest of the search, so it never
+  // holds it up: it is used only if it has arrived by the time the base
+  // traversal is done, which then costs one more cheap traversal call.
+  let expandedTerms: string[] | null = null;
+  void Promise.race([
+    expandQuery(query),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), EXPANSION_BUDGET_MS)),
+  ])
+    .then((expanded) => {
+      expandedTerms = expanded?.expansions ?? [];
+    })
+    .catch(() => {
+      // Expansion failure is non-critical — continue without synonyms.
+      expandedTerms = [];
+    });
+  // Warm the shared query embedding while the members load.
+  void getQueryEmbedding(query).catch(() => undefined);
+
   const members = await fetchMembers(serverClient, familyId);
   const mentionedMembers = findMentionedPeople(query, members);
   const taskQuery = isTaskQuery(query);
 
-  // 1b. Query expansion — generate synonyms for better graph matching.
-  //     "Kita" → ["Kindergarten", "Krippe", "Tagesstaette"] etc.
-  //     Time-boxed: this is an LLM call, and recall bonus must never cost
-  //     more than EXPANSION_BUDGET_MS of user-visible latency. On timeout
-  //     the search simply runs with the original terms.
-  let expandedTerms: string[] = [];
-  try {
-    const expanded = await Promise.race([
-      expandQuery(query),
-      new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), EXPANSION_BUDGET_MS),
-      ),
-    ]);
-    if (expanded) expandedTerms = expanded.expansions;
-  } catch {
-    // Graceful degradation — search with original query only
-  }
-
   const results: SearchResult[] = [];
 
-  // 2. Graph traversal: find documents connected to entities mentioned in the query.
-  //    Uses expanded terms for broader keyword matching + semantic label
-  //    embeddings. The mentioned members go in by their canonical name:
-  //    "Hannas Zeugnis" leaves the word "hannas" in the query, which no
-  //    knowledge node is called.
-  const traversalResults = await graphTraversalSearch(
-    serverClient,
-    query,
-    familyId,
-    [...expandedTerms, ...mentionedMembers],
-  );
+  const [baseTraversal, personResults] = await Promise.all([
+    graphTraversalSearch(serverClient, query, familyId, mentionedMembers),
+    mentionedMembers.length > 0
+      ? searchByPerson(serverClient, familyId, mentionedMembers)
+      : Promise.resolve({ results: [] as SearchResult[], docIds: [] as string[] }),
+  ]);
+
+  // Graph traversal (knowledge_nodes + knowledge_edges). The expanded run
+  // includes the base terms, so it replaces the base result.
+  const lateTerms: string[] = expandedTerms ?? [];
+  const traversalResults = lateTerms.length > 0
+    ? await graphTraversalSearch(serverClient, query, familyId, [...lateTerms, ...mentionedMembers])
+    : baseTraversal;
   results.push(...traversalResults);
 
-  // 3. Person-based search: find documents linked to mentioned persons.
-  let personDocIds: string[] = [];
-  if (mentionedMembers.length > 0) {
-    const personResults = await searchByPerson(
-      serverClient,
-      familyId,
-      mentionedMembers,
-    );
-    results.push(...personResults.results);
-    personDocIds = personResults.docIds;
-  }
+  // Person mentioned: documents linked to that person via extracted_entities.
+  results.push(...personResults.results);
+  const personDocIds = personResults.docIds;
 
-  // 3. Task-based search.
   if (taskQuery) {
     const taskResults = await searchTasks(
       serverClient,
@@ -922,7 +914,6 @@ export async function graphSearch(
     results.push(...taskResults);
   }
 
-  // 5. Deduplicate by document_id (keep highest score per document).
   return deduplicateByDocumentId(results);
 }
 
@@ -952,14 +943,28 @@ const GRAPH_STOP_WORDS = new Set([
  *
  * @returns An array of keywords (unigrams + bigrams), lowercased, deduplicated.
  */
-function extractKeywords(query: string): string[] {
-  const tokens = query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((w) => w.replace(/[^\wäöüß]/g, "").trim())
-    .filter((w) => w.length > 2 && !GRAPH_STOP_WORDS.has(w));
-
+export function extractKeywords(query: string): string[] {
+  const tokens: string[] = [];
   const keywords = new Set<string>();
+
+  for (const word of query.toLowerCase().split(/\s+/)) {
+    // Keep letters and digits of any script ("\w" alone is ASCII-only)
+    // and hyphens, so a compound like "Kita-Gutschein" is split into its
+    // parts instead of being glued into "kitagutschein", which no label
+    // contains.
+    const cleaned = word
+      .replace(/[^\p{L}\p{N}-]/gu, "")
+      .replace(/^-+|-+$/g, "");
+    if (!cleaned) continue;
+
+    const parts = cleaned
+      .split("-")
+      .filter((p) => p.length > 2 && !GRAPH_STOP_WORDS.has(p));
+    tokens.push(...parts);
+
+    // The compound itself also matches labels that spell it the same way.
+    if (cleaned.includes("-") && parts.length > 0) keywords.add(cleaned);
+  }
 
   // Unigrams
   for (const t of tokens) keywords.add(t);
@@ -977,12 +982,14 @@ function extractKeywords(query: string): string[] {
  * Traverse the knowledge graph to find documents connected to entities
  * mentioned in the query.
  *
- * SOTA strategy:
+ * Strategy:
  *   1. Extract significant keywords from the query (filter stop words).
- *   2. Find knowledge_nodes whose label matches any keyword (ILIKE + fuzzy).
- *   3. Multi-hop traversal: follow edges up to MAX_HOPS deep, so queries
- *      like "Alle Dokumente von Emmas Arzt" can resolve
- *      Person → Organization → Document.
+ *   2. One `graph_traversal` RPC returns the seed nodes (label ILIKE
+ *      keyword, or label embedding close to the query) together with every
+ *      edge within MAX_HOPS of them — a single round trip instead of one
+ *      request per hop.
+ *   3. Multi-hop traversal in memory, so queries like "Alle Dokumente von
+ *      Emmas Arzt" can resolve Person → Organization → Document.
  *   4. Edge confidence and confirmed status factor into scoring.
  *   5. Map document nodes back to confirmed documents.
  *
@@ -994,6 +1001,38 @@ function extractKeywords(query: string): string[] {
 
 /** Maximum graph traversal depth (hops from matched nodes). */
 const MAX_HOPS = 2;
+
+/**
+ * Minimum label-embedding similarity for a semantic seed node. Calibrated
+ * on the live graph with text-embedding-3-large at 1536 dimensions: true
+ * matches ("Kindergarten" → "Hamburger Kita", "Krankenkasse" → "…für die
+ * Krankenversicherung") score 0.49–0.57, unrelated labels mostly stay
+ * below 0.45. The former 0.7 only ever let near-exact names through,
+ * which the ILIKE match already finds.
+ */
+export const GRAPH_SEMANTIC_THRESHOLD = 0.48;
+
+/** Seed score of a node found only through its label embedding. */
+export function semanticSeedScore(similarity: number): number {
+  // 0.48 → 0.55 … 0.75+ → 0.85: below an exact name, comparable to a
+  // substring hit once the embedding is clearly close.
+  return Math.min(0.85, Math.max(0, 0.55 + (similarity - GRAPH_SEMANTIC_THRESHOLD) * 1.1));
+}
+
+type GraphNode = { id: string; type: string; label: string; document_id?: string | null };
+type GraphEdge = {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  source_document_id: string | null;
+  confidence: number | null;
+  confirmed: boolean;
+};
+
+/** ILIKE patterns for the keywords: bigrams match a whole label, unigrams any substring. */
+export function graphLabelPatterns(keywords: string[]): string[] {
+  return keywords.map((kw) => (kw.includes(" ") ? kw : `%${kw}%`));
+}
 
 async function graphTraversalSearch(
   serverClient: ServerClient,
@@ -1011,241 +1050,36 @@ async function graphTraversalSearch(
 
   if (allKeywords.length === 0) return [];
 
-  // 2. Find knowledge_nodes whose label matches any keyword.
-  //    Use ILIKE for lexical matching + cosine similarity on label_embedding
-  //    for semantic matching (catches "Kita" → "Kindergarten").
-  const orFilters: string[] = [];
-  for (const kw of allKeywords) {
-    if (kw.includes(" ")) {
-      orFilters.push(`label.ilike.${kw}`);
-    } else {
-      orFilters.push(`label.ilike.%${kw}%`);
-    }
-  }
-
-  // Lexical search via ILIKE
-  const { data: ilikeNodes, error: nodesError } = await serverClient
-    .from("knowledge_nodes")
-    .select("id, type, label")
-    .eq("family_id", familyId)
-    .or(orFilters.join(","));
-
-  if (nodesError) return [];
-
-  // Semantic search via label_embedding cosine similarity
-  // (only if label_embedding column has data)
-  let semanticNodes: Array<{ id: string; type: string; label: string }> = [];
+  // The query embedding is shared with the hybrid search (cached), so the
+  // semantic seeds cost no extra API call in the chat path.
+  let vectorStr: string | null = null;
   try {
-    const queryEmbedding = await getQueryEmbedding(query);
-    const vectorStr = embeddingToVectorString(queryEmbedding);
-    const { data: semNodes } = await serverClient
-      .rpc("semantic_node_search", {
-        p_query_embedding: vectorStr,
-        p_family_id: familyId,
-        p_limit: 10,
-        p_threshold: 0.7,
-      });
-    if (semNodes && Array.isArray(semNodes)) {
-      semanticNodes = semNodes.map((n: Record<string, unknown>) => ({
-        id: n.id as string,
-        type: n.type as string,
-        label: n.label as string,
-      }));
-    }
+    vectorStr = embeddingToVectorString(await getQueryEmbedding(query));
   } catch {
-    // label_embedding column may not exist or RPC not available — skip
+    // Without an embedding the traversal still runs on the lexical seeds.
   }
 
-  // Merge ILIKE + semantic results (deduplicate by node id)
-  const nodeMap = new Map<string, { id: string; type: string; label: string }>();
-  for (const node of ilikeNodes ?? []) {
-    nodeMap.set(node.id, node);
-  }
-  for (const node of semanticNodes) {
-    if (!nodeMap.has(node.id)) {
-      nodeMap.set(node.id, node);
-    }
-  }
-
-  const matchingNodes = [...nodeMap.values()];
-  if (matchingNodes.length === 0) return [];
-
-  // Score each node by match quality: exact > bigram > unigram > fuzzy prefix
-  const nodeScores = new Map<string, number>();
-  for (const node of matchingNodes) {
-    const labelLower = node.label.toLowerCase();
-    let bestScore = 0;
-
-    for (const kw of allKeywords) {
-      if (labelLower === kw) {
-        bestScore = Math.max(bestScore, 1.0);
-      } else if (kw.includes(" ") && labelLower.includes(kw)) {
-        bestScore = Math.max(bestScore, 0.85);
-      } else if (labelLower.includes(kw)) {
-        bestScore = Math.max(bestScore, 0.65);
-      }
-    }
-
-    // Fuzzy prefix bonus: catch near-matches like "Kita" vs "Kitta"
-    for (const kw of allKeywords) {
-      if (kw.includes(" ")) continue;
-      if (labelLower === kw || labelLower.includes(kw)) continue;
-      if (
-        labelLower.length <= kw.length + 3 &&
-        labelLower.length >= kw.length - 1
-      ) {
-        const prefix = labelLower.slice(0, Math.min(3, kw.length));
-        if (kw.startsWith(prefix)) {
-          bestScore = Math.max(bestScore, 0.5);
-        }
-      }
-    }
-
-    if (node.type === "person") bestScore *= 1.1;
-    if (node.type === "organization") bestScore *= 1.05;
-
-    nodeScores.set(node.id, Math.min(bestScore, 1.0));
-  }
-
-  // 3. Multi-hop traversal with edge-confidence scoring.
-  const visitedNodeIds = new Set<string>(matchingNodes.map((n) => n.id));
-  const allDiscoveredNodeIds = new Set<string>(matchingNodes.map((n) => n.id));
-  const traversalNodeMap = new Map(matchingNodes.map((n) => [n.id, n]));
-
-  const documentIds = new Set<string>();
-  const docBestNodeScore = new Map<string, number>();
-  const docConnectionCount = new Map<string, number>();
-  const docBestNode = new Map<string, { type: string; label: string }>();
-
-  let currentHopNodeIds = [...matchingNodes.map((n) => n.id)];
-
-  for (let hop = 0; hop < MAX_HOPS; hop++) {
-    if (currentHopNodeIds.length === 0) break;
-
-    const [incomingResult, outgoingResult] = await Promise.all([
-      serverClient
-        .from("knowledge_edges")
-        .select("source_node_id, target_node_id, relation_type, source_document_id, confidence, confirmed")
-        .eq("family_id", familyId)
-        .in("target_node_id", currentHopNodeIds),
-      serverClient
-        .from("knowledge_edges")
-        .select("source_node_id, target_node_id, relation_type, source_document_id, confidence, confirmed")
-        .eq("family_id", familyId)
-        .in("source_node_id", currentHopNodeIds),
-    ]);
-
-    if (incomingResult.error || outgoingResult.error) break;
-
-    const allEdges = [
-      ...(incomingResult.data ?? []),
-      ...(outgoingResult.data ?? []),
-    ];
-
-    if (allEdges.length === 0) break;
-
-    const nextHopNodeIds = new Set<string>();
-
-    for (const edge of allEdges) {
-      const sourceNodeId = edge.source_node_id;
-      const targetNodeId = edge.target_node_id;
-
-      // Determine the "from" node (already visited) and "other" node
-      const fromNodeId = visitedNodeIds.has(sourceNodeId)
-        ? sourceNodeId
-        : visitedNodeIds.has(targetNodeId)
-          ? targetNodeId
-          : null;
-
-      if (!fromNodeId) continue;
-
-      const otherNodeId = fromNodeId === sourceNodeId ? targetNodeId : sourceNodeId;
-
-      // Edge confidence factor: confirmed edges get full weight
-      const edgeConfidence = edge.confidence ?? 0.5;
-      const confirmedFactor = edge.confirmed ? 1.0 : 0.7;
-
-      // Hop decay: each hop reduces the propagated score
-      const hopDecay = Math.pow(0.7, hop);
-
-      const sourceNodeScore = nodeScores.get(fromNodeId) ?? 0.5;
-      const propagatedScore = sourceNodeScore * hopDecay * confirmedFactor * edgeConfidence;
-
-      // Collect document_ids from edges
-      if (edge.source_document_id) {
-        documentIds.add(edge.source_document_id);
-        const current = docBestNodeScore.get(edge.source_document_id) ?? 0;
-        if (propagatedScore > current) {
-          docBestNodeScore.set(edge.source_document_id, propagatedScore);
-          const fromNode = traversalNodeMap.get(fromNodeId);
-          if (fromNode) {
-            docBestNode.set(edge.source_document_id, { type: fromNode.type, label: fromNode.label });
-          }
-        }
-        docConnectionCount.set(
-          edge.source_document_id,
-          (docConnectionCount.get(edge.source_document_id) ?? 0) + 1,
-        );
-      }
-
-      // Discover new nodes for next hop
-      if (!visitedNodeIds.has(otherNodeId)) {
-        nextHopNodeIds.add(otherNodeId);
-        allDiscoveredNodeIds.add(otherNodeId);
-        if (!nodeScores.has(otherNodeId)) {
-          nodeScores.set(otherNodeId, propagatedScore);
-        }
-      }
-    }
-
-    // Fetch node details for newly discovered nodes
-    const newNodeIds = [...nextHopNodeIds];
-    if (newNodeIds.length > 0) {
-      const { data: newNodes } = await serverClient
-        .from("knowledge_nodes")
-        .select("id, type, label")
-        .eq("family_id", familyId)
-        .in("id", newNodeIds);
-
-      for (const node of newNodes ?? []) {
-        traversalNodeMap.set(node.id, node);
-        visitedNodeIds.add(node.id);
-      }
-    }
-
-    currentHopNodeIds = newNodeIds;
-  }
-
-  // 4. Look up document nodes to get document_ids from properties_json.
-  const documentNodeIds = [...allDiscoveredNodeIds].filter((id) => {
-    const node = traversalNodeMap.get(id);
-    return node && node.type === "document";
+  // 2. Seeds + neighbourhood in one round trip.
+  const { data: graph, error } = await serverClient.rpc("graph_traversal", {
+    p_family_id: familyId,
+    p_patterns: graphLabelPatterns(allKeywords),
+    p_query_embedding: vectorStr,
+    p_semantic_threshold: GRAPH_SEMANTIC_THRESHOLD,
+    p_semantic_limit: 8,
+    p_max_hops: MAX_HOPS,
   });
 
-  if (documentNodeIds.length > 0) {
-    const { data: docNodes } = await serverClient
-      .from("knowledge_nodes")
-      .select("id, properties_json")
-      .eq("family_id", familyId)
-      .eq("type", "document")
-      .in("id", documentNodeIds);
-
-    for (const node of docNodes ?? []) {
-      const docId = node.properties_json?.document_id;
-      if (docId && typeof docId === "string") {
-        documentIds.add(docId);
-        const score = nodeScores.get(node.id) ?? 0.5;
-        const current = docBestNodeScore.get(docId) ?? 0;
-        if (score > current) {
-          docBestNodeScore.set(docId, score);
-          const sourceNode = traversalNodeMap.get(node.id);
-          if (sourceNode) {
-            docBestNode.set(docId, { type: sourceNode.type, label: sourceNode.label });
-          }
-        }
-      }
-    }
+  // The graph is a supplementary source: an unexpected payload (e.g. the
+  // migration not applied yet) yields no graph hits, never a failed search.
+  if (
+    error || !graph || typeof graph !== "object"
+    || !Array.isArray(graph.seeds) || !Array.isArray(graph.edges) || !Array.isArray(graph.nodes)
+  ) {
+    return [];
   }
+
+  const { documentIds, docBestNodeScore, docConnectionCount, docBestNode } =
+    scoreGraphNeighbourhood(graph, allKeywords);
 
   if (documentIds.size === 0) return [];
 
@@ -1283,6 +1117,163 @@ async function graphTraversalSearch(
   }
 
   return results;
+}
+
+/**
+ * Score a `graph_traversal` neighbourhood: seed nodes by match quality,
+ * then hop-by-hop propagation along the edges. Returns document ids with
+ * their best score, connection count and the node that led there; the
+ * caller maps them to confirmed documents.
+ */
+export function scoreGraphNeighbourhood(
+  graph: { seeds: { id: string; similarity: number | null }[]; edges: GraphEdge[]; nodes: GraphNode[] },
+  allKeywords: string[],
+): {
+  documentIds: Set<string>;
+  docBestNodeScore: Map<string, number>;
+  docConnectionCount: Map<string, number>;
+  docBestNode: Map<string, { type: string; label: string }>;
+} {
+  const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
+  const nodeScores = new Map<string, number>();
+
+  // Score each seed by match quality: exact > bigram > unigram > fuzzy
+  // prefix; a purely semantic seed by its embedding similarity.
+  for (const seed of graph.seeds) {
+    const node = nodesById.get(seed.id);
+    if (!node) continue;
+    const labelLower = node.label.toLowerCase();
+    let bestScore = 0;
+
+    for (const kw of allKeywords) {
+      if (labelLower === kw) {
+        bestScore = Math.max(bestScore, 1.0);
+      } else if (kw.includes(" ") && labelLower.includes(kw)) {
+        bestScore = Math.max(bestScore, 0.85);
+      } else if (labelLower.includes(kw)) {
+        bestScore = Math.max(bestScore, 0.65);
+      }
+    }
+
+    // Fuzzy prefix bonus: catch near-matches like "Kita" vs "Kitta"
+    for (const kw of allKeywords) {
+      if (kw.includes(" ")) continue;
+      if (labelLower === kw || labelLower.includes(kw)) continue;
+      if (
+        labelLower.length <= kw.length + 3 &&
+        labelLower.length >= kw.length - 1
+      ) {
+        const prefix = labelLower.slice(0, Math.min(3, kw.length));
+        if (kw.startsWith(prefix)) {
+          bestScore = Math.max(bestScore, 0.5);
+        }
+      }
+    }
+
+    // A node found only through its label embedding has no keyword hit;
+    // without this it scored 0 and everything it led to was worthless.
+    if (seed.similarity !== null && seed.similarity !== undefined) {
+      bestScore = Math.max(bestScore, semanticSeedScore(seed.similarity));
+    }
+
+    if (node.type === "person") bestScore *= 1.1;
+    if (node.type === "organization") bestScore *= 1.05;
+
+    nodeScores.set(node.id, Math.min(bestScore, 1.0));
+  }
+
+  const edgesByNode = new Map<string, GraphEdge[]>();
+  for (const edge of graph.edges) {
+    for (const nodeId of [edge.source_node_id, edge.target_node_id]) {
+      const list = edgesByNode.get(nodeId);
+      if (list) list.push(edge);
+      else edgesByNode.set(nodeId, [edge]);
+    }
+  }
+
+  // 3. Multi-hop traversal with edge-confidence scoring.
+  const visitedNodeIds = new Set<string>(nodeScores.keys());
+  const documentIds = new Set<string>();
+  const docBestNodeScore = new Map<string, number>();
+  const docConnectionCount = new Map<string, number>();
+  const docBestNode = new Map<string, { type: string; label: string }>();
+
+  const credit = (docId: string, score: number, viaNodeId: string) => {
+    documentIds.add(docId);
+    if (score > (docBestNodeScore.get(docId) ?? 0)) {
+      docBestNodeScore.set(docId, score);
+      const via = nodesById.get(viaNodeId);
+      if (via) docBestNode.set(docId, { type: via.type, label: via.label });
+    }
+  };
+
+  let currentHopNodeIds = [...visitedNodeIds];
+  // Each edge counts once: the edge that led to a node must not be
+  // counted again when the walk continues from that node.
+  const walkedEdgeIds = new Set<string>();
+
+  for (let hop = 0; hop < MAX_HOPS; hop++) {
+    if (currentHopNodeIds.length === 0) break;
+
+    const hopEdges = new Map<string, GraphEdge>();
+    for (const nodeId of currentHopNodeIds) {
+      for (const edge of edgesByNode.get(nodeId) ?? []) {
+        if (!walkedEdgeIds.has(edge.id)) hopEdges.set(edge.id, edge);
+      }
+    }
+    for (const edgeId of hopEdges.keys()) walkedEdgeIds.add(edgeId);
+    if (hopEdges.size === 0) break;
+
+    const nextHopNodeIds = new Set<string>();
+
+    for (const edge of hopEdges.values()) {
+      const fromNodeId = visitedNodeIds.has(edge.source_node_id)
+        ? edge.source_node_id
+        : visitedNodeIds.has(edge.target_node_id)
+          ? edge.target_node_id
+          : null;
+      if (!fromNodeId) continue;
+
+      const otherNodeId =
+        fromNodeId === edge.source_node_id ? edge.target_node_id : edge.source_node_id;
+
+      // Edge confidence factor: confirmed edges get full weight
+      const edgeConfidence = edge.confidence ?? 0.5;
+      const confirmedFactor = edge.confirmed ? 1.0 : 0.7;
+      // Hop decay: each hop reduces the propagated score
+      const hopDecay = Math.pow(0.7, hop);
+
+      const sourceNodeScore = nodeScores.get(fromNodeId) ?? 0.5;
+      const propagatedScore = sourceNodeScore * hopDecay * confirmedFactor * edgeConfidence;
+
+      if (edge.source_document_id) {
+        credit(edge.source_document_id, propagatedScore, fromNodeId);
+        docConnectionCount.set(
+          edge.source_document_id,
+          (docConnectionCount.get(edge.source_document_id) ?? 0) + 1,
+        );
+      }
+
+      if (!visitedNodeIds.has(otherNodeId)) {
+        nextHopNodeIds.add(otherNodeId);
+        if (!nodeScores.has(otherNodeId)) {
+          nodeScores.set(otherNodeId, propagatedScore);
+        }
+      }
+    }
+
+    for (const nodeId of nextHopNodeIds) visitedNodeIds.add(nodeId);
+    currentHopNodeIds = [...nextHopNodeIds];
+  }
+
+  // 4. Document nodes reached (or matched) directly count with their own score.
+  for (const nodeId of visitedNodeIds) {
+    const node = nodesById.get(nodeId);
+    if (node?.type !== "document" || !node.document_id) continue;
+    credit(node.document_id, nodeScores.get(nodeId) ?? 0.5, nodeId);
+  }
+
+  return { documentIds, docBestNodeScore, docConnectionCount, docBestNode };
 }
 
 // ---------------------------------------------------------------------------

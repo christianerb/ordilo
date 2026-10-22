@@ -171,7 +171,8 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         } },
         state: { type: "string", enum: ["answered", "partial", "conflict", "not_found"] },
         gap: { type: "string", description: "Optional: konkrete Lücke oder Widerspruch, höchstens eine gezielte Rückfrage. Keine neuen Fakten." },
-      }, required: ["claims", "state"] },
+        answer: { type: "string", description: "Deine fertige Endantwort an die Familie. Fülle sie im Normalfall IMMER aus — immer dann, wenn die Nutzerfrage nur nach dem fragt, was in den Unterlagen steht, auch bei not_found oder partial. Ist alles belegt, endet das Gespräch damit ohne weiteren Schritt; schlägt die Prüfung fehl, bekommst du die Fehlermeldung wie sonst auch. Nur leer lassen, wenn die Frage zusätzlich etwas anderes verlangt (Aufgabe anlegen, Websuche, Kalender) oder du danach bewusst noch eine weitere Unterlage lesen willst. Ordilo-Ton, Du-Form, zwei bis drei verbundene Sätze: der Fakt mit der Unterlage beim Namen im ersten, ein kurzer menschlicher Schlusston danach. Natürlich formuliert statt Claim-Wiederholung: Pronomen statt wiederholter voller Namen. Jede Zahl, jedes Datum, jede Hervorhebung und jede Person der Claims muss vorkommen; nichts, was nicht in Claims oder gelesenen Seiten steht, keine Berechnung. Ein Datum vor heute steht in der Vergangenheit (\"ist am 31.07.2026 abgelaufen\"). Bei not_found oder partial: sag klar und freundlich, was fehlt." },
+      }, required: ["claims", "state", "answer"] },
     },
   },
   {
@@ -1163,7 +1164,7 @@ export async function executeTool(
       return JSON.stringify({ pages: evidence, message: evidence.length ? undefined : "Hier ist kein lesbarer Originaltext verfügbar. Prüfe eine andere Unterlage oder benenne die Lücke." });
     }
     case "answer_from_documents": {
-      const answer = verifyDocumentAnswer(args, ctx.documentEvidence ?? [], ctx.preloadedFamilyMembers?.map((member) => member.name) ?? [], ctx.documentQuestion);
+      const answer = verifyDocumentAnswer(args, ctx.documentEvidence ?? [], ctx.preloadedFamilyMembers?.map((member) => member.name) ?? [], ctx.documentQuestion, new Date());
       if ("error" in answer) return JSON.stringify(answer);
       const relevantIds = ctx.relevantDocumentIds;
       if (relevantIds && answer.sources.some(source => !relevantIds.has(source.document_id))) {
@@ -1544,6 +1545,22 @@ async function executeSearchDocuments(
   // person links are candidates, not proof that the requested document exists.
   const contentSources = new Set(["semantic", "lexical", "fact", "hybrid"]);
   const candidates = combineSearchResults(relevantContent, graph);
+  // The top candidates are almost always the top results after the
+  // re-rank too: start reading their pages now, while the re-rank runs.
+  // A document the re-rank promotes is read afterwards; one it drops is
+  // simply never used.
+  const pageReads = new Map<string, Promise<DocumentEvidence[]>>();
+  const readPages = (documentId: string) => {
+    let read = pageReads.get(documentId);
+    if (!read) {
+      read = readDocumentEvidence(ctx.client, ctx.familyId, documentId, query);
+      // Settled later via allSettled; never an unhandled rejection meanwhile.
+      read.catch(() => undefined);
+      pageReads.set(documentId, read);
+    }
+    return read;
+  };
+  for (const candidate of candidates.slice(0, 3)) readPages(candidate.document_id);
   const rerankStarted = performance.now();
   const reranked = await rerankResults(query, candidates.map(source => ({
     document_id: source.document_id,
@@ -1577,7 +1594,7 @@ async function executeSearchDocuments(
   // in the next model round. Failed reads remain explicit, never invented.
   const readStarted = performance.now();
   const reads = await Promise.allSettled(sources.slice(0, 3).map((source) =>
-    readDocumentEvidence(ctx.client, ctx.familyId, source.document_id, query)));
+    readPages(source.document_id)));
   const evidence = reads.flatMap((read) => read.status === "fulfilled" ? read.value : []);
   rememberEvidence(ctx, evidence);
   ctx.timings?.push({ phase: "read_pages", ms: Math.round(performance.now() - readStarted) });

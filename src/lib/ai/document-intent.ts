@@ -1,4 +1,8 @@
-const topic = /ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|zeugnis|zeignis|zertifikat|abschluss|\bmaster\b|\bbachelor\b|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
+// Words that only ever point at a family paper. Kept specific on purpose:
+// a prefetch commits the turn to a verified document answer, so generic
+// words that also open contact, card or task questions ("Nummer",
+// "Passwort", "Frist") stay out.
+const topic = /krankenkasse|krankenversicherung|versichert|police|gutschein|bescheid|bewilligung|kita\b|kindergarten|steuer|finanzamt|lohnabrechnung|gehaltsabrechnung|einkommen|erklärung|antrag|formular|kontoauszug|\biban\b|versicherungsnummer|kundennummer|vertragsnummer|mitgliedsnummer|aktenzeichen|ausweis|reisepass|führerschein|zulassung|mietvertrag|nebenkosten|garantie|quittung|kassenbon|arztbrief|impfpass|mahnung|\bbrief\b|schreiben\b|steht (?:in|auf|im)\b|ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|zeugnis|zeignis|zertifikat|abschluss|\bmaster\b|\bbachelor\b|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
 
 // Imperative forms with and without the trailing -e ("leg mir …", "lege mir …").
 // The optional trailing \w* keeps inflected commands ("Verschlagworte …",
