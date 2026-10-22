@@ -252,6 +252,12 @@ KI-Dokumentenaufnahme“ ist damit zu stark. Belastbarer ist:
 > langfristiges, belegbares Familiendokumenten-Archiv mit KI-Antworten aus
 > den Originalunterlagen.
 
+**Update 22.10.2026:** Auch diese Aussage hält nicht mehr. HENOS
+(henos-ai.com) bietet Haushaltsunterlagen pro Familienmitglied, Fristen und
+Fragen mit Quellenangabe; Dokufox ist ähnlich nah. Details und
+Feature-Matrix:
+[`2026-10-22-wettbewerb-ki-dokumente.md`](./2026-10-22-wettbewerb-ki-dokumente.md).
+
 ### Trustworthy als Preis- und Packaging-Vergleich
 
 Trustworthy begrenzt vor allem Familienmitglieder und KI-Antworten:

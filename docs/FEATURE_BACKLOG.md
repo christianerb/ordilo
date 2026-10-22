@@ -128,3 +128,70 @@ gibt es).
 **Was es kostet.** Zwei Spalten, beim Schreiben mitfüllen, und dann kann
 die Liste dasselbe wie der Kalender: fremde Neuzugänge freundlich melden,
 ohne die eigenen zu doppeln.
+
+---
+
+## Aus dem Wettbewerb
+
+Herkunft und Quellen:
+[`brainstorms/2026-10-22-wettbewerb-ki-dokumente.md`](./brainstorms/2026-10-22-wettbewerb-ki-dokumente.md).
+
+### Erinnerungen lange vor einer Frist
+
+**Was fehlt.** Der Tages-Digest (`src/lib/digest.ts`) schaut nur
+`DIGEST_HORIZON_DAYS = 7` Tage voraus. Kündigungsfristen, Vertragsenden
+oder ein ablaufender Ausweis brauchen Wochen bis Monate Vorlauf. HENOS
+erinnert fest 90, 30 und 7 Tage vorher, Dokufox erinnert bei
+Kündigungsfristen per E-Mail.
+
+**Warum es heute geht.** Wer eine Frist kennt, kann eine Aufgabe mit
+früherem Datum anlegen. Das ist aber Handarbeit, genau die, die Ordilo
+abnehmen soll.
+
+**Was es kostet.** Vorlauf-Stufen pro Fristtyp (z. B. Kündigung 90/30/7,
+Rechnung 7/1), Speicherung der bereits gesendeten Stufen, Ausspielung über
+Digest und Push. Copy: „In 30 Tagen endet die Kündigungsfrist für …".
+
+---
+
+### Vorsorge-Dokumente erstellen
+
+**Was fehlt.** Vorsorgevollmacht, Patientenverfügung und Testament mit
+geführten Fragen in Alltagssprache als PDF-Entwurf erstellen. HENOS bietet
+das ohne Anmeldung an, als Einstieg ins Produkt.
+
+**Warum es heute geht.** Ordilo verwaltet vorhandene Dokumente; dass
+etwas fehlt, sieht die Familie bisher nicht.
+
+**Was es kostet.** Rechtlich geprüfte Vorlagen (Haftung, Formvorschriften:
+ein Testament muss handschriftlich oder notariell sein, ein PDF ist nur
+Entwurf), Fragebogen-Flow, PDF-Erzeugung, danach als Dokument im
+Familienarchiv ablegen. Dazu passend: „Was fehlt euch noch?" als Hinweis im
+Archiv.
+
+---
+
+### Fixkosten aus Verträgen
+
+**Was fehlt.** Eine Übersicht der monatlichen Fixkosten aus erkannten
+Verträgen (Strom, Handy, Versicherungen). Dokufox wirbt damit.
+
+**Warum es heute geht.** Beträge und Laufzeiten werden schon extrahiert;
+es fehlt nur die Sicht darauf.
+
+**Was es kostet.** Normalisierung auf Monatsbeträge, eine Liste im Archiv,
+Verknüpfung mit Kündigungsfristen (siehe oben).
+
+---
+
+### Offline-Zugriff auf ausgewählte Dokumente
+
+**Was fehlt.** Ausgewählte Dokumente (Ausweis, Versicherungskarte,
+Notfall-Infos) ohne Netz öffnen, geschützt durch PIN oder Face ID. HENOS
+bietet das als PWA.
+
+**Warum es heute geht.** Die meisten Fragen entstehen mit Netz.
+
+**Was es kostet.** In der nativen App: verschlüsselter lokaler Speicher
+(Secure Store / verschlüsselte Dateien), „Offline verfügbar"-Schalter am
+Dokument, biometrische Sperre (steht schon in `PRODUCT.md` als optional).
