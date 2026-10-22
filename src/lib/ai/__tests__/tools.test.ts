@@ -2556,6 +2556,21 @@ describe("query_calendar_events", () => {
     expect(result.events[0].titel).toBe("Zahnarzt Emma");
   });
 
+  it("resolves the person by name, typo or role, never by substring", async () => {
+    const members = [
+      { id: "m-anna", name: "Anna", role: "Oma" },
+      { id: "m-hannah", name: "Hannah", role: "Tochter" },
+    ];
+    for (const [person, memberId] of [["Anna", "m-anna"], ["Hanna", "m-hannah"], ["Hana", "m-hannah"], ["meine Tochter", "m-hannah"]]) {
+      const ctx = makeCalendarQueryCtx({ events: [DENTIST_EVENT], members, attendees: [] });
+      await executeTool("query_calendar_events", { person, direction: "all" }, ctx);
+      const attendeeQuery = (ctx.client.from as ReturnType<typeof vi.fn>).mock.results
+        .find((result) => result.value?.select?.mock?.calls?.[0]?.[0] === "event_id")
+        ?.value;
+      expect(attendeeQuery.in).toHaveBeenCalledWith("family_member_id", [memberId]);
+    }
+  });
+
   it("applies the attendee ids to the calendar query before limiting results", async () => {
     const ctx = makeCalendarQueryCtx({
       events: [DENTIST_EVENT],

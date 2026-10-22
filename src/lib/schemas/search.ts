@@ -1,5 +1,11 @@
 import { z } from "zod";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
+import {
+  GRAPH_STOP_WORDS,
+  isTypoOf,
+  possessiveVariants,
+  wordsOf,
+} from "@/lib/ai/graph-match";
 
 /**
  * Zod schema for the POST /api/search API route.
@@ -281,11 +287,54 @@ export function findMentionedMembers(
       !claimedPossessives.has(`${name.trim().toLowerCase()}s`),
   );
 
+  const byTypo = findMisspelledMembers(
+    query,
+    named.filter((name) => !asThemselves.includes(name) && !byPossessive.includes(name)),
+    [...asThemselves, ...byPossessive],
+  );
+
   // Keep the caller's order rather than exact-matches-first: callers pass
   // these on as names, not as a ranking.
   return named.filter(
-    (name) => asThemselves.includes(name) || byPossessive.includes(name),
+    (name) =>
+      asThemselves.includes(name) ||
+      byPossessive.includes(name) ||
+      byTypo.includes(name),
   );
+}
+
+/** Relationship words are never misspelled names ("Oma" is not "Ole"). */
+const RELATIONSHIP_WORDS = new Set<string>();
+
+/**
+ * Members named with a typo: "Hanah", "Hnanahs", "Tomas". Only words that
+ * no member matched exactly are considered, the first name must start with
+ * the same sound, and a word close to two members names neither — guessing
+ * between Hannah and Hanna is worse than asking.
+ */
+function findMisspelledMembers(
+  query: string,
+  candidates: string[],
+  exact: string[],
+): string[] {
+  if (candidates.length === 0) return [];
+  const claimed = new Set(exact.flatMap((name) => wordsOf(name)));
+  const words = wordsOf(query).filter(
+    (w) =>
+      w.length >= 3 &&
+      !GRAPH_STOP_WORDS.has(w) &&
+      !RELATIONSHIP_WORDS.has(w) &&
+      !possessiveVariants(w).some((v) => claimed.has(v)),
+  );
+  const found = new Set<string>();
+  for (const word of words) {
+    const hits = candidates.filter((name) => {
+      const first = wordsOf(name)[0];
+      return Boolean(first) && possessiveVariants(word).some((v) => isTypoOf(v, first));
+    });
+    if (hits.length === 1) found.add(hits[0]);
+  }
+  return candidates.filter((name) => found.has(name));
 }
 
 /**
@@ -293,6 +342,8 @@ export function findMentionedMembers(
  * the role that says how the family refers to them.
  */
 export interface MemberRef {
+  /** family_members.id, when loaded — person nodes link to it. */
+  id?: string;
   name: string;
   role?: string | null;
 }
@@ -348,6 +399,10 @@ const RELATIONSHIP_ROLES: ReadonlyArray<{
     fallbackRoles: ["kind", "tochter", "sohn"],
   },
 ];
+
+for (const entry of RELATIONSHIP_ROLES) {
+  for (const word of entry.words) RELATIONSHIP_WORDS.add(wordsOf(word).join(" "));
+}
 
 /**
  * Find the members a query refers to by their relationship rather than

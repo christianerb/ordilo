@@ -402,6 +402,35 @@ describe("stripPossessive", () => {
 // ---------------------------------------------------------------------------
 
 describe("findMentionedMembers", () => {
+  // --- Misspelled names: how families type on a phone ---
+
+  it("finds a member despite a typo", () => {
+    const family = ["Hannah", "Max", "Thomas"];
+    expect(findMentionedMembers("Hanna", family)).toEqual(["Hannah"]);
+    expect(findMentionedMembers("hannas zeugnis", family)).toEqual(["Hannah"]);
+    expect(findMentionedMembers("Hanahs Zeugnis", family)).toEqual(["Hannah"]);
+    expect(findMentionedMembers("Unterlagen von Hnanah", family)).toEqual(["Hannah"]);
+    expect(findMentionedMembers("Was hat Tomas bekommen", family)).toEqual(["Thomas"]);
+  });
+
+  it("prefers the exact member when both spellings exist", () => {
+    expect(findMentionedMembers("Hanna", ["Hannah", "Hanna"])).toEqual(["Hanna"]);
+  });
+
+  it("keeps a typo from crossing to a different first letter", () => {
+    expect(findMentionedMembers("Hanna", ["Anna"])).toEqual([]);
+    expect(findMentionedMembers("Welches Thema", ["Thomas"])).toEqual([]);
+  });
+
+  it("does not guess between two members a typo is equally close to", () => {
+    expect(findMentionedMembers("Lenas Ausweis", ["Lena", "Lea"])).toEqual(["Lena"]);
+    expect(findMentionedMembers("Mariea", ["Maria", "Marie"])).toEqual([]);
+  });
+
+  it("does not read filler words as names", () => {
+    expect(findMentionedMembers("Was muss ich noch erledigen", ["Noah"])).toEqual([]);
+  });
+
   it("finds a mentioned member name", () => {
     const result = findMentionedMembers("Zeig mir alles von Emma", ["Emma", "Hanna"]);
     expect(result).toEqual(["Emma"]);

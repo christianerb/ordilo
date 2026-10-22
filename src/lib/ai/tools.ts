@@ -11,12 +11,16 @@ import { redactPII } from "@/lib/ai/pii-redact";
 import {
   hybridSearch,
   graphSearch,
+  collectGraphDocuments,
+  fetchMembers,
+  findGraphNodes,
+  graphKeywordsWithoutMembers,
 } from "@/lib/ai/search";
 import {
   filterByRelevanceThreshold,
   combineSearchResults,
 } from "@/lib/ai/chat";
-import { matchesPersonName, stripPossessive } from "@/lib/schemas/search";
+import { findMentionedPeople, matchesPersonName, stripPossessive } from "@/lib/schemas/search";
 import {
   AMOUNT_KINDS,
   AMOUNT_KIND_LABELS,
@@ -687,15 +691,17 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "Verwende dies fuer relationale Fragen wie: " +
         "'Was muss Emma tun?', 'Welche Dokumente von der Kita haben Fristen?', " +
         "'Zeig mir alles von Emmas Arzt'. " +
-        "Dies ist effizienter als search_documents + list_tasks getrennt aufzurufen.",
+        "Dies ist effizienter als search_documents + list_tasks getrennt aufzurufen. " +
+        "Familienmitglieder gehen auch per Rolle ('meine Tochter', 'Oma') " +
+        "oder mit Tippfehler; gib den Namen so weiter, wie der Nutzer ihn schreibt.",
       parameters: {
         type: "object",
         properties: {
           entity: {
             type: "string",
             description:
-              "Name einer Person, Organisation oder Stichwort " +
-              "(z.B. 'Emma', 'Kita Sonnenblume', 'Stadtwerke')",
+              "Name einer Person, Rolle, Organisation oder Stichwort " +
+              "(z.B. 'Emma', 'meine Tochter', 'Kita Sonnenblume', 'Zahnarzt')",
           },
           include: {
             type: "array",
@@ -1817,24 +1823,25 @@ async function executeListDocuments(
   // Person filter resolves to document ids first (via extracted_entities).
   // The name may arrive in the possessive the user spoke it in ("Hannas
   // Zeugnisse"), so look it up stripped and match it back tolerantly.
-  const lookupName = stripPossessive(personName);
+  // A family member named with a typo or by role ("Hana", "meine
+  // Tochter") is looked up under their real name.
+  const knownMembers = ctx.preloadedFamilyMembers ?? [];
+  const resolvedNames = personName ? findMentionedPeople(personName, knownMembers) : [];
+  const lookupNames = resolvedNames.length > 0 ? resolvedNames : [stripPossessive(personName)];
   let personDocIds: string[] | null = null;
   if (personName) {
-    const { data: entities } = await ctx.client
-      .from("extracted_entities")
-      .select("document_id, normalized_value")
-      .eq("family_id", ctx.familyId)
-      .eq("entity_type", "person")
-      .ilike("normalized_value", `%${lookupName.toLowerCase()}%`);
-    personDocIds = [
-      ...new Set(
-        (entities ?? [])
-          .filter((e) =>
-            matchesPersonName(e.normalized_value ?? "", lookupName),
-          )
-          .map((e) => e.document_id),
-      ),
-    ];
+    const entityRows = await Promise.all(lookupNames.map(async (lookupName) => {
+      const { data: entities } = await ctx.client
+        .from("extracted_entities")
+        .select("document_id, normalized_value")
+        .eq("family_id", ctx.familyId)
+        .eq("entity_type", "person")
+        .ilike("normalized_value", `%${lookupName.toLowerCase()}%`);
+      return (entities ?? []).filter((e) =>
+        matchesPersonName(e.normalized_value ?? "", lookupName),
+      );
+    }));
+    personDocIds = [...new Set(entityRows.flat().map((e) => e.document_id))];
     if (personDocIds.length === 0) {
       return JSON.stringify({
         results: [],
@@ -2283,12 +2290,15 @@ async function executeQueryCalendarEvents(
   // Resolve a person filter to the set of event ids they attend.
   let personEventIds: Set<string> | null = null;
   if (person) {
-    const { data: members } = await ctx.client
+    // By name, misspelled name or role ("meine Tochter") — never by
+    // substring, which would give Anna's filter Hannah's events.
+    const { data: familyMembers } = await ctx.client
       .from("family_members")
-      .select("id, name")
-      .eq("family_id", ctx.familyId)
-      .ilike("name", `%${person}%`);
-    if (!members?.length) {
+      .select("id, name, role")
+      .eq("family_id", ctx.familyId);
+    const named = findMentionedPeople(person, (familyMembers ?? []).filter((m) => typeof m.name === "string"));
+    const members = (familyMembers ?? []).filter((m) => named.includes(m.name));
+    if (!members.length) {
       return JSON.stringify({ events: [], message: `Kein Familienmitglied namens '${person}' gefunden.` });
     }
     const { data: attendeeRows } = await ctx.client
@@ -2540,13 +2550,21 @@ async function executeMarkTaskDone(
 // graph_query — Knowledge Graph relational query
 // ---------------------------------------------------------------------------
 
+/** Documents graph_query returns at most, best graph match first. */
+const MAX_GRAPH_QUERY_DOCUMENTS = 15;
+
+function berlinDate(date: Date): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(date);
+}
+
 /**
  * Query the knowledge graph for entities related to a person, organization,
  * or keyword. Returns related documents, tasks, and deadlines in one call.
  *
  * Strategy:
- *   1. Find knowledge_nodes matching the entity name (ILIKE on label).
- *   2. Follow edges to find connected document IDs and task nodes.
+ *   1. Resolve family members the entity names (name, typo or role) and
+ *      match everything else word by word (see findGraphNodes).
+ *   2. Follow the matched nodes to their documents (collectGraphDocuments).
  *   3. Fetch documents with metadata (type, category, summary, persons).
  *   4. Fetch tasks with metadata (title, due_date, document).
  *   5. Return everything in one structured response.
@@ -2567,14 +2585,17 @@ async function executeGraphQuery(
   const wantTasks = include.includes("tasks") || include.includes("deadlines");
   const deadlinesOnly = include.includes("deadlines") && !include.includes("tasks");
 
-  // 1. Find matching knowledge_nodes (person, organization, etc.)
-  const { data: matchingNodes, error: nodesError } = await ctx.client
-    .from("knowledge_nodes")
-    .select("id, type, label")
-    .eq("family_id", ctx.familyId)
-    .or(`label.ilike.%${entity.toLowerCase()}%`);
-
-  if (nodesError || !matchingNodes || matchingNodes.length === 0) {
+  // 1. Who or what is meant: family members by name, typo or role
+  //    ("Hana", "meine Tochter"), everything else as keywords matched
+  //    word by word against people, organizations and document titles.
+  const members = await fetchMembers(ctx.client, ctx.familyId);
+  const mentioned = findMentionedPeople(entity, members);
+  const people = members.filter((m) => mentioned.includes(m.name));
+  const nodes = await findGraphNodes(ctx.client, ctx.familyId, {
+    members: people,
+    keywords: graphKeywordsWithoutMembers(entity, people),
+  });
+  if (nodes.length === 0) {
     return JSON.stringify({
       entity,
       message: `Keine Treffer fuer '${entity}' im Wissensgraph gefunden.`,
@@ -2583,64 +2604,18 @@ async function executeGraphQuery(
     });
   }
 
-  const nodeIds = matchingNodes.map((n) => n.id);
-  const nodeMap = new Map(matchingNodes.map((n) => [n.id, n]));
+  // 2. Follow the matched nodes to their documents, best match first.
+  const hits = await collectGraphDocuments(ctx.client, ctx.familyId, nodes);
+  const documentIds = new Set(hits.slice(0, MAX_GRAPH_QUERY_DOCUMENTS).map((h) => h.documentId));
+  const rank = new Map(hits.map((h, i) => [h.documentId, i]));
 
-  // 2. Follow edges (both directions) to find connected document_ids
-  const [incomingResult, outgoingResult] = await Promise.all([
-    ctx.client
-      .from("knowledge_edges")
-      .select("source_node_id, target_node_id, source_document_id, relation_type, confidence, confirmed")
-      .eq("family_id", ctx.familyId)
-      .in("target_node_id", nodeIds),
-    ctx.client
-      .from("knowledge_edges")
-      .select("source_node_id, target_node_id, source_document_id, relation_type, confidence, confirmed")
-      .eq("family_id", ctx.familyId)
-      .in("source_node_id", nodeIds),
-  ]);
-
-  const allEdges = [
-    ...(incomingResult.data ?? []),
-    ...(outgoingResult.data ?? []),
+  const matchedEntities = [
+    ...people.map((p) => ({ name: p.name, typ: "familienmitglied" })),
+    ...nodes
+      .filter((n) => n.type !== "document" && !n.term.startsWith("member:"))
+      .slice(0, 10)
+      .map((n) => ({ name: n.label, typ: n.type })),
   ];
-
-  // Collect document IDs from edges
-  const documentIds = new Set<string>();
-  for (const edge of allEdges) {
-    if (edge.source_document_id) {
-      documentIds.add(edge.source_document_id);
-    }
-  }
-
-  // Also look up document nodes connected via edges
-  const connectedNodeIds = new Set<string>();
-  for (const edge of allEdges) {
-    if (!nodeMap.has(edge.source_node_id)) connectedNodeIds.add(edge.source_node_id);
-    if (!nodeMap.has(edge.target_node_id)) connectedNodeIds.add(edge.target_node_id);
-  }
-
-  if (connectedNodeIds.size > 0) {
-    const { data: docNodes } = await ctx.client
-      .from("knowledge_nodes")
-      .select("id, properties_json")
-      .eq("family_id", ctx.familyId)
-      .eq("type", "document")
-      .in("id", [...connectedNodeIds]);
-
-    for (const node of docNodes ?? []) {
-      const docId = node.properties_json?.document_id;
-      if (docId && typeof docId === "string") {
-        documentIds.add(docId);
-      }
-    }
-  }
-
-  // Build matched entity info
-  const matchedEntities = matchingNodes.map((n) => ({
-    name: n.label,
-    typ: n.type,
-  }));
 
   const result: {
     entity: string;
@@ -2692,7 +2667,10 @@ async function executeGraphQuery(
       }
     }
 
-    result.documents = (docResult.data ?? []).map((d, i) => ({
+    const docs = [...(docResult.data ?? [])].sort(
+      (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
+    );
+    result.documents = docs.map((d, i) => ({
       nr: i + 1,
       id: d.id,
       titel: d.title,
@@ -2724,16 +2702,14 @@ async function executeGraphQuery(
 
     let tasks = taskData ?? [];
 
-    // Filter by upcoming days if requested
+    // Filter by upcoming days if requested. Dates compare as Berlin
+    // calendar days: a task due today is upcoming all day long.
     if (upcomingDays !== undefined && upcomingDays > 0) {
-      const now = new Date();
-      const limit = new Date();
-      limit.setDate(now.getDate() + upcomingDays);
-      tasks = tasks.filter((t) => {
-        if (!t.due_date) return false;
-        const due = new Date(t.due_date);
-        return due >= now && due <= limit;
-      });
+      const today = berlinDate(new Date());
+      const limit = berlinDate(new Date(Date.now() + upcomingDays * 86_400_000));
+      tasks = tasks.filter(
+        (t) => Boolean(t.due_date) && t.due_date! >= today && t.due_date! <= limit,
+      );
     }
 
     // Enrich with document titles
@@ -2744,6 +2720,7 @@ async function executeGraphQuery(
         const { data: taskDocs } = await ctx.client
           .from("documents")
           .select("id, title")
+          .eq("family_id", ctx.familyId)
           .in("id", taskDocIds);
         for (const d of taskDocs ?? []) {
           docTitleMap.set(d.id, d.title ?? "");
