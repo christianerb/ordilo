@@ -96,3 +96,12 @@ select cron.schedule(
   '2-59/5 * * * *',
   $$select public.invoke_scheduled_endpoint('/api/notifications/run', 'GET')$$
 );
+
+-- pg_cron never trims its own run log: two five-minute jobs add ~576 rows
+-- a day to cron.job_run_details. Keep a week for debugging. (pg_net's
+-- net._http_response already expires on its own after six hours.)
+select cron.schedule(
+  'ordilo-cron-history-cleanup',
+  '17 3 * * *',
+  $$delete from cron.job_run_details where end_time < now() - interval '7 days'$$
+);

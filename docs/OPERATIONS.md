@@ -97,7 +97,8 @@ select vault.create_secret('<Wert von JOBS_RUNNER_SECRET>', 'jobs_runner_secret'
 select vault.create_secret('https://<Produktions-Domain>', 'app_origin');
 ```
 
-Solange beide fehlen, tun die Cron-Jobs nichts. Prüfen:
+Solange beide fehlen, tun die Cron-Jobs nichts. Ein dritter Job löscht
+täglich Laufprotokolle älter als 7 Tage. Prüfen:
 `select * from cron.job_run_details order by start_time desc limit 5;`
 und `select * from net._http_response order by created desc limit 5;`.
 
