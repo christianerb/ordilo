@@ -1,7 +1,7 @@
 import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import { comparableEvidence, normalizeEvidence, normalizeFactText, pastDateStatedAsFuture, readableQuote } from "./document-evidence";
-import { documentInventoryRequest, documentListQuestion, documentPrefetchQuery, isPureActionRequest } from "./document-intent";
+import { documentInventoryRequest, documentListQuestion, documentPrefetchQuery, documentTopicListRequest, isPureActionRequest } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
 import {
@@ -26,6 +26,7 @@ import {
   LIST_TOOL_DEFINITIONS,
   executeTool,
   CONFIRMATION_TOOLS,
+  findRelevantDocuments,
   type ToolContext,
 } from "@/lib/ai/tools";
 import {
@@ -34,6 +35,7 @@ import {
   CHAT_VOICE_REASONING_EFFORT,
 } from "@/lib/ai/models";
 import { truncateHistory } from "@/lib/ai/chat-history";
+import { RERANK_TOP_K } from "@/lib/ai/reranking";
 
 /**
  * Appended to the system prompt for turns delegated by the Live
@@ -1131,13 +1133,22 @@ function parseListedDocuments(raw: string): {
 }
 
 function joinDocumentTitles(documents: ListedDocument[]): string {
-  const titles = documents
-    .map((document) => document.titel?.trim() || "Ohne Titel")
-    .map((title) => `„${title}“`);
+  // Two papers can carry the same title (a code slip scanned twice): name
+  // it once with its count instead of repeating it.
+  const titleCounts = new Map<string, number>();
+  for (const document of documents) {
+    const title = document.titel?.trim() || "Ohne Titel";
+    titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
+  }
+  return joinGerman(
+    [...titleCounts].map(([title, times]) => (times > 1 ? `„${title}“ (${times}×)` : `„${title}“`)),
+  );
+}
 
-  if (titles.length === 1) return titles[0]!;
-  if (titles.length === 2) return `${titles[0]} und ${titles[1]}`;
-  return `${titles.slice(0, -1).join(", ")} und ${titles.at(-1)}`;
+/** "a", "a und b", "a, b und c". */
+function joinGerman(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} und ${items.at(-1)}`;
 }
 
 function formatDocumentList(
@@ -1232,6 +1243,79 @@ function streamDocumentList(
   });
 }
 
+/** Re-rank score (0–1) a document needs to be named in a topic list. */
+const TOPIC_LIST_MIN_RELEVANCE = 0.6;
+
+/**
+ * "Welche Dokumente habe ich vom Kindergarten?" answered as a list of the
+ * relevance-checked search hits. Naming a paper is metadata, not a claim
+ * about its content, so no page has to be read and no claim proven — the
+ * re-rank already judged each hit against the question. The agent used to
+ * prove every listed document page by page, which took 10–30 s and often
+ * circled in reasoning.
+ *
+ * Returns null when nothing fits clearly enough or the search fails; the
+ * agent then takes the question as before.
+ */
+async function topicDocumentList(
+  query: string,
+  toolContext: ToolContext,
+): Promise<ReadableStream<Uint8Array> | null> {
+  // Searched on a scratch copy: when the list falls back to the agent, the
+  // agent must start clean — a counted search would force it to verify
+  // claims it has no pages for.
+  const scratch: ToolContext = {
+    ...toolContext,
+    sources: [],
+    relevantDocumentIds: new Set(),
+    documentSearchCount: 0,
+  };
+  let found: Awaited<ReturnType<typeof findRelevantDocuments>>;
+  try {
+    found = await findRelevantDocuments(query, scratch);
+  } catch {
+    return null;
+  }
+  const listed = found.filter((source) => source.score >= TOPIC_LIST_MIN_RELEVANCE);
+  if (listed.length === 0) return null;
+  toolContext.sources.push(...listed);
+
+  const voice = toolContext.responseMode === "voice";
+  const shown = listed.slice(0, voice ? 3 : 10);
+  const titles = joinDocumentTitles(
+    shown.map((source) => ({ document_id: source.document_id, titel: source.title ?? null })),
+  );
+  const count = listed.length;
+  // The re-rank judges at most RERANK_TOP_K candidates, so a full page is a
+  // selection, not the complete count.
+  const capped = found.length >= RERANK_TOP_K;
+  const intro = capped
+    ? `Hier sind die ${count} passendsten Dokumente dazu: ${titles}. Es kann noch weitere geben — frag gern genauer nach.`
+    : count === 1
+      ? `Dazu habe ich ein Dokument gefunden: ${titles}.`
+      : `Dazu habe ich ${count} Dokumente gefunden: ${titles}.`;
+  const omitted = count - shown.length;
+  const text = omitted > 0
+    ? `${intro} ${voice ? "Alle weiteren stehen auf dem Bildschirm." : `Die weiteren ${omitted} kannst du unten öffnen.`}`
+    : `${intro}${voice ? "" : " Du kannst sie unten öffnen."}`;
+  toolContext.responseState = "answered";
+
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const send = (event: unknown) =>
+        controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+      send({ type: "tool", tool: "search_documents", state: "start" });
+      send({ type: "tool", tool: "search_documents", state: "done" });
+      send({ type: "text", content: text });
+      send({ type: "sources", sources: listed });
+      send({ type: "response_state", state: "answered" });
+      send({ type: "done" });
+      controller.close();
+    },
+  });
+}
+
 /**
  * Title of the family document a read_document call opens, taken only from
  * this family's own search results — a model-supplied id that no search
@@ -1276,6 +1360,13 @@ export async function streamAgenticAnswer(
 
   const inventory = documentInventoryRequest(query);
   if (inventory) return streamDocumentList(null, toolContext, inventory.documentType);
+
+  // A second part ("… und wann laufen sie ab?") needs the agent: the list
+  // alone would silently drop it.
+  if (familyContext.documentCount > 0 && documentTopicListRequest(query) && !asksSeveralThings(query)) {
+    const topicList = await topicDocumentList(query, toolContext);
+    if (topicList) return topicList;
+  }
 
   const client = getOpenAIClient();
   const voice = toolContext.responseMode === "voice";
