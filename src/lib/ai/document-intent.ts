@@ -83,3 +83,20 @@ export function documentListQuestion(query: string): boolean {
   return /\b(?:welche|alle|was für|wie viele)\b[^?]*\b(?:dokumente|unterlagen|papiere|briefe|bescheide|rechnungen|verträge|belege)\b/iu.test(query)
     || /\bwas haben wir (?:alles|zu|von|vom|über)\b/iu.test(query);
 }
+
+const LIST_NOUNS = "dokumente|unterlagen|papiere|briefe|bescheide|rechnungen|verträge|belege|schreiben";
+
+/**
+ * "Welche Dokumente habe ich vom Kindergarten?" — a request to name the
+ * papers the family has on a topic. Answered from a relevance-checked
+ * search, not by proving each document's content. Needs ("Welche
+ * Unterlagen brauche ich für …?") and narrower content questions stay with
+ * the agent.
+ */
+export function documentTopicListRequest(query: string): boolean {
+  const text = query.trim();
+  if (/\b(?:brauch|benötig|muss|müssen|soll|sollte|fehl|einreich|mitbring)\p{L}*/iu.test(text)) return false;
+  return new RegExp(`^(?:und\\s+)?(?:welche|was für)\\s+(?:${LIST_NOUNS})\\s+(?:habe ich|hab ich|haben wir|gibt es|liegen|sind)\\b`, "iu").test(text)
+    || new RegExp(`^(?:bitte\\s+)?(?:zeig(?:e)?|liste)(?:\\s+mir)?\\s+(?:alle\\s+)?(?:(?:meine|unsere|die)\\s+)?(?:${LIST_NOUNS})\\s+(?:zu|zum|zur|vom|von|über|aus)\\b`, "iu").test(text)
+    || /^(?:und\s+)?was haben wir (?:alles\s+)?(?:zu|zum|zur|vom|von|über)\b/iu.test(text);
+}

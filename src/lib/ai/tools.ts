@@ -1528,13 +1528,20 @@ async function executeSearchWeb(
 // search_documents
 // ---------------------------------------------------------------------------
 
-async function executeSearchDocuments(
-  args: Record<string, unknown>,
+/**
+ * Find the family documents that fit a query: hybrid content search plus
+ * graph search, re-ranked for relevance against the user's question. Only
+ * relevance-checked documents are returned, and they are remembered as
+ * this turn's sources and verification candidates.
+ *
+ * `onCandidates` sees the candidates before the re-rank, so a caller can
+ * start work on the likely winners while it runs.
+ */
+export async function findRelevantDocuments(
+  query: string,
   ctx: ToolContext,
-): Promise<string> {
-  const query = String(args.query ?? "").trim();
-  if (!query) return JSON.stringify({ error: "Keine Suchanfrage angegeben." });
-
+  options: { onCandidates?: (candidates: ChatSource[]) => void } = {},
+): Promise<ChatSource[]> {
   ctx.relevantDocumentIds ??= new Set<string>();
   const expand = (ctx.documentSearchCount ?? 0) > 0;
   ctx.documentSearchCount = (ctx.documentSearchCount ?? 0) + 1;
@@ -1560,22 +1567,7 @@ async function executeSearchDocuments(
   // person links are candidates, not proof that the requested document exists.
   const contentSources = new Set(["semantic", "lexical", "fact", "hybrid"]);
   const candidates = combineSearchResults(relevantContent, graph);
-  // The top candidates are almost always the top results after the
-  // re-rank too: start reading their pages now, while the re-rank runs.
-  // A document the re-rank promotes is read afterwards; one it drops is
-  // simply never used.
-  const pageReads = new Map<string, Promise<DocumentEvidence[]>>();
-  const readPages = (documentId: string) => {
-    let read = pageReads.get(documentId);
-    if (!read) {
-      read = readDocumentEvidence(ctx.client, ctx.familyId, documentId, query);
-      // Settled later via allSettled; never an unhandled rejection meanwhile.
-      read.catch(() => undefined);
-      pageReads.set(documentId, read);
-    }
-    return read;
-  };
-  for (const candidate of candidates.slice(0, 3)) readPages(candidate.document_id);
+  options.onCandidates?.(candidates);
   const rerankStarted = performance.now();
   const reranked = await rerankResults(query, candidates.map(source => ({
     document_id: source.document_id,
@@ -1600,6 +1592,37 @@ async function executeSearchDocuments(
       ctx.sources[existing] = s;
     }
   }
+
+  return sources;
+}
+
+async function executeSearchDocuments(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const query = String(args.query ?? "").trim();
+  if (!query) return JSON.stringify({ error: "Keine Suchanfrage angegeben." });
+
+  // The top candidates are almost always the top results after the
+  // re-rank too: start reading their pages now, while the re-rank runs.
+  // A document the re-rank promotes is read afterwards; one it drops is
+  // simply never used.
+  const pageReads = new Map<string, Promise<DocumentEvidence[]>>();
+  const readPages = (documentId: string) => {
+    let read = pageReads.get(documentId);
+    if (!read) {
+      read = readDocumentEvidence(ctx.client, ctx.familyId, documentId, query);
+      // Settled later via allSettled; never an unhandled rejection meanwhile.
+      read.catch(() => undefined);
+      pageReads.set(documentId, read);
+    }
+    return read;
+  };
+  const sources = await findRelevantDocuments(query, ctx, {
+    onCandidates: (candidates) => {
+      for (const candidate of candidates.slice(0, 3)) readPages(candidate.document_id);
+    },
+  });
 
   if (sources.length === 0) {
     return JSON.stringify({ results: [], message: "Keine Dokumente gefunden." });

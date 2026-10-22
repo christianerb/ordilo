@@ -493,7 +493,7 @@ describe("forced document rounds that would stall", () => {
   it("offers no final-wording field when the question lists several papers", async () => {
     create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
       .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
-    await events(context(), "Welche Unterlagen habe ich zu Hannahs Bahnding?");
+    await events(context(), "Welche Unterlagen zu Hannahs Bahnding sind noch gültig?");
     const offered = create.mock.calls[0][0].tools.find((tool: { name: string }) => tool.name === "answer_from_documents");
     expect(offered.parameters.properties).not.toHaveProperty("answer");
     expect(offered.parameters.properties).toHaveProperty("claims");
@@ -524,5 +524,53 @@ describe("forced document rounds that would stall", () => {
     expect(drained).toBeLessThan(12);
     expect(ctx.timings?.some((timing) => timing.phase === "stuck_round_cut")).toBe(true);
     expect(result).toContainEqual({ type: "text", content: `${claim.text} Damit ist das Ticket geklärt.` });
+  });
+});
+
+describe("topic document lists", () => {
+  const second = "10000000-0000-4000-8000-000000000002";
+  const third = "10000000-0000-4000-8000-000000000003";
+  const hit = (document_id: string, title: string, score: number) =>
+    ({ document_id, title, chunk_text: title, score, source: "semantic" });
+
+  it("names the relevance-checked papers without a model round", async () => {
+    vi.mocked(rerankResults).mockResolvedValueOnce([
+      hit(id, "Einladung zur Eingewöhnung", 0.9),
+      hit(second, "Kita-Gutschein Hanna", 0.8),
+      hit(third, "GBS-Betreuung Schuljahr", 0.5),
+    ]);
+    const result = await events(context(), "Welche Dokumente habe ich vom Kindergarten?");
+    expect(create).not.toHaveBeenCalled();
+    expect(result).toContainEqual({
+      type: "text",
+      content: "Dazu habe ich 2 Dokumente gefunden: „Einladung zur Eingewöhnung“ und „Kita-Gutschein Hanna“. Du kannst sie unten öffnen.",
+    });
+    const sources = result.find(event => event.type === "sources").sources;
+    expect(sources.map((source: { document_id: string }) => source.document_id)).toEqual([id, second]);
+    expect(result.at(-1)).toEqual({ type: "done" });
+  });
+
+  it("names a title shared by two papers once, with its count", async () => {
+    vi.mocked(rerankResults).mockResolvedValueOnce([
+      hit(id, "Zugangscode Schulfotos", 0.9),
+      hit(second, "Zugangscode Schulfotos", 0.9),
+      hit(third, "Schulmanager", 0.8),
+    ]);
+    const result = await events(context(), "Zeig mir alle Dokumente zur Schule");
+    expect(result).toContainEqual({
+      type: "text",
+      content: "Dazu habe ich 3 Dokumente gefunden: „Zugangscode Schulfotos“ (2×) und „Schulmanager“. Du kannst sie unten öffnen.",
+    });
+  });
+
+  it.each([
+    ["nothing fits clearly", () => vi.mocked(rerankResults).mockResolvedValueOnce([hit(id, "GBS-Betreuung", 0.4)])],
+    ["the relevance check fails", () => vi.mocked(rerankResults).mockRejectedValueOnce(new Error("timeout"))],
+  ])("hands the question to the agent when %s", async (_name, arrange) => {
+    arrange();
+    create.mockResolvedValueOnce(finalAnswer("Dazu habe ich keine passende Unterlage gefunden."));
+    const result = await events(context(), "Was haben wir alles zum Auto?");
+    expect(create).toHaveBeenCalled();
+    expect(result.find(event => event.type === "text")).toBeDefined();
   });
 });
