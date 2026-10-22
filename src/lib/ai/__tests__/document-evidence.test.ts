@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readableQuote, readDocumentEvidence, selectEvidenceWindow, verifyDocumentAnswer, type DocumentEvidence } from "../document-evidence";
+import { pastDateStatedAsFuture, readableQuote, readDocumentEvidence, selectEvidenceWindow, verifyDocumentAnswer, type DocumentEvidence } from "../document-evidence";
 
 const id = "10000000-0000-4000-8000-000000000001";
 const quote = "Hannahs Deutschlandticket: gültig bis 31.08.2027. Kündigungsfrist: 10.08.2027.";
@@ -13,7 +13,6 @@ describe("document answer evidence", () => {
   });
   it.each([
     ["invented year", { text: "Laut Abo-Bestätigung Hannah gilt das Ticket bis 31.08.2099." }],
-    ["wrong page", { page_number: 3 }],
     ["wrong person", { text: "Emmas Ticket gilt bis 31.08.2027." }],
     ["invented quotation", { quote: "Hannahs Ticket ist kostenlos gültig bis 31.08.2027." }],
     ["cancellation date used as validity", { text: "Hannahs Ticket gilt bis 10.08.2027.", highlight: "10.08.2027" }],
@@ -21,6 +20,15 @@ describe("document answer evidence", () => {
     ["invented highlight", { highlight: "Kostenlos" }],
   ])("rejects %s", (_name, changes) => {
     expect(verifyDocumentAnswer({ ...answer, claims: [{ ...answer.claims[0], ...changes }] }, pages, ["Hannah", "Emma"])).toHaveProperty("error");
+  });
+  it("corrects a miscounted page to the read page that carries the quote", () => {
+    const result = verifyDocumentAnswer({ ...answer, claims: [{ ...answer.claims[0], page_number: 3 }] }, pages, ["Hannah", "Emma"]);
+    expect(result).toMatchObject({ sources: [{ page_number: 2, quote, cited: true }], state: "answered" });
+  });
+  it("rejects a page of another document even when its page number matches", () => {
+    const other: DocumentEvidence = { documentId: "10000000-0000-4000-8000-000000000002", title: "Andere Unterlage", page: 2, text: quote };
+    const result = verifyDocumentAnswer({ ...answer, claims: [{ ...answer.claims[0], document_id: other.documentId }] }, [pages[0]], ["Hannah", "Emma"]);
+    expect(result).toHaveProperty("error");
   });
   it("keeps the verified claims when another claim fails, and reports it for correction", () => {
     const result = verifyDocumentAnswer(
@@ -470,4 +478,36 @@ it("reads current family corrections separately from unchanged original evidence
 it("fails rather than silently serving old OCR when corrections cannot load", async () => {
   const db = database({ id, title: "Brief", document_type: "letter", corrections_text: "Familienkorrektur" }, []);
   await expect(readDocumentEvidence({ ...db.client, rpc: vi.fn().mockResolvedValue({ data: null, error: new Error("offline") }) } as never, "family", id, "Brief")).rejects.toThrow("Familienkorrektur");
+});
+
+describe("past dates stated as if still ahead", () => {
+  const today = new Date("2026-10-22T10:00:00Z");
+
+  it.each([
+    "Der Kita-Gutschein endet am 31.07.2026.",
+    "Hannahs Ticket gilt bis 31. Juli 2026.",
+    "Die Rechnung ist am 2026-09-01 fällig.",
+  ])("flags %s", (sentence) => {
+    expect(pastDateStatedAsFuture(sentence, today)).not.toBeNull();
+  });
+
+  it.each([
+    "Der Kita-Gutschein ist am 31.07.2026 abgelaufen.",
+    "Der Gutschein galt bis 31.07.2026.",
+    "Das Ticket gilt bis 31.08.2027.",
+    "Der Elternabend war am 03.05.2026.",
+    "Die Bewilligung wurde zum 31.07.2026 aufgehoben.",
+    "Eingang am 01.07.2026.",
+  ])("accepts %s", (sentence) => {
+    expect(pastDateStatedAsFuture(sentence, today)).toBeNull();
+  });
+
+  it("makes the claim check ask for the tense that is true today", () => {
+    const expired = "Hannahs Deutschlandticket: gültig bis 31.08.2026.";
+    const expiredPages: DocumentEvidence[] = [{ documentId: id, title: "Abo-Bestätigung Hannah", page: 2, text: expired }];
+    const stale = { claims: [{ text: "Hannahs Ticket gilt bis zum 31.08.2026.", document_id: id, page_number: 2, quote: expired }], state: "answered" };
+    expect(verifyDocumentAnswer(stale, expiredPages, ["Hannah"], "", today)).toMatchObject({ error: expect.stringContaining("Vergangenheit") });
+    const current = { claims: [{ text: "Hannahs Ticket galt bis zum 31.08.2026.", document_id: id, page_number: 2, quote: expired }], state: "answered" };
+    expect(verifyDocumentAnswer(current, expiredPages, ["Hannah"], "", today)).not.toHaveProperty("error");
+  });
 });

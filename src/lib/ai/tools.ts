@@ -171,6 +171,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         } },
         state: { type: "string", enum: ["answered", "partial", "conflict", "not_found"] },
         gap: { type: "string", description: "Optional: konkrete Lücke oder Widerspruch, höchstens eine gezielte Rückfrage. Keine neuen Fakten." },
+        answer: { type: "string", description: "Die fertige Endantwort an die Familie (Ordilo-Ton, 2–3 Sätze, Pronomen statt wiederholter Namen), wenn sie die ganze Frage beantwortet; sonst leer. Nur Belegtes, mit allen Zahlen, Daten und Personen der Claims; ein Datum vor heute in der Vergangenheit." },
       }, required: ["claims", "state"] },
     },
   },
@@ -1116,6 +1117,21 @@ export const TOOL_DEFINITIONS: OpenAI.Responses.FunctionTool[] =
     };
   });
 
+/**
+ * The tool list for a question that lists several papers: the same tools,
+ * but `answer_from_documents` without its final-wording field. Asked to
+ * prove three documents AND phrase the list in one call, the model was
+ * observed circling in reasoning until the round timed out (15 s, every
+ * time); such answers go through the regular final round instead.
+ */
+export const LIST_TOOL_DEFINITIONS: OpenAI.Responses.FunctionTool[] = TOOL_DEFINITIONS.map((tool) => {
+  if (tool.name !== "answer_from_documents" || !tool.parameters) return tool;
+  const parameters = tool.parameters as { properties?: Record<string, unknown> };
+  const { answer: _answer, ...properties } = parameters.properties ?? {};
+  void _answer;
+  return { ...tool, parameters: { ...tool.parameters, properties } };
+});
+
 // ---------------------------------------------------------------------------
 // Tool executors
 // ---------------------------------------------------------------------------
@@ -1163,7 +1179,7 @@ export async function executeTool(
       return JSON.stringify({ pages: evidence, message: evidence.length ? undefined : "Hier ist kein lesbarer Originaltext verfügbar. Prüfe eine andere Unterlage oder benenne die Lücke." });
     }
     case "answer_from_documents": {
-      const answer = verifyDocumentAnswer(args, ctx.documentEvidence ?? [], ctx.preloadedFamilyMembers?.map((member) => member.name) ?? [], ctx.documentQuestion);
+      const answer = verifyDocumentAnswer(args, ctx.documentEvidence ?? [], ctx.preloadedFamilyMembers?.map((member) => member.name) ?? [], ctx.documentQuestion, new Date());
       if ("error" in answer) return JSON.stringify(answer);
       const relevantIds = ctx.relevantDocumentIds;
       if (relevantIds && answer.sources.some(source => !relevantIds.has(source.document_id))) {
@@ -1544,6 +1560,22 @@ async function executeSearchDocuments(
   // person links are candidates, not proof that the requested document exists.
   const contentSources = new Set(["semantic", "lexical", "fact", "hybrid"]);
   const candidates = combineSearchResults(relevantContent, graph);
+  // The top candidates are almost always the top results after the
+  // re-rank too: start reading their pages now, while the re-rank runs.
+  // A document the re-rank promotes is read afterwards; one it drops is
+  // simply never used.
+  const pageReads = new Map<string, Promise<DocumentEvidence[]>>();
+  const readPages = (documentId: string) => {
+    let read = pageReads.get(documentId);
+    if (!read) {
+      read = readDocumentEvidence(ctx.client, ctx.familyId, documentId, query);
+      // Settled later via allSettled; never an unhandled rejection meanwhile.
+      read.catch(() => undefined);
+      pageReads.set(documentId, read);
+    }
+    return read;
+  };
+  for (const candidate of candidates.slice(0, 3)) readPages(candidate.document_id);
   const rerankStarted = performance.now();
   const reranked = await rerankResults(query, candidates.map(source => ({
     document_id: source.document_id,
@@ -1577,7 +1609,7 @@ async function executeSearchDocuments(
   // in the next model round. Failed reads remain explicit, never invented.
   const readStarted = performance.now();
   const reads = await Promise.allSettled(sources.slice(0, 3).map((source) =>
-    readDocumentEvidence(ctx.client, ctx.familyId, source.document_id, query)));
+    readPages(source.document_id)));
   const evidence = reads.flatMap((read) => read.status === "fulfilled" ? read.value : []);
   rememberEvidence(ctx, evidence);
   ctx.timings?.push({ phase: "read_pages", ms: Math.round(performance.now() - readStarted) });

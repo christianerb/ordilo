@@ -1,4 +1,8 @@
-const topic = /ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|zeugnis|zeignis|zertifikat|abschluss|\bmaster\b|\bbachelor\b|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
+// Words that only ever point at a family paper. Kept specific on purpose:
+// a prefetch commits the turn to a verified document answer, so generic
+// words that also open contact, card or task questions ("Nummer",
+// "Passwort", "Frist") stay out.
+const topic = /krankenkasse|krankenversicherung|versichert|police|gutschein|bescheid|bewilligung|kita\b|kindergarten|steuer|finanzamt|lohnabrechnung|gehaltsabrechnung|einkommen|erklärung|antrag|formular|kontoauszug|\biban\b|versicherungsnummer|kundennummer|vertragsnummer|mitgliedsnummer|aktenzeichen|ausweis|reisepass|führerschein|zulassung|mietvertrag|nebenkosten|garantie|quittung|kassenbon|arztbrief|impfpass|mahnung|\bbrief\b|schreiben\b|steht (?:in|auf|im)\b|ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|zeugnis|zeignis|zertifikat|abschluss|\bmaster\b|\bbachelor\b|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
 
 // Imperative forms with and without the trailing -e ("leg mir …", "lege mir …").
 // The optional trailing \w* keeps inflected commands ("Verschlagworte …",
@@ -68,4 +72,14 @@ export function documentInventoryRequest(query: string): { documentType: string 
     versicherungen: "insurance", steuerunterlagen: "tax", schulunterlagen: "school", zugangsdaten: "credentials",
   };
   return { documentType: types[match[1].toLocaleLowerCase("de-DE")] ?? null };
+}
+
+/**
+ * A question that asks which papers there are ("Welche Dokumente habe ich
+ * vom Kindergarten?") rather than what one of them says. Its answer lists
+ * several documents.
+ */
+export function documentListQuestion(query: string): boolean {
+  return /\b(?:welche|alle|was für|wie viele)\b[^?]*\b(?:dokumente|unterlagen|papiere|briefe|bescheide|rechnungen|verträge|belege)\b/iu.test(query)
+    || /\bwas haben wir (?:alles|zu|von|vom|über)\b/iu.test(query);
 }

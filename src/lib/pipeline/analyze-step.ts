@@ -17,6 +17,7 @@ import {
 import { canonicalizeCategory } from "@/lib/categories";
 import { stripCredentialFields } from "@/lib/credentials";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
+import { buildLabelEmbeddings } from "@/lib/pipeline/document-embeddings";
 import {
   previewFieldCount,
   type PartialAnalysisPreview,
@@ -386,6 +387,20 @@ async function performMeteredAnalyzeStep(client: Client, document: AnalyzeStepDo
       throw new PipelineStepError(message, "EMBEDDING_FAILED");
     }
 
+    // storeExtractionResults removed the document's edges; without a
+    // rebuild the document stays confirmed but drops out of graph search.
+    try {
+      await rebuildDocumentGraph(client, document.id, document.family_id, analysis);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Wissensgraph konnte nicht aktualisiert werden.";
+      throw new PipelineStepError(message, "GRAPH_UPDATE_FAILED", {
+        destructive: true,
+      });
+    }
+
     const { error: updateError } = await client
       .from("documents")
       .update({
@@ -433,6 +448,42 @@ async function performMeteredAnalyzeStep(client: Client, document: AnalyzeStepDo
   }
 
   return analysis;
+}
+
+/**
+ * Rebuild a confirmed document's knowledge graph (document node, person and
+ * organization nodes, `mentions` edges) from a fresh analysis. Label
+ * embeddings are best-effort: a missing vector is filled in later by the
+ * label-embedding backfill, it never blocks the rebuild.
+ *
+ * @throws {Error} if the `replace_document_graph` RPC fails.
+ */
+export async function rebuildDocumentGraph(
+  client: Client,
+  documentId: string,
+  familyId: string,
+  analysis: Pick<DocumentAnalysis, "title" | "family_members" | "organizations">,
+): Promise<void> {
+  const labelEmbeddings = await buildLabelEmbeddings(analysis);
+  const { error } = await client.rpc("replace_document_graph", {
+    p_document_id: documentId,
+    p_family_id: familyId,
+    p_title: analysis.title,
+    p_persons: analysis.family_members.map((member) => ({
+      name: member.name,
+      person_id: member.person_id ?? null,
+      confidence: member.confidence,
+    })),
+    p_organizations: analysis.organizations.map((org) => ({
+      name: org.name,
+      type: org.type,
+      confidence: org.confidence,
+    })),
+    p_label_embeddings: labelEmbeddings,
+  });
+  if (error) {
+    throw new Error("Wissensgraph konnte nicht aktualisiert werden.");
+  }
 }
 
 /**

@@ -453,3 +453,76 @@ describe("real document tools through the chat orchestration", () => {
   });
 
 });
+
+describe("verified document answer that already carries the final wording", () => {
+  const natural = "Hannahs Deutschlandticket gilt noch bis zum 31. August 2027, so steht es in der Abo-Bestätigung. Bis dahin ist sie gut unterwegs.";
+
+  it("ends the turn with the model's own wording, without a synthesis round", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered", answer: natural }));
+    const result = await events(context());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result).toContainEqual({ type: "text", content: natural });
+    const sources = result.find(event => event.type === "sources").sources;
+    expect(sources[0]).toMatchObject({ document_id: id, quote, cited: true });
+    expect(result).toContainEqual({ type: "response_state", state: "answered" });
+    expect(result.at(-1)).toEqual({ type: "done" });
+  });
+
+  it.each([
+    ["names an institution no page mentions", "Hannahs Deutschlandticket bei der AOK gilt noch bis zum 31. August 2027."],
+    ["drops the verified date", "Hannahs Deutschlandticket gilt noch eine ganze Weile, so steht es in der Abo-Bestätigung."],
+    ["adds a number nobody read", "Hannahs Deutschlandticket gilt bis zum 31. August 2027 und kostet 58 Euro."],
+    ["leaves the answer empty", ""],
+  ])("falls back to the regular final round when the wording %s", async (_name, wording) => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered", answer: wording }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Bis dahin ist alles geregelt.`));
+    const result = await events(context());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(result).toContainEqual({ type: "text", content: `${claim.text} Bis dahin ist alles geregelt.` });
+  });
+
+  it("keeps the synthesis round when the question asks a second thing", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered", answer: natural }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Den Preis habe ich nicht gefunden.`));
+    await events(context(), "Wie lang geht Hannahs Bahnding noch und was kostet es?");
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("forced document rounds that would stall", () => {
+  it("offers no final-wording field when the question lists several papers", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    await events(context(), "Welche Unterlagen habe ich zu Hannahs Bahnding?");
+    const offered = create.mock.calls[0][0].tools.find((tool: { name: string }) => tool.name === "answer_from_documents");
+    expect(offered.parameters.properties).not.toHaveProperty("answer");
+    expect(offered.parameters.properties).toHaveProperty("claims");
+  });
+
+  it("keeps the final-wording field for a question about one paper", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    await events(context());
+    const offered = create.mock.calls[0][0].tools.find((tool: { name: string }) => tool.name === "answer_from_documents");
+    expect(offered.parameters.properties).toHaveProperty("answer");
+  });
+
+  it("cuts a round that circles in reasoning instead of waiting for its timeout", async () => {
+    let drained = 0;
+    const stuck = (async function* () {
+      for (let i = 0; i < 40; i++) {
+        drained++;
+        yield { type: "response.output_item.added", item: { type: "reasoning", id: `rs_${i}` } };
+      }
+      yield { type: "response.completed", response: { output: [] } };
+    })();
+    create.mockResolvedValueOnce(stuck)
+      .mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    const ctx = context();
+    const result = await events(ctx);
+    expect(drained).toBeLessThan(12);
+    expect(ctx.timings?.some((timing) => timing.phase === "stuck_round_cut")).toBe(true);
+    expect(result).toContainEqual({ type: "text", content: `${claim.text} Damit ist das Ticket geklärt.` });
+  });
+});
