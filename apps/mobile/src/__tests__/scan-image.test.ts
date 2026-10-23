@@ -75,6 +75,24 @@ describe("prepareScanDocument", () => {
     );
   });
 
+  it("encodes one page at a time to keep memory bounded", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const encoder = encoderWithSizes([3 * MB]);
+    encoder.encode.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return { uri: "file:///out.jpg", size: 1 };
+    });
+
+    await prepareScanDocument([photo, photo, photo], 20 * MB, encoder);
+
+    expect(encoder.encode).toHaveBeenCalledTimes(3);
+    expect(peak).toBe(1);
+  });
+
   it("leaves headroom below the hard limit", async () => {
     const encoder = encoderWithSizes([19.5 * MB, 12 * MB]);
     const document = await prepareScanDocument(scannerPages, 20 * MB, encoder);

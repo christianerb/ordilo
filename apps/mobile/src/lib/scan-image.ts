@@ -88,14 +88,17 @@ export async function prepareScanDocument<TDocument extends { size?: number }>(
   const budget = Math.floor(maxBytes * SCAN_SIZE_BUDGET_RATIO);
   let document: TDocument | undefined;
   for (const [index, tier] of tiers.entries()) {
-    const pages = await Promise.all(
-      sources.map((source) => {
-        const actions = resizeActionsFor(source, tier);
-        return index === 0 && source.scannerJpeg && actions.length === 0
-          ? encoder.passthrough(source)
-          : encoder.encode(source, actions, tier.compress);
-      }),
-    );
+    // One page at a time: a decoded full-resolution page is ~35-45 MB of
+    // RGBA, so encoding a long scan in parallel could exhaust app memory.
+    const pages: EncodedPage[] = [];
+    for (const source of sources) {
+      const actions = resizeActionsFor(source, tier);
+      pages.push(
+        index === 0 && source.scannerJpeg && actions.length === 0
+          ? await encoder.passthrough(source)
+          : await encoder.encode(source, actions, tier.compress),
+      );
+    }
     document = await encoder.finish(pages, sources);
     if (document.size === undefined || document.size <= budget) return document;
   }
