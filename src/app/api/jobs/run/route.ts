@@ -2,7 +2,7 @@ import { deliverPushNotifications } from "@/lib/push";
 import { after } from "next/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runPendingJobs } from "@/lib/jobs";
-import { requireSchedulerAuth } from "@/lib/scheduler-auth";
+import { requireScheduledWorkerAuth } from "@/lib/scheduler-auth";
 import { jobsRunRequestSchema } from "@/lib/schemas/jobs";
 import { deliverInboundEmailNotifications } from "@/lib/inbound-email-notifications";
 import { backfillNodeLabelEmbeddings } from "@/lib/pipeline/label-embedding-backfill";
@@ -30,7 +30,7 @@ import { backfillNodeLabelEmbeddings } from "@/lib/pipeline/label-embedding-back
  */
 export async function POST(request: Request): Promise<Response> {
   // 1. Authenticate the scheduler ------------------------------------------
-  const authError = requireSchedulerAuth(request);
+  const authError = await requireScheduledWorkerAuth(request);
   if (authError) return authError;
 
   // 2. Parse optional limit ---------------------------------------------------

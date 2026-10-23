@@ -89,25 +89,24 @@ Erinnerungen ruft **pg_cron in Supabase** alle 5 Minuten
 `POST /api/jobs/run` und (2 Minuten versetzt) `GET /api/notifications/run`
 auf (Migration `0095_scheduler_pg_cron.sql`, über pg_net).
 
-Einmalig einrichten — im Supabase SQL-Editor, nicht in einer Migration,
-weil es Secrets sind:
+Ohne Handgriff: Migration `0096_scheduler_self_provisioned_token.sql`
+erzeugt dafür ein eigenes, zufälliges Token im Supabase Vault
+(`jobs_runner_secret`) und trägt `https://ordilo.de` als `app_origin` ein.
+Die beiden Worker-Endpunkte prüfen dieses Token über die RPC
+`scheduler_token_valid` (nur `service_role`), zusätzlich zu
+`JOBS_RUNNER_SECRET`/`CRON_SECRET`. Zieht die App um, nur `app_origin`
+im Vault anpassen. Ein dritter Job löscht täglich Laufprotokolle älter
+als 7 Tage.
 
-```sql
-select vault.create_secret('<Wert von JOBS_RUNNER_SECRET>', 'jobs_runner_secret');
-select vault.create_secret('https://<Produktions-Domain>', 'app_origin');
-```
-
-Solange beide fehlen, tun die Cron-Jobs nichts. Ein dritter Job löscht
-täglich Laufprotokolle älter als 7 Tage. Prüfen:
-`select * from cron.job_run_details order by start_time desc limit 5;`
-und `select * from net._http_response order by created desc limit 5;`.
+Prüfen: RPC `scheduler_status()` (mit dem Service-Key) zeigt Jobs, letzte
+Läufe und die letzten HTTP-Antworten.
 
 Der GitHub-Workflow „Job Runner" (`*/5`) und der tägliche Vercel-Cron
 (`vercel.json`, 05:00 UTC) laufen als weitere Backstops weiter. GitHub
 drosselt so häufige Schedules allerdings stark (gemessen: etwa alle
-5 Stunden), deshalb ist pg_cron der eigentliche Takt. Für alle Wege muss
-`CRON_SECRET` oder `JOBS_RUNNER_SECRET` gesetzt sein — der Worker
-akzeptiert beide.
+5 Stunden), deshalb ist pg_cron der eigentliche Takt. Für diese beiden
+Wege muss `CRON_SECRET` oder `JOBS_RUNNER_SECRET` gesetzt sein — der
+Worker akzeptiert beide.
 
 Der Worker ist idempotent und nebenläufigkeitssicher (FOR UPDATE SKIP
 LOCKED) — häufiges Aufrufen ist billig. Die client-getriggerten

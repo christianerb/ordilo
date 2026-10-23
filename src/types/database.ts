@@ -2154,6 +2154,18 @@ export type Database = {
           score: number;
         }[];
       };
+      scheduler_token_valid: {
+        Args: { p_token: string };
+        Returns: boolean;
+      };
+      scheduler_status: {
+        Args: Record<string, never>;
+        Returns: {
+          jobs: { name: string; schedule: string; active: boolean }[];
+          runs: { jobname: string; status: string; return_message: string | null; start_time: string; end_time: string | null }[];
+          responses: { id: number; status_code: number | null; timed_out: boolean | null; error_msg: string | null; content: string | null; created: string }[];
+        };
+      };
       replace_document_graph: {
         Args: {
           p_document_id: string;
