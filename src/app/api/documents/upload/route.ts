@@ -1,9 +1,10 @@
 import { deliverPushNotifications } from "@/lib/push";
-import { createHash } from "node:crypto";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import {
+  DIRECT_UPLOAD_LIMIT,
+  directUploadSchema,
   validateFileWithSignature,
   uploadFamilyIdSchema,
   type UploadSuccessResponse,
@@ -16,6 +17,7 @@ import {
 import { jsonError, methodNotAllowed } from "@/lib/api/respond";
 import {
   buildStoragePath,
+  documentIdForUploadKey,
   readFileHeaderBytes,
   sanitizeFilename,
 } from "@/lib/api/storage";
@@ -63,10 +65,14 @@ async function resumeExistingUpload(document: { id: string; status: string }, fa
  *   - file:    the document file (image or PDF)
  *   - family_id: the family to associate the document with
  *
+ * or, after a direct Storage upload via /api/documents/upload-url, a JSON
+ * body { family_id, upload_key, filename, mime_type } (≤ 20 MB file).
+ *
  * Pipeline:
  *   1. Authenticate the user (requireUser → 401 if no session)
  *   2. Validate family_id belongs to the authenticated user (RLS)
- *   3. Validate the file type (images + PDF only) and size (≤ 4 MB)
+ *   3. Validate the file type (images + PDF only) and size (≤ 4 MB, or
+ *      ≤ 20 MB for a direct upload, checked against the stored bytes)
  *   4. Upload the file to Supabase Storage at {family_id}/{document_id}/{filename}
  *   5. Create a `documents` row with status = "uploaded"
  *   6. Return { document_id, status: "uploaded" }
@@ -108,68 +114,23 @@ export async function POST(request: Request): Promise<Response> {
   const consentRefusal = await refuseWithoutAiConsent(user.id);
   if (consentRefusal) return consentRefusal;
 
-  // 2. Parse multipart form data ------------------------------------------
-  let formData: FormData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return jsonError(
-      "Ungültige Anfrage. Bitte eine Datei hochladen.",
-      "INVALID_FORM_DATA",
-      400,
-    );
-  }
-
-  const file = formData.get("file");
-  const familyIdRaw = formData.get("family_id");
-
-  // Verify a file was provided.
-  if (!file || !(file instanceof File)) {
-    return jsonError(
-      "Keine Datei gefunden. Bitte eine Datei auswählen.",
-      "NO_FILE",
-      400,
-    );
-  }
-
-  // Validate family_id format.
-  const familyIdParsed = uploadFamilyIdSchema.safeParse({
-    family_id: familyIdRaw,
-  });
-  if (!familyIdParsed.success) {
-    return jsonError("Ungültige Familien-ID.", "INVALID_FAMILY_ID", 400);
-  }
-  const familyId = familyIdParsed.data.family_id;
-
-  // 3. Validate file type, size, and magic-byte signature ---------------
-  // Read the file's leading bytes for magic-byte validation.
-  // This is a lightweight file-signature check that complements the MIME
-  // type validation: instead of trusting File.type alone (which is set by
-  // the browser and can be spoofed or incorrect), we verify the file's
-  // leading bytes match the expected signature for the claimed format.
-  //
-  // We read the full file into memory (it's already buffered for the
-  // Storage upload) and take the first 16 bytes. This is safe for the
-  // 4 MB max file size and avoids platform-specific Blob.slice() issues.
-  const headerResult = await readFileHeaderBytes(
-    file,
-    "Datei konnte nicht gelesen werden. Bitte erneut versuchen.",
+  // 2. Parse the request ---------------------------------------------------
+  // Two shapes: multipart with the file itself (web, older apps; capped by
+  // the serverless body limit), or JSON finalizing a file the client already
+  // put into Storage via /api/documents/upload-url (native, up to 20 MB).
+  const isDirect = (request.headers.get("content-type") ?? "").includes(
+    "application/json",
   );
-  if (!headerResult.ok) {
-    return headerResult.response;
-  }
-  const headerBytes = headerResult.headerBytes;
-
-  const validation = validateFileWithSignature(
-    file.type,
-    file.size,
-    headerBytes,
-  );
-  if (!validation.valid) {
-    const statusCode =
-      validation.code === "FILE_TOO_LARGE" ? 413 : 400;
-    return jsonError(validation.error, validation.code, statusCode);
-  }
+  const parsedInput = isDirect
+    ? await parseDirectInput(request)
+    : await parseMultipartInput(request);
+  if (parsedInput instanceof Response) return parsedInput;
+  const { familyId, uploadKey, clientField } = parsedInput;
+  const file = parsedInput.kind === "multipart" ? parsedInput.file : null;
+  const fileName =
+    parsedInput.kind === "multipart" ? parsedInput.file.name : parsedInput.filename;
+  const fileType =
+    parsedInput.kind === "multipart" ? parsedInput.file.type : parsedInput.mimeType;
 
   // 4. Verify family ownership (RLS) --------------------------------------
   // Use the server client (RLS-scoped) to verify the user owns this family.
@@ -198,10 +159,6 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const uploadKey = formData.get("upload_key");
-  if (uploadKey !== null && (typeof uploadKey !== "string" || !/^[a-zA-Z0-9_-]{8,120}$/.test(uploadKey))) {
-    return jsonError("Ungültiger Import. Bitte Datei erneut auswählen.", "INVALID_UPLOAD_KEY", 400);
-  }
   if (typeof uploadKey === "string") {
     const { data: existing, error } = await serverClient.from("documents").select("id, status")
       .eq("family_id", familyId).eq("uploaded_by", user.id).eq("upload_key", uploadKey).maybeSingle();
@@ -213,11 +170,24 @@ export async function POST(request: Request): Promise<Response> {
   // scan failure rate can compare against scan successes only — this
   // route also serves the web uploader. Unknown values are dropped
   // rather than trusted.
-  const clientField = formData.get("client");
   const uploadSource =
     clientField === "mobile_scan" || clientField === "web"
       ? clientField
       : null;
+
+  // 4a. Direct upload: validate the bytes that actually landed in Storage.
+  let storedPath: string | null = null;
+  if (parsedInput.kind === "direct") {
+    const stored = await validateStoredUpload(
+      familyId,
+      user.id,
+      parsedInput.uploadKey,
+      parsedInput.filename,
+      parsedInput.mimeType,
+    );
+    if (stored instanceof Response) return stored;
+    storedPath = stored;
+  }
 
   // 4b. Check daily upload limit ------------------------------------------
   // Count documents created today for this family to prevent cost runaway
@@ -242,8 +212,10 @@ export async function POST(request: Request): Promise<Response> {
   const operationKey =
     typeof uploadKey === "string" ? uploadKey : crypto.randomUUID();
   // Deterministic only within this user/family/key, so a lost response can be retried safely.
-  const hash = typeof uploadKey === "string" ? createHash("sha256").update(`${familyId}:${user.id}:${uploadKey}`).digest("hex") : null;
-  const documentId = hash ? `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}` : crypto.randomUUID();
+  const documentId =
+    typeof uploadKey === "string"
+      ? documentIdForUploadKey(familyId, user.id, uploadKey)
+      : crypto.randomUUID();
 
   let monthlyQuotaReserved = false;
   const releaseFailedUpload = async () => {
@@ -294,20 +266,23 @@ export async function POST(request: Request): Promise<Response> {
   const adminClient = createAdminClient();
   // Build the Storage path: {family_id}/{document_id}/{filename}
   // Sanitize the filename to avoid path traversal issues.
-  const safeFilename = sanitizeFilename(file.name, "document");
-  const storagePath = buildStoragePath(familyId, documentId, safeFilename);
+  const safeFilename = sanitizeFilename(fileName, "document");
+  const storagePath =
+    storedPath ?? buildStoragePath(familyId, documentId, safeFilename);
 
   let uploadError: unknown = null;
-  try {
-    const result = await adminClient.storage
-      .from("documents")
-      .upload(storagePath, file, {
-        contentType: file.type,
-        upsert: false,
-      });
-    uploadError = result.error;
-  } catch (error) {
-    uploadError = error;
+  if (file) {
+    try {
+      const result = await adminClient.storage
+        .from("documents")
+        .upload(storagePath, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+      uploadError = result.error;
+    } catch (error) {
+      uploadError = error;
+    }
   }
 
   if (uploadError && !(uploadKey && typeof uploadError === "object" && ("statusCode" in uploadError) && String(uploadError.statusCode) === "409")) {
@@ -337,8 +312,8 @@ export async function POST(request: Request): Promise<Response> {
       uploaded_by: user.id,
       status: "uploaded",
       file_url: storagePath,
-      original_filename: file.name,
-      mime_type: file.type,
+      original_filename: fileName,
+      mime_type: fileType,
       ...(uploadKey ? { upload_key: uploadKey as string } : {}),
     })
     .select("id")
@@ -448,6 +423,154 @@ export async function POST(request: Request): Promise<Response> {
     server_pipeline: serverPipeline,
   };
   return Response.json(body, { status: 200 });
+}
+
+type UploadInput =
+  | {
+      kind: "multipart";
+      file: File;
+      familyId: string;
+      uploadKey: string | null;
+      clientField: unknown;
+    }
+  | {
+      kind: "direct";
+      familyId: string;
+      uploadKey: string;
+      clientField: unknown;
+      filename: string;
+      mimeType: string;
+    };
+
+async function parseMultipartInput(request: Request): Promise<UploadInput | Response> {
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return jsonError(
+      "Ungültige Anfrage. Bitte eine Datei hochladen.",
+      "INVALID_FORM_DATA",
+      400,
+    );
+  }
+
+  const file = formData.get("file");
+  const familyIdRaw = formData.get("family_id");
+
+  // Verify a file was provided.
+  if (!file || !(file instanceof File)) {
+    return jsonError(
+      "Keine Datei gefunden. Bitte eine Datei auswählen.",
+      "NO_FILE",
+      400,
+    );
+  }
+
+  // Validate family_id format.
+  const familyIdParsed = uploadFamilyIdSchema.safeParse({
+    family_id: familyIdRaw,
+  });
+  if (!familyIdParsed.success) {
+    return jsonError("Ungültige Familien-ID.", "INVALID_FAMILY_ID", 400);
+  }
+
+  // 3. Validate file type, size, and magic-byte signature ---------------
+  // MIME type alone is set by the client and can be spoofed, so the
+  // file's leading bytes must match the claimed format as well.
+  const headerResult = await readFileHeaderBytes(
+    file,
+    "Datei konnte nicht gelesen werden. Bitte erneut versuchen.",
+  );
+  if (!headerResult.ok) {
+    return headerResult.response;
+  }
+
+  const validation = validateFileWithSignature(
+    file.type,
+    file.size,
+    headerResult.headerBytes,
+  );
+  if (!validation.valid) {
+    const statusCode =
+      validation.code === "FILE_TOO_LARGE" ? 413 : 400;
+    return jsonError(validation.error, validation.code, statusCode);
+  }
+
+  const uploadKey = formData.get("upload_key");
+  if (uploadKey !== null && (typeof uploadKey !== "string" || !/^[a-zA-Z0-9_-]{8,120}$/.test(uploadKey))) {
+    return jsonError("Ungültiger Import. Bitte Datei erneut auswählen.", "INVALID_UPLOAD_KEY", 400);
+  }
+
+  return {
+    kind: "multipart",
+    file,
+    familyId: familyIdParsed.data.family_id,
+    uploadKey,
+    clientField: formData.get("client"),
+  };
+}
+
+async function parseDirectInput(request: Request): Promise<UploadInput | Response> {
+  let raw: unknown;
+  try {
+    raw = await request.json();
+  } catch {
+    return jsonError("Ungültige Anfrage.", "INVALID_BODY", 400);
+  }
+  const parsed = directUploadSchema.safeParse(raw);
+  if (!parsed.success) {
+    return jsonError("Ungültige Anfrage.", "INVALID_BODY", 400);
+  }
+  return {
+    kind: "direct",
+    familyId: parsed.data.family_id,
+    uploadKey: parsed.data.upload_key,
+    clientField: parsed.data.client,
+    filename: parsed.data.filename,
+    mimeType: parsed.data.mime_type,
+  };
+}
+
+/**
+ * Check the object a client uploaded via a signed URL: it must exist at the
+ * path derived from family/user/key and pass the same type, size and
+ * magic-byte checks as a multipart upload. Invalid objects are removed.
+ * Runs only after family membership was verified.
+ */
+async function validateStoredUpload(
+  familyId: string,
+  userId: string,
+  uploadKey: string,
+  filename: string,
+  mimeType: string,
+): Promise<string | Response> {
+  const storagePath = buildStoragePath(
+    familyId,
+    documentIdForUploadKey(familyId, userId, uploadKey),
+    sanitizeFilename(filename, "document"),
+  );
+  const storage = createAdminClient().storage.from("documents");
+  const { data, error } = await storage.download(storagePath);
+  if (error || !data) {
+    return jsonError(
+      "Die Datei ist noch nicht angekommen. Bitte erneut versuchen.",
+      "UPLOAD_NOT_FOUND",
+      409,
+    );
+  }
+  const header = new Uint8Array(await data.slice(0, 16).arrayBuffer());
+  const validation = validateFileWithSignature(
+    mimeType,
+    data.size,
+    header,
+    DIRECT_UPLOAD_LIMIT,
+  );
+  if (!validation.valid) {
+    await storage.remove([storagePath]).catch(() => {});
+    const statusCode = validation.code === "FILE_TOO_LARGE" ? 413 : 400;
+    return jsonError(validation.error, validation.code, statusCode);
+  }
+  return storagePath;
 }
 
 /**

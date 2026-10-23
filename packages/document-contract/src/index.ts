@@ -5,6 +5,7 @@
  * platform validates against the exact same transport limits and MIME list.
  */
 export * from "./first-value";
+export * from "./jpeg-pdf";
 
 export const ACCEPTED_DOCUMENT_MIME_TYPES = [
   "image/jpeg",
@@ -19,6 +20,14 @@ export type AcceptedDocumentMimeType =
 
 export const MAX_DOCUMENT_FILE_SIZE = 4 * 1024 * 1024;
 export const MAX_DOCUMENT_FILE_SIZE_LABEL = "4 MB";
+
+/**
+ * Limit for files the client uploads straight to Storage through a signed
+ * upload URL (see /api/documents/upload-url). That path bypasses the
+ * serverless request-body cap, so full-resolution scans fit.
+ */
+export const MAX_DIRECT_UPLOAD_FILE_SIZE = 20 * 1024 * 1024;
+export const MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL = "20 MB";
 
 export const DOCUMENT_PIPELINE_STATUSES = [
   "uploaded",

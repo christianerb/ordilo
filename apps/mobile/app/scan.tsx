@@ -2,11 +2,6 @@ import { launchScanner } from "@dariyd/react-native-document-scanner";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
-import {
-  manipulateAsync,
-  SaveFormat,
-} from "expo-image-manipulator";
-import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -68,7 +63,6 @@ import {
   recoverLegacyScanQueue,
   getScanMimeType,
   loadPersistedScanQueue,
-  MAX_SCAN_FILE_SIZE,
   reconcileScanQueue,
   removeStagedScannedDocument,
   ScanStageError,
@@ -82,12 +76,7 @@ import {
   validateScannedDocument,
   waitForScannedDocumentAnalysis,
 } from "@/src/lib/scan";
-import {
-  prepareScanDocument,
-  type EncodedPage,
-  type ResizeAction,
-  type ScanImageSource,
-} from "@/src/lib/scan-image";
+import { prepareScan } from "@/src/lib/scan-encode";
 import { recordScanFailure } from "@/src/lib/analytics";
 import {
   completionEntering,
@@ -186,67 +175,6 @@ function isPersistedQueueItem(
 
 function createDocumentId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-async function encodeScanPage(
-  source: ScanImageSource,
-  actions: ResizeAction[],
-  compress: number,
-): Promise<EncodedPage> {
-  const image = await manipulateAsync(source.uri, actions, {
-    compress,
-    format: SaveFormat.JPEG,
-  });
-  const info = await FileSystem.getInfoAsync(image.uri);
-  return { uri: image.uri, size: info.exists ? info.size : undefined };
-}
-
-async function finishScanDocument(
-  pages: EncodedPage[],
-  sources: ScanImageSource[],
-): Promise<ScannedDocument> {
-  if (pages.length === 1) {
-    return {
-      id: createDocumentId(),
-      uri: pages[0].uri,
-      name: sources[0].name.replace(/\.[^.]+$/, "") + ".jpg",
-      mimeType: "image/jpeg",
-      size: pages[0].size,
-    };
-  }
-  const imageTags = await Promise.all(
-    pages.map(async (page) => {
-      const base64 = await FileSystem.readAsStringAsync(page.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      return `<section><img src="data:image/jpeg;base64,${base64}" /></section>`;
-    }),
-  );
-  // A4 in points; the default page size is US Letter.
-  const result = await Print.printToFileAsync({
-    width: 595,
-    height: 842,
-    html: `<html><head><style>
-      @page { margin: 0; } body { margin: 0; }
-      section { page-break-after: always; height: 100vh; display: flex; align-items: center; justify-content: center; }
-      img { max-width: 100%; max-height: 100%; }
-    </style></head><body>${imageTags.join("")}</body></html>`,
-  });
-  const info = await FileSystem.getInfoAsync(result.uri);
-  return {
-    id: createDocumentId(),
-    uri: result.uri,
-    name: `Scan-${new Date().toISOString().slice(0, 10)}.pdf`,
-    mimeType: "application/pdf",
-    size: info.exists ? info.size : undefined,
-  };
-}
-
-function prepareScan(sources: ScanImageSource[]): Promise<ScannedDocument> {
-  return prepareScanDocument(sources, MAX_SCAN_FILE_SIZE, {
-    encode: encodeScanPage,
-    finish: finishScanDocument,
-  });
 }
 
 /**
@@ -707,9 +635,9 @@ function ScanModalContent({ consentSheet }: { consentSheet: ReactNode }) {
     if (scannerBusy) return;
     setScannerBusy(true);
     try {
-      // Near-lossless from the scanner: prepareScan encodes each page once
-      // at the best quality that fits the upload limit.
-      const result = await launchScanner({ quality: 0.95 });
+      // The scanner's JPEG is the one and only encode: prepareScan uploads
+      // it untouched unless the document would exceed the upload limit.
+      const result = await launchScanner({ quality: 0.92 });
       if (result.didCancel) return;
       if (result.error || !result.images?.length) {
         throw new Error(result.errorMessage ?? "Scanner returned no images.");
@@ -721,6 +649,7 @@ function ScanModalContent({ consentSheet }: { consentSheet: ReactNode }) {
           name: image.fileName || `Scan-${index + 1}.jpg`,
           width: image.width,
           height: image.height,
+          scannerJpeg: true,
         })),
       );
       const queued = await addToQueue(document);

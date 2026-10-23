@@ -2,11 +2,10 @@
  * Image quality for scanned pages and picked photos.
  *
  * The document scanner (VisionKit on iOS) delivers sharp, perspective-
- * corrected pages at roughly A4 @ 300 dpi. We keep as much of that as the
- * 4 MB upload limit allows: every page is encoded once at the best tier,
- * and only if the finished upload would be too large do we step down.
- * The last tier matches the former fixed 1600 px / 0.72 setting, so a scan
- * that fit before still fits now.
+ * corrected pages. We keep all of it: a scanner JPEG that is not larger
+ * than the top tier goes into the upload untouched (no second encode), and
+ * everything else is encoded exactly once. Only if the finished upload
+ * would exceed the limit do we step down a tier.
  */
 
 export type ScanQualityTier = {
@@ -17,12 +16,13 @@ export type ScanQualityTier = {
 };
 
 export const SCAN_QUALITY_TIERS: readonly ScanQualityTier[] = [
-  { shortEdge: 2480, compress: 0.85 },
+  { shortEdge: 3300, compress: 0.92 },
+  { shortEdge: 2480, compress: 0.88 },
   { shortEdge: 2000, compress: 0.8 },
   { shortEdge: 1600, compress: 0.72 },
 ];
 
-/** Headroom for the multipart envelope around the file. */
+/** Headroom below the hard upload limit. */
 export const SCAN_SIZE_BUDGET_RATIO = 0.95;
 
 export type ScanImageSource = {
@@ -31,6 +31,12 @@ export type ScanImageSource = {
   /** Pixel size when the source reports it; unknown sizes get resized. */
   width?: number;
   height?: number;
+  /**
+   * Upright JPEG straight from the document scanner: may be used as-is
+   * when no resize is needed (photos can carry EXIF rotation, so they are
+   * always re-encoded upright).
+   */
+  scannerJpeg?: boolean;
 };
 
 export type ResizeAction = { resize: { width: number } | { height: number } };
@@ -56,6 +62,8 @@ export function resizeActionsFor(
 export type EncodedPage = { uri: string; size?: number };
 
 export type ScanImageEncoder<TDocument extends { size?: number }> = {
+  /** Use the source file unchanged (only called for upright scanner JPEGs). */
+  passthrough: (source: ScanImageSource) => Promise<EncodedPage>;
   encode: (
     source: ScanImageSource,
     actions: ResizeAction[],
@@ -79,11 +87,14 @@ export async function prepareScanDocument<TDocument extends { size?: number }>(
   if (!sources.length) throw new Error("Mindestens eine Seite wird benötigt.");
   const budget = Math.floor(maxBytes * SCAN_SIZE_BUDGET_RATIO);
   let document: TDocument | undefined;
-  for (const tier of tiers) {
+  for (const [index, tier] of tiers.entries()) {
     const pages = await Promise.all(
-      sources.map((source) =>
-        encoder.encode(source, resizeActionsFor(source, tier), tier.compress),
-      ),
+      sources.map((source) => {
+        const actions = resizeActionsFor(source, tier);
+        return index === 0 && source.scannerJpeg && actions.length === 0
+          ? encoder.passthrough(source)
+          : encoder.encode(source, actions, tier.compress);
+      }),
     );
     document = await encoder.finish(pages, sources);
     if (document.size === undefined || document.size <= budget) return document;

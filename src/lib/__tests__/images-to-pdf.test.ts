@@ -5,14 +5,14 @@ import {
 } from "@/lib/images-to-pdf";
 
 /** Minimal valid JPEG: SOI + SOF0 (height 16, width 32) + EOI. */
-function minimalJpeg(width = 32, height = 16): Uint8Array {
+function minimalJpeg(width = 32, height = 16, components = 3): Uint8Array {
   return new Uint8Array([
     0xff, 0xd8, // SOI
     0xff, 0xc0, 0x00, 0x11, // SOF0, length 17
     0x08, // precision
     (height >> 8) & 0xff, height & 0xff,
     (width >> 8) & 0xff, width & 0xff,
-    0x03, // 3 components
+    components,
     0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
     0xff, 0xd9, // EOI
   ]);
@@ -20,7 +20,7 @@ function minimalJpeg(width = 32, height = 16): Uint8Array {
 
 describe("getJpegDimensions", () => {
   it("reads width and height from the SOF0 marker", () => {
-    expect(getJpegDimensions(minimalJpeg(640, 480))).toEqual({
+    expect(getJpegDimensions(minimalJpeg(640, 480))).toMatchObject({
       width: 640,
       height: 480,
     });
@@ -33,7 +33,7 @@ describe("getJpegDimensions", () => {
       0xff, 0xe0, 0x00, 0x04, 0x4a, 0x46, // APP0 segment (len 4)
       ...sofPart,
     ]);
-    expect(getJpegDimensions(withApp0)).toEqual({ width: 100, height: 50 });
+    expect(getJpegDimensions(withApp0)).toMatchObject({ width: 100, height: 50 });
   });
 
   it("throws for non-JPEG bytes", () => {
@@ -61,6 +61,25 @@ describe("buildPdfFromJpegs", () => {
     const pdfStr = Array.from(pdf).join(",");
     const jpegStr = Array.from(jpeg).join(",");
     expect(pdfStr).toContain(jpegStr);
+  });
+
+  it("marks grayscale scans as DeviceGray so they render correctly", () => {
+    const text = new TextDecoder("latin1").decode(
+      buildPdfFromJpegs([minimalJpeg(32, 16, 1)]),
+    );
+    expect(text).toContain("/ColorSpace /DeviceGray");
+  });
+
+  it("scales the page to A4 width without touching the image pixels", () => {
+    const text = new TextDecoder("latin1").decode(
+      buildPdfFromJpegs([minimalJpeg(2480, 3508)], { pageWidthPt: 595 }),
+    );
+    expect(text).toContain("/MediaBox [0 0 595 841.64]");
+    expect(text).toContain("/Width 2480 /Height 3508");
+  });
+
+  it("rejects JPEGs with an unknown colour space", () => {
+    expect(() => buildPdfFromJpegs([minimalJpeg(32, 16, 2)])).toThrow();
   });
 
   it("throws for zero pages", () => {

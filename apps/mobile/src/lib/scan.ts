@@ -5,14 +5,16 @@ import { getSupabase } from "./supabase";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
-  MAX_DOCUMENT_FILE_SIZE,
-  MAX_DOCUMENT_FILE_SIZE_LABEL,
+  MAX_DIRECT_UPLOAD_FILE_SIZE,
+  MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
   type DocumentPipelineStatus,
 } from "@ordilo/document-contract";
 import { z } from "zod";
 
-export const MAX_SCAN_FILE_SIZE = MAX_DOCUMENT_FILE_SIZE;
-export const MAX_SCAN_FILE_SIZE_LABEL = MAX_DOCUMENT_FILE_SIZE_LABEL;
+// Scans go straight to Storage (signed upload URL), so they are not bound
+// by the 4 MB serverless body limit of the multipart route.
+export const MAX_SCAN_FILE_SIZE = MAX_DIRECT_UPLOAD_FILE_SIZE;
+export const MAX_SCAN_FILE_SIZE_LABEL = MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL;
 
 const acceptedMimeTypeSchema = z.enum(ACCEPTED_DOCUMENT_MIME_TYPES, {
   error: "Bitte wähle ein Bild oder eine PDF-Datei aus.",
@@ -147,7 +149,7 @@ export function describeScanFailure(
       return {
         message,
         reason,
-        detail: `Die Datei ist zu groß. Maximum: ${MAX_DOCUMENT_FILE_SIZE_LABEL}.`,
+        detail: `Die Datei ist zu groß. Maximum: ${MAX_SCAN_FILE_SIZE_LABEL}.`,
       };
     case "quota_limited":
       return {
@@ -484,7 +486,59 @@ export function validateScannedDocument(
   return result.success ? null : result.error.issues[0]?.message;
 }
 
-/** Native background transfer keeps an already-started iOS upload alive across app switches. */
+const uploadResponseSchema = z.object({
+  document_id: z.string().min(1),
+  status: z.literal("uploaded"),
+  server_pipeline: z.boolean(),
+});
+
+function uploadFailure(status: number, body: string): ApiError {
+  try {
+    const parsed = z
+      .object({ error: z.string().min(1), code: z.string().optional() })
+      .parse(JSON.parse(body));
+    return new ApiError(parsed.error, status, parsed.code);
+  } catch {
+    return new ApiError("Der Upload konnte nicht abgeschlossen werden.", status);
+  }
+}
+
+async function postUploadJson(
+  path: string,
+  body: Record<string, unknown>,
+  token: string,
+): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(`${getApiUrl()}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "x-ordilo-platform": getProductPlatform(),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError("Keine Verbindung. Dein Dokument bleibt gespeichert.", 0);
+  }
+  const text = await response.text();
+  if (!response.ok) throw uploadFailure(response.status, text);
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Retry the same key after an uncertain response, never generate a new upload.
+    throw new ApiError("Der Upload konnte noch nicht bestätigt werden.", 503);
+  }
+}
+
+/**
+ * Uploads in three steps so full-resolution scans are not squeezed under
+ * the serverless body limit: ask for a signed Storage URL, put the file
+ * straight into Storage (native background transfer, survives app
+ * switches), then let the server validate it and create the document.
+ * Every step is keyed by the queue item's id, so a retry is idempotent.
+ */
 export async function uploadScannedDocument(
   document: ScannedDocument,
   familyId: string,
@@ -492,39 +546,55 @@ export async function uploadScannedDocument(
   const { data } = await getSupabase().auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new ApiError("Bitte melde dich erneut an.", 401);
-  let response: FileSystem.FileSystemUploadResult;
+  const body = {
+    family_id: familyId,
+    upload_key: document.id,
+    filename: document.name,
+    mime_type: document.mimeType,
+    size: document.size,
+    client: "mobile_scan",
+  };
+
+  const target = z
+    .union([
+      z.object({ already_uploaded: z.literal(true) }),
+      z.object({ signed_url: z.string().url() }),
+    ])
+    .safeParse(await postUploadJson("/api/documents/upload-url", body, token));
+  if (!target.success) {
+    throw new ApiError("Der Upload konnte nicht vorbereitet werden.", 503);
+  }
+  if (!("already_uploaded" in target.data)) {
+    await putIntoStorage(target.data.signed_url, document);
+  }
+
+  const result = uploadResponseSchema.safeParse(
+    await postUploadJson("/api/documents/upload", body, token),
+  );
+  if (!result.success) {
+    throw new ApiError("Der Upload konnte noch nicht bestätigt werden.", 503);
+  }
+  return result.data;
+}
+
+async function putIntoStorage(signedUrl: string, document: ScannedDocument): Promise<void> {
+  let transfer: FileSystem.FileSystemUploadResult;
   try {
-    response = await FileSystem.uploadAsync(`${getApiUrl()}/api/documents/upload`, document.uri, {
-      httpMethod: "POST",
+    transfer = await FileSystem.uploadAsync(signedUrl, document.uri, {
+      httpMethod: "PUT",
       sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
-      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-      fieldName: "file",
-      mimeType: document.mimeType,
-      parameters: { family_id: familyId, upload_key: document.id, client: "mobile_scan" },
-      headers: { Authorization: `Bearer ${token}`, "x-ordilo-platform": getProductPlatform() },
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: { "Content-Type": document.mimeType },
     });
   } catch {
     throw new ApiError("Keine Verbindung. Dein Dokument bleibt gespeichert.", 0);
   }
-  if (response.status < 200 || response.status >= 300) {
-    try {
-      const body = z
-        .object({ error: z.string().min(1), code: z.string().optional() })
-        .parse(JSON.parse(response.body));
-      throw new ApiError(body.error, response.status);
-    } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new ApiError(
-        "Der Upload konnte nicht abgeschlossen werden.",
-        response.status,
-      );
-    }
-  }
-  try {
-    return z.object({ document_id: z.string().min(1), status: z.literal("uploaded"), server_pipeline: z.boolean() }).parse(JSON.parse(response.body));
-  } catch {
-    // Retry the same key after an uncertain response, never generate a new upload.
-    throw new ApiError("Der Upload konnte noch nicht bestätigt werden.", 503);
+  if (transfer.status < 200 || transfer.status >= 300) {
+    // Storage refusals (expired URL, hiccup) heal with a fresh URL on retry;
+    // only an oversized file is final.
+    throw transfer.status === 413
+      ? new ApiError(`Die Datei ist zu groß. Maximum: ${MAX_SCAN_FILE_SIZE_LABEL}.`, 413)
+      : new ApiError("Der Upload konnte nicht abgeschlossen werden.", 503);
   }
 }
 
