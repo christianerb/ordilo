@@ -15,6 +15,10 @@
         "applinks:www.ordilo.de"
       ],
       "infoPlist": {
+        "CFBundleDevelopmentRegion": "de",
+        "CFBundleLocalizations": [
+          "de"
+        ],
         "CADisableMinimumFrameDurationOnPhone": true,
         "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
         "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst.",
@@ -24,6 +28,9 @@
       "config": {
         "usesNonExemptEncryption": false
       }
+    },
+    "locales": {
+      "de": "./locales/de.json"
     },
     "android": {
       "package": "com.ordilo.app",
