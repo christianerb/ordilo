@@ -1,10 +1,10 @@
-import { requireSchedulerAuth } from "@/lib/scheduler-auth";
+import { requireScheduledWorkerAuth } from "@/lib/scheduler-auth";
 import { createClient } from "@/lib/supabase/admin";
 import { deliverPushNotifications, queueDailyPushNotifications } from "@/lib/push";
 
 export const maxDuration = 300;
 export async function GET(request: Request): Promise<Response> {
-  const error = requireSchedulerAuth(request);
+  const error = await requireScheduledWorkerAuth(request);
   if (error) return error;
   try {
     const client = createClient();
