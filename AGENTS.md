@@ -18,6 +18,14 @@
 - CI muss grün sein vor Merge (Lint, Typecheck, Unit Tests, Build).
 - Neue Features brauchen Tests (Vitest, gleicher Stil wie bestehende Tests).
 
+## Code-Review-Schleife vor dem Merge
+
+Findings nach Schwere einordnen: **P1** = echter Fehler mit Auswirkung (falsche Daten, Absturz, Sicherheit, Datenschutz), **P2** = kleiner Fehler, Aufräumen oder Nit.
+
+- **Mindestens ein P1** → fixen, dann neues Code Review.
+- **Kein P1 und höchstens 2× P2** → fixen, kein weiteres Review; nach grüner CI per Squash auf `main` mergen.
+- **Kein P1, aber 3 oder mehr P2** → fixen, dann neues Code Review.
+
 ## Supabase-Migrationen
 
 - SQL-Migrationen leben in `supabase/migrations/`, nummeriert (`00NN_name.sql`).
