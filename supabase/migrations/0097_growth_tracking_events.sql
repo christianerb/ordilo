@@ -392,8 +392,17 @@ as $$
     and value !~* '%40'
     and (key <> 'referrer' or value ~* '^[a-z0-9.-]+\.[a-z0-9-]+$')
     and (key <> 'landing' or value ~ '^/')
-    -- Phone numbers ("0170 1234567", "+49 170 …"; dates like 05.10.2026 pass).
-    and value !~ '[0-9]{3,}[ ./-]?[0-9]{4,}'
+    -- Phone numbers, as looksPersonal decides them: a whole value (or one
+    -- path segment) that starts with "+" or "0", has only digits and
+    -- separators and at least 7 digits. Dates, season ranges like
+    -- "winter-2025-2026" or "sale_20261024" pass.
+    and not exists (
+      select 1
+      from regexp_split_to_table(value, '/') as part(segment)
+      where part.segment ~ '^(\+|0)[0-9[:space:]()./-]+$'
+        and length(regexp_replace(part.segment, '[^0-9]', '', 'g')) >= 7
+        and part.segment !~ '^[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}$'
+    )
     and value !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}'
     and regexp_replace(value, '[-_.]', '', 'g') !~* '^[0-9a-f]{16,}$'
     and not exists (

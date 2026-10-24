@@ -159,6 +159,8 @@ describe("growth tracking migration", () => {
     // Untrusted client JSON is reduced to known keys without personal data.
     expect(migration).toContain("and value ~ '^([[:alnum:] ._+/-]|%[0-9A-Fa-f]{2})+$'");
     expect(migration).toContain("and value !~* '%40'");
+    // Phone rule per whole value or path segment, like looksPersonal.
+    expect(migration).toContain("from regexp_split_to_table(value, '/') as part(segment)");
     expect(migration).toContain("and length(value) between 1 and 200");
   });
 });
