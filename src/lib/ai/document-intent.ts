@@ -1,4 +1,8 @@
-const topic = /ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|zeugnis|zeignis|zertifikat|abschluss|\bmaster\b|\bbachelor\b|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
+// Words that only ever point at a family paper. Kept specific on purpose:
+// a prefetch commits the turn to a verified document answer, so generic
+// words that also open contact, card or task questions ("Nummer",
+// "Passwort", "Frist") stay out.
+const topic = /krankenkasse|krankenversicherung|versichert|police|gutschein|bescheid|bewilligung|kita\b|kindergarten|steuer|finanzamt|lohnabrechnung|gehaltsabrechnung|einkommen|erklärung|antrag|formular|kontoauszug|\biban\b|versicherungsnummer|kundennummer|vertragsnummer|mitgliedsnummer|aktenzeichen|ausweis|reisepass|führerschein|zulassung|mietvertrag|nebenkosten|garantie|quittung|kassenbon|arztbrief|impfpass|mahnung|\bbrief\b|schreiben\b|steht (?:in|auf|im)\b|ticket|bahnding|fahrkarte|klassenfahrt|elternabend|schulfest|rechnung|strom|vertrag|versicherung|einladung|kündig|\babo\b|mitglied(?:schaft)?|academy|befund|zeugnis|zeignis|zertifikat|abschluss|\bmaster\b|\bbachelor\b|nachweis|beitrag|unterlag|dokument|schulbrief|reparatur|selbstbehalt|selbstbeteiligung|schule|fest|buffet|mitbringen|eingepackt|sporttag|bibliothek|jahreskarte|abholschein|abholen|fahrrad|termin/iu;
 
 // Imperative forms with and without the trailing -e ("leg mir …", "lege mir …").
 // The optional trailing \w* keeps inflected commands ("Verschlagworte …",
@@ -69,3 +73,50 @@ export function documentInventoryRequest(query: string): { documentType: string 
   };
   return { documentType: types[match[1].toLocaleLowerCase("de-DE")] ?? null };
 }
+
+/**
+ * A question that asks which papers there are ("Welche Dokumente habe ich
+ * vom Kindergarten?") rather than what one of them says. Its answer lists
+ * several documents.
+ */
+export function documentListQuestion(query: string): boolean {
+  return /\b(?:welche|alle|was für|wie viele)\b[^?]*\b(?:dokumente|unterlagen|papiere|briefe|bescheide|rechnungen|verträge|belege)\b/iu.test(query)
+    || /\bwas haben wir (?:alles|zu|von|vom|über)\b/iu.test(query);
+}
+
+const LIST_NOUNS = "dokumente|unterlagen|papiere|briefe|bescheide|rechnungen|verträge|belege|schreiben";
+
+/**
+ * "Welche Dokumente habe ich vom Kindergarten?" — a request to name the
+ * papers the family has on a topic. Answered from a relevance-checked
+ * search, not by proving each document's content. Needs ("Welche
+ * Unterlagen brauche ich für …?") and narrower content questions stay with
+ * the agent.
+ */
+export function documentTopicListRequest(query: string): boolean {
+  const text = query.trim();
+  if (/\b(?:brauch|benötig|muss|müssen|soll|sollte|fehl|einreich|mitbring)\p{L}*/iu.test(text)) return false;
+  const match = new RegExp(`^(?:und\\s+)?(?:welche|was für)\\s+(?:${LIST_NOUNS})\\s+(?:habe ich|hab ich|haben wir|gibt es|liegen|sind)\\b`, "iu").exec(text)
+    ?? new RegExp(`^(?:bitte\\s+)?(?:zeig(?:e)?|liste)(?:\\s+mir)?\\s+(?:alle\\s+)?(?:(?:meine|unsere|die)\\s+)?(?:${LIST_NOUNS})\\s+(?=zu|zum|zur|vom|von|über|aus)`, "iu").exec(text)
+    ?? /^(?:und\s+)?was haben wir (?:alles\s+)?(?=zu|zum|zur|vom|von|über)/iu.exec(text);
+  if (!match) return false;
+  // The topic must be in the question itself: "Und welche Unterlagen haben
+  // wir dazu?" names none, and a search for "dazu" would list whatever
+  // ranks first. Such follow-ups stay with the agent, which reads the
+  // conversation.
+  const topicWords = text
+    .slice(match[0].length)
+    .toLocaleLowerCase("de-DE")
+    .match(/\p{L}[\p{L}-]*/gu)
+    ?.filter((word) => word.length >= 3 && !TOPIC_FILLER_WORDS.has(word)) ?? [];
+  return topicWords.length > 0;
+}
+
+/** Words around a list request that name no topic. */
+const TOPIC_FILLER_WORDS = new Set([
+  "zum", "zur", "vom", "von", "über", "aus", "dem", "den", "der", "die", "das",
+  "ihr", "ihm", "ihn", "sie", "uns", "mir", "dir", "alle", "alles", "noch",
+  "dazu", "davon", "dafür", "darüber", "damit", "daraus", "dort", "hierzu",
+  "dies", "diese", "diesem", "diesen", "dieser", "dieses", "denen", "deren",
+  "eigentlich", "insgesamt", "bisher", "schon", "überhaupt",
+]);

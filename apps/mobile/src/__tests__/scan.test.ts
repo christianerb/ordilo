@@ -41,7 +41,7 @@ jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///documents/",
   uploadAsync: jest.fn(),
   FileSystemSessionType: { BACKGROUND: 0 },
-  FileSystemUploadType: { MULTIPART: 1 },
+  FileSystemUploadType: { BINARY_CONTENT: 0, MULTIPART: 1 },
   getInfoAsync: jest.fn(),
   copyAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
@@ -98,7 +98,7 @@ describe("native scan helpers", () => {
         mimeType: "application/pdf",
         size: MAX_SCAN_FILE_SIZE + 1,
       }),
-    ).toBe("Die Datei ist zu groß. Maximum: 4 MB.");
+    ).toBe("Die Datei ist zu groß. Maximum: 20 MB.");
   });
 
   it("removes a staged file when its actual size exceeds the upload limit", async () => {
@@ -114,7 +114,7 @@ describe("native scan helpers", () => {
         name: "rechnung.pdf",
         mimeType: "application/pdf",
       }),
-    ).rejects.toThrow("Die Datei ist zu groß. Maximum: 4 MB.");
+    ).rejects.toThrow("Die Datei ist zu groß. Maximum: 20 MB.");
 
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
       "file:///documents/ordilo-scan/large-scan-rechnung.pdf",
@@ -137,41 +137,105 @@ describe("native scan helpers", () => {
     expect(steps).toEqual(["ocr", "analysis"]);
   });
 
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  const scanDocument = {
+    id: "scan-1",
+    uri: "file:///documents/ordilo-scan/scan-1.jpg",
+    name: "scan-1.jpg",
+    mimeType: "image/jpeg",
+    size: 9_000_000,
+  };
+  const directBody = {
+    family_id: "family-1",
+    upload_key: "scan-1",
+    filename: "scan-1.jpg",
+    mime_type: "image/jpeg",
+    size: 9_000_000,
+    client: "mobile_scan",
+  };
+
+  function jsonResponse(status: number, body: unknown) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
+    } as Response;
+  }
+
+  function mockDirectUpload(finalize: Response, prepare = jsonResponse(200, { signed_url: "https://storage.test/upload?token=t" })) {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(prepare)
+      .mockResolvedValueOnce(finalize);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({ status: 200, headers: {}, mimeType: null, body: "" });
+    return fetchMock;
+  }
+
+  it("puts the file straight into Storage, then lets the server confirm it", async () => {
+    const fetchMock = mockDirectUpload(
+      jsonResponse(200, { document_id: "document-1", server_pipeline: true, status: "uploaded" }),
+    );
+
+    await expect(uploadScannedDocument(scanDocument, "family-1")).resolves.toEqual({
+      document_id: "document-1",
+      server_pipeline: true,
+      status: "uploaded",
+    });
+
+    const headers = {
+      Authorization: "Bearer test-token",
+      "Content-Type": "application/json",
+      "x-ordilo-platform": Platform.OS,
+    };
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://ordilo.test/api/documents/upload-url", {
+      method: "POST", headers, body: JSON.stringify(directBody),
+    });
+    expect(FileSystem.uploadAsync).toHaveBeenCalledWith(
+      "https://storage.test/upload?token=t",
+      scanDocument.uri,
+      { httpMethod: "PUT", sessionType: 0, uploadType: 0, headers: { "Content-Type": "image/jpeg" } },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://ordilo.test/api/documents/upload", {
+      method: "POST", headers, body: JSON.stringify(directBody),
+    });
+  });
+
   it.each([400, 413, 503])("preserves HTTP %s for durable-worker retry decisions", async (status) => {
-    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({ status, headers: {}, mimeType: "application/json", body: "{}" });
-    await expect(uploadScannedDocument({ id: "scan-1", uri: "file:///scan.pdf", name: "scan.pdf", mimeType: "application/pdf" }, "family-1")).rejects.toMatchObject({ status });
+    mockDirectUpload(jsonResponse(status, { error: "Nope", code: "X" }));
+    await expect(uploadScannedDocument(scanDocument, "family-1")).rejects.toMatchObject({ status, message: "Nope" });
   });
 
   it("treats an unconfirmed successful response as retryable", async () => {
-    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({ status: 200, headers: {}, mimeType: "text/html", body: "not-json" });
-    await expect(uploadScannedDocument({ id: "scan-1", uri: "file:///scan.pdf", name: "scan.pdf", mimeType: "application/pdf" }, "family-1")).rejects.toMatchObject({ status: 503 });
+    mockDirectUpload(jsonResponse(200, "not-json"));
+    await expect(uploadScannedDocument(scanDocument, "family-1")).rejects.toMatchObject({ status: 503 });
   });
 
-  it("uses an authenticated native background multipart transfer with a stable retry key", async () => {
-    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({
-      status: 200, headers: {}, mimeType: "application/json",
-      body: JSON.stringify({
-        document_id: "document-1",
-        server_pipeline: true,
-        status: "uploaded",
-      }),
-    });
+  it("retries a refused Storage transfer with a fresh URL instead of giving up", async () => {
+    const fetchMock = mockDirectUpload(jsonResponse(200, {}));
+    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({ status: 400, headers: {}, mimeType: null, body: "" });
 
-    await uploadScannedDocument(
-      {
-        id: "scan-1",
-        uri: "file:///documents/ordilo-scan/scan-1.jpg",
-        name: "scan-1.jpg",
-        mimeType: "image/jpeg",
-      },
-      "family-1",
+    await expect(uploadScannedDocument(scanDocument, "family-1")).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the transfer when an earlier attempt already stored the file", async () => {
+    const fetchMock = mockDirectUpload(
+      jsonResponse(200, { document_id: "document-1", server_pipeline: true, status: "uploaded" }),
+      jsonResponse(200, { storage_path: "family-1/doc/scan-1.jpg", already_uploaded: true }),
     );
 
-    expect(FileSystem.uploadAsync).toHaveBeenCalledWith("https://ordilo.test/api/documents/upload", "file:///documents/ordilo-scan/scan-1.jpg", expect.objectContaining({
-      sessionType: 0, uploadType: 1, fieldName: "file", mimeType: "image/jpeg",
-      parameters: { family_id: "family-1", upload_key: "scan-1", client: "mobile_scan" },
-      headers: { Authorization: "Bearer test-token", "x-ordilo-platform": Platform.OS },
-    }));
+    await expect(uploadScannedDocument(scanDocument, "family-1")).resolves.toMatchObject({ document_id: "document-1" });
+    expect(FileSystem.uploadAsync).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the document when the device is offline", async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch;
+    await expect(uploadScannedDocument(scanDocument, "family-1")).rejects.toMatchObject({ status: 0 });
   });
 
   it("resumes an analysis retry without repeating OCR", async () => {
@@ -391,7 +455,7 @@ describe("describeScanFailure", () => {
   it("keeps size and quota refusals actionable", () => {
     expect(describeScanFailure("upload", new ApiError("x", 413))).toMatchObject({
       reason: "file_too_large",
-      detail: expect.stringContaining("4 MB"),
+      detail: expect.stringContaining("20 MB"),
     });
     expect(describeScanFailure("upload", new ApiError("x", 429))).toMatchObject({
       reason: "quota_limited",

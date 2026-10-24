@@ -1,6 +1,6 @@
 import { digestStringAsync, CryptoDigestAlgorithm } from "expo-crypto";
 import type { ResolvedSharePayload } from "expo-sharing";
-import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import { prepareScan } from "./scan-encode";
 import { getScanMimeType, stageScannedDocument, loadPersistedScanQueue, reconcileScanQueue, validateScannedDocument } from "./scan";
 
 // Photos shared straight from the Photos app carry a UUID as their asset
@@ -38,8 +38,8 @@ export async function stageSharedDocuments(payloads: ResolvedSharePayload[], fam
     let document = sharedDocumentInput(payload, id);
     // iPhone HEIC photos and large camera images enter the same JPEG pipeline.
     if (payload.contentType === "image") {
-      const image = await manipulateAsync(document.uri, [{ resize: { width: 1600 } }], { compress: 0.72, format: SaveFormat.JPEG });
-      document = { ...document, uri: image.uri, name: `${document.name.replace(/\.[^.]+$/, "")}.jpg`, mimeType: "image/jpeg", size: undefined };
+      const image = await prepareScan([{ uri: document.uri, name: document.name }]);
+      document = { ...document, uri: image.uri, name: `${document.name.replace(/\.[^.]+$/, "")}.jpg`, mimeType: "image/jpeg", size: image.size };
     }
     const validation = validateScannedDocument(document);
     if (validation) throw new Error(validation);

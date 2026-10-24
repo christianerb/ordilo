@@ -198,6 +198,30 @@ export function normalizeFactText(text: string): string {
     .replace(/\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\b/g, (_, day, month, year) => `${Number(day)}.${Number(month)}.${year}`);
 }
 
+/** Present/future wording: the thing is still running or still ahead. */
+const STILL_RUNNING = /\b(?:endet|enden|läuft|laufen|gilt|gelten|gültig|wird|werden|muss|müssen|fällig|beginnt|beginnen|startet|starten|findet|finden)\b/u;
+/** Past wording that already places the date behind us. */
+const ALREADY_PAST = /\b(?:war|waren|endete|endeten|lief|liefen|galt|galten|wurde|wurden|abgelaufen|ausgelaufen|aufgehoben|vorbei|bereits|schon|begann|fand|hatte|hatten|damals|seit)\b/u;
+
+/**
+ * A sentence that names a date already behind `today` but talks about it
+ * as if it were still running or ahead — "Der Gutschein endet am
+ * 31.07.2026" in October 2026. The letter said it in the future tense; the
+ * family hears it today. Returns the offending date, or null.
+ */
+export function pastDateStatedAsFuture(text: string, today: Date): string | null {
+  const todayIso = today.toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  for (const sentence of normalizeFactText(text).split(/(?<=[.!?])\s+(?=\D)|\n+/u)) {
+    if (!STILL_RUNNING.test(sentence) || ALREADY_PAST.test(sentence)) continue;
+    for (const match of sentence.matchAll(/(?<![\d.])(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)/gu)) {
+      const [, day, month, year] = match;
+      const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      if (iso < todayIso) return match[0];
+    }
+  }
+  return null;
+}
+
 /** A numeric claim must occur in its own evidence, not just somewhere in the results. */
 export function numbersAreSupported(answer: string, quote: string): boolean {
   const facts = normalizeFactText(answer).match(/\d+(?:[.,:/-]\d+)*/g) ?? [];
@@ -483,7 +507,7 @@ export function pageCarriesQuote(pageText: string, passages: string[]): boolean 
   });
 }
 
-export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[], people: string[] = [], question = ""):
+export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[], people: string[] = [], question = "", today?: Date):
   | { text: string; sources: ChatSource[]; state: "answered" | "partial" | "conflict" | "not_found"; gap?: string; unverified_claims?: string[] }
   | { error: string } {
   const parsed = documentAnswerSchema.safeParse(args);
@@ -497,6 +521,14 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     && !parsed.data.claims.some(claim => clock.test(claim.text) || /\b\d{1,2}\s*Uhr\b/u.test(claim.text) || /\b\d{1,2}\.\d{1,2}\.\d{4}\b/u.test(normalizeFactText(claim.text)))) {
     return { error: "Die Frage fragt nach der Zeit. Nenne die passende Uhrzeit aus dem Beleg; ein Ort allein beantwortet sie nicht." };
   }
+  // The quote is the proof, the page number only its address: a quote
+  // found word for word on another read page of the same document is
+  // that page's claim (models miscount pages of multi-page scans). The
+  // stated page still wins when it carries the quote.
+  const citedPage = (claim: DocumentAnswerClaim, passages: string[]): DocumentEvidence | undefined =>
+    evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
+      && pageCarriesQuote(item.text, passages))
+    ?? evidence.find((item) => item.documentId === claim.document_id && pageCarriesQuote(item.text, passages));
   // One unverifiable claim must not discard the verified ones: a multi-part
   // question (several documents, a second child's unreadable slip) keeps its
   // verified parts and reports only the failing claims for correction.
@@ -509,8 +541,7 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     if (passages.length > MAX_QUOTE_PASSAGES) {
       return `Ein Beleg darf aus höchstens ${MAX_QUOTE_PASSAGES} Stellen derselben Seite bestehen. Zitiere weniger, dafür zusammenhängende Ausschnitte.`;
     }
-    const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
-      && pageCarriesQuote(item.text, passages));
+    const page = citedPage(claim, passages);
     if (!page) return "Die zitierte Stelle wurde so noch nicht gelesen. Lies die passende Seite mit read_document und übernimm das Zitat wörtlich. Bei einem Formular darfst du Feldbeschriftung und Wert mit '...' verbinden, solange beide wörtlich auf derselben Seite stehen.";
     // A source without a page number is one aggregate text: joining
     // passages across it could pair a person or an amount from one letter
@@ -524,6 +555,8 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
       }
     }
     if (validityDateConflict(claim.text, claim.quote)) return "Die Ticketgültigkeit wurde mit einem anderen Datum verwechselt. Zitiere das Gültigkeitsende, nicht die Kündigungsfrist.";
+    const staleDate = today ? pastDateStatedAsFuture(claim.text, today) : null;
+    if (staleDate) return `Der ${staleDate} liegt schon in der Vergangenheit. Formuliere die Aussage so, wie sie heute stimmt, z. B. „ist am ${staleDate} abgelaufen“ oder „war am ${staleDate}“.`;
     if (!numbersAreSupported(claim.text, claim.quote)) return "Ein Datum oder eine Zahl der Aussage steht nicht in ihrem Beleg. Prüfe die Gültigkeit bzw. Frist auf der Originalseite und korrigiere die Aussage.";
     const mismatch = amountFieldMismatch(claim.text, claim.quote, people, page.text);
     if (mismatch) return `Die Aussage nennt bei „${mismatch.field}“ den Betrag ${mismatch.claimed} €, der Beleg zeigt dort ${mismatch.shown} €. Übernimm Feldname und Betrag so, wie sie auf der Seite zusammenstehen.`;
@@ -548,8 +581,7 @@ export function verifyDocumentAnswer(args: unknown, evidence: DocumentEvidence[]
     if (problem) { problems.push(problem); continue; }
     verifiedTexts.push(claim.text);
     const passages = quotePassages(claim.quote);
-    const page = evidence.find((item) => item.documentId === claim.document_id && item.page === claim.page_number
-      && pageCarriesQuote(item.text, passages))!;
+    const page = citedPage(claim, passages)!;
     // A form quote skips between fields; keep the skip visible to the family
     // instead of showing distant fields as one continuous passage.
     const shownQuote = readableQuote(passages.length > 1 ? passages.join(" … ") : claim.quote);

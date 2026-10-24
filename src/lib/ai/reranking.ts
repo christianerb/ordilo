@@ -21,7 +21,7 @@ import type { SearchResult } from "@/lib/schemas/search";
  */
 
 /** Maximum results to send to the LLM for re-ranking. */
-const RERANK_TOP_K = 10;
+export const RERANK_TOP_K = 10;
 
 /**
  * Max user-visible latency the re-rank may add (ms). On timeout the

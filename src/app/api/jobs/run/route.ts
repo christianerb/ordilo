@@ -2,9 +2,10 @@ import { deliverPushNotifications } from "@/lib/push";
 import { after } from "next/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runPendingJobs } from "@/lib/jobs";
-import { requireSchedulerAuth } from "@/lib/scheduler-auth";
+import { requireScheduledWorkerAuth } from "@/lib/scheduler-auth";
 import { jobsRunRequestSchema } from "@/lib/schemas/jobs";
 import { deliverInboundEmailNotifications } from "@/lib/inbound-email-notifications";
+import { backfillNodeLabelEmbeddings } from "@/lib/pipeline/label-embedding-backfill";
 
 /**
  * POST /api/jobs/run — the pipeline job worker.
@@ -29,7 +30,7 @@ import { deliverInboundEmailNotifications } from "@/lib/inbound-email-notificati
  */
 export async function POST(request: Request): Promise<Response> {
   // 1. Authenticate the scheduler ------------------------------------------
-  const authError = requireSchedulerAuth(request);
+  const authError = await requireScheduledWorkerAuth(request);
   if (authError) return authError;
 
   // 2. Parse optional limit ---------------------------------------------------
@@ -57,6 +58,13 @@ export async function POST(request: Request): Promise<Response> {
       await deliverInboundEmailNotifications(
         process.env.APP_BASE_URL ?? new URL(request.url).origin,
       );
+      // Knowledge-graph nodes without a label vector are invisible to the
+      // semantic graph match. Best-effort: the next run retries.
+      try {
+        await backfillNodeLabelEmbeddings(adminClient);
+      } catch {
+        // OpenAI unavailable — nothing to undo.
+      }
     });
     return Response.json(summary, { status: 200 });
   } catch (err) {

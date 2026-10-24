@@ -199,6 +199,9 @@ function mockServerClient(options: {
       if (fnName === "lexical_search") {
         return Promise.resolve({ data: lexicalResults, error: null });
       }
+      if (fnName === "graph_traversal") {
+        return Promise.resolve({ data: { seeds: [], edges: [], nodes: [] }, error: null });
+      }
       return Promise.resolve({
         data: semanticResults,
         error: rpcError,

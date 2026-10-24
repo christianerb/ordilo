@@ -7,7 +7,7 @@ vi.mock("@/lib/ai/search", async (load) => {
   return { ...actual, hybridSearch: vi.fn(async () => [{ document_id: "10000000-0000-4000-8000-000000000001", title: "Abo-Bestätigung Hannah", chunk_text: "Kundennummer: TEST-123", score: 0.9, source: "fact" }]), graphSearch: vi.fn(async () => []) };
 });
 vi.mock("@/lib/ai/web-search", () => ({ searchPublicWeb: vi.fn(async () => ({query:"Ticket aktueller Preis",summary:"Der Beispieltarif kostet 63 Euro.",sources:[{document_id:"web-price",title:"Tarifauskunft",excerpt:"Der Beispieltarif kostet 63 Euro.",url:"https://example.org/tarif",origin:"web",score:1}]})) }));
-vi.mock("@/lib/ai/reranking", () => ({ rerankResults: vi.fn(async (_query, results) => results) }));
+vi.mock("@/lib/ai/reranking", () => ({ RERANK_TOP_K: 10, rerankResults: vi.fn(async (_query, results) => results) }));
 import { streamAgenticAnswer } from "../chat";
 import { hybridSearch } from "../search";
 import { rerankResults } from "../reranking";
@@ -452,4 +452,143 @@ describe("real document tools through the chat orchestration", () => {
     expect(result.filter(event => event.type === 'done')).toHaveLength(0);
   });
 
+});
+
+describe("verified document answer that already carries the final wording", () => {
+  const natural = "Hannahs Deutschlandticket gilt noch bis zum 31. August 2027, so steht es in der Abo-Bestätigung. Bis dahin ist sie gut unterwegs.";
+
+  it("ends the turn with the model's own wording, without a synthesis round", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered", answer: natural }));
+    const result = await events(context());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result).toContainEqual({ type: "text", content: natural });
+    const sources = result.find(event => event.type === "sources").sources;
+    expect(sources[0]).toMatchObject({ document_id: id, quote, cited: true });
+    expect(result).toContainEqual({ type: "response_state", state: "answered" });
+    expect(result.at(-1)).toEqual({ type: "done" });
+  });
+
+  it.each([
+    ["names an institution no page mentions", "Hannahs Deutschlandticket bei der AOK gilt noch bis zum 31. August 2027."],
+    ["drops the verified date", "Hannahs Deutschlandticket gilt noch eine ganze Weile, so steht es in der Abo-Bestätigung."],
+    ["adds a number nobody read", "Hannahs Deutschlandticket gilt bis zum 31. August 2027 und kostet 58 Euro."],
+    ["leaves the answer empty", ""],
+  ])("falls back to the regular final round when the wording %s", async (_name, wording) => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered", answer: wording }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Bis dahin ist alles geregelt.`));
+    const result = await events(context());
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(result).toContainEqual({ type: "text", content: `${claim.text} Bis dahin ist alles geregelt.` });
+  });
+
+  it("keeps the synthesis round when the question asks a second thing", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered", answer: natural }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Den Preis habe ich nicht gefunden.`));
+    await events(context(), "Wie lang geht Hannahs Bahnding noch und was kostet es?");
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("forced document rounds that would stall", () => {
+  it("offers no final-wording field when the question lists several papers", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    await events(context(), "Welche Unterlagen zu Hannahs Bahnding sind noch gültig?");
+    const offered = create.mock.calls[0][0].tools.find((tool: { name: string }) => tool.name === "answer_from_documents");
+    expect(offered.parameters.properties).not.toHaveProperty("answer");
+    expect(offered.parameters.properties).toHaveProperty("claims");
+  });
+
+  it("keeps the final-wording field for a question about one paper", async () => {
+    create.mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    await events(context());
+    const offered = create.mock.calls[0][0].tools.find((tool: { name: string }) => tool.name === "answer_from_documents");
+    expect(offered.parameters.properties).toHaveProperty("answer");
+  });
+
+  it("cuts a round that circles in reasoning instead of waiting for its timeout", async () => {
+    let drained = 0;
+    const stuck = (async function* () {
+      for (let i = 0; i < 40; i++) {
+        drained++;
+        yield { type: "response.output_item.added", item: { type: "reasoning", id: `rs_${i}` } };
+      }
+      yield { type: "response.completed", response: { output: [] } };
+    })();
+    create.mockResolvedValueOnce(stuck)
+      .mockResolvedValueOnce(round("answer_from_documents", { claims: [claim], state: "answered" }))
+      .mockResolvedValueOnce(finalAnswer(`${claim.text} Damit ist das Ticket geklärt.`));
+    const ctx = context();
+    const result = await events(ctx);
+    expect(drained).toBeLessThan(12);
+    expect(ctx.timings?.some((timing) => timing.phase === "stuck_round_cut")).toBe(true);
+    expect(result).toContainEqual({ type: "text", content: `${claim.text} Damit ist das Ticket geklärt.` });
+  });
+});
+
+describe("topic document lists", () => {
+  const second = "10000000-0000-4000-8000-000000000002";
+  const third = "10000000-0000-4000-8000-000000000003";
+  const hit = (document_id: string, title: string, score: number) =>
+    ({ document_id, title, chunk_text: title, score, source: "semantic" });
+
+  it("names the relevance-checked papers without a model round", async () => {
+    vi.mocked(rerankResults).mockResolvedValueOnce([
+      hit(id, "Einladung zur Eingewöhnung", 0.9),
+      hit(second, "Kita-Gutschein Hanna", 0.8),
+      hit(third, "GBS-Betreuung Schuljahr", 0.5),
+    ]);
+    const result = await events(context(), "Welche Dokumente habe ich vom Kindergarten?");
+    expect(create).not.toHaveBeenCalled();
+    expect(result).toContainEqual({
+      type: "text",
+      content: "Dazu habe ich 2 Dokumente gefunden: „Einladung zur Eingewöhnung“ und „Kita-Gutschein Hanna“. Du kannst sie unten öffnen.",
+    });
+    const sources = result.find(event => event.type === "sources").sources;
+    expect(sources.map((source: { document_id: string }) => source.document_id)).toEqual([id, second]);
+    expect(result.at(-1)).toEqual({ type: "done" });
+  });
+
+  it("names a title shared by two papers once, with its count", async () => {
+    vi.mocked(rerankResults).mockResolvedValueOnce([
+      hit(id, "Zugangscode Schulfotos", 0.9),
+      hit(second, "Zugangscode Schulfotos", 0.9),
+      hit(third, "Schulmanager", 0.8),
+    ]);
+    const result = await events(context(), "Zeig mir alle Dokumente zur Schule");
+    expect(result).toContainEqual({
+      type: "text",
+      content: "Dazu habe ich 3 Dokumente gefunden: „Zugangscode Schulfotos“ (2×) und „Schulmanager“. Du kannst sie unten öffnen.",
+    });
+  });
+
+  it("keeps a list question with a second part in the agent flow", async () => {
+    create.mockResolvedValueOnce(finalAnswer("Die Unterlagen laufen unterschiedlich lange."));
+    const result = await events(context(), "Welche Unterlagen haben wir zur Krankenversicherung und wann laufen sie ab?");
+    expect(create).toHaveBeenCalled();
+    expect(result.some(event => event.type === "text" && /^(?:Dazu habe ich|Hier sind die)/u.test(event.content))).toBe(false);
+  });
+
+  it("calls a full page of hits a selection, not the complete count", async () => {
+    const many = Array.from({ length: 10 }, (_, i) =>
+      hit(`10000000-0000-4000-8000-0000000000${String(10 + i)}`, `Schulbrief ${i + 1}`, 0.9));
+    vi.mocked(hybridSearch).mockResolvedValueOnce(many);
+    vi.mocked(rerankResults).mockResolvedValueOnce(many);
+    const result = await events(context(), "Zeig mir alle Dokumente zur Schule");
+    const text = result.find(event => event.type === "text").content as string;
+    expect(text).toMatch(/^Hier sind die 10 passendsten Dokumente dazu: /u);
+    expect(text).toContain("Es kann noch weitere geben");
+  });
+
+  it.each([
+    ["nothing fits clearly", () => vi.mocked(rerankResults).mockResolvedValueOnce([hit(id, "GBS-Betreuung", 0.4)])],
+    ["the relevance check fails", () => vi.mocked(rerankResults).mockRejectedValueOnce(new Error("timeout"))],
+  ])("hands the question to the agent when %s", async (_name, arrange) => {
+    arrange();
+    create.mockResolvedValueOnce(finalAnswer("Dazu habe ich keine passende Unterlage gefunden."));
+    const result = await events(context(), "Was haben wir alles zum Auto?");
+    expect(create).toHaveBeenCalled();
+    expect(result.find(event => event.type === "text")).toBeDefined();
+  });
 });

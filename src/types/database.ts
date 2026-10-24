@@ -1452,6 +1452,8 @@ export type Database = {
           type: string;
           label: string;
           properties_json: Record<string, unknown>;
+          /** pgvector(1536) as its text form, null until embedded. */
+          label_embedding: string | null;
           created_at: string;
         };
         Insert: {
@@ -1460,6 +1462,7 @@ export type Database = {
           type: string;
           label: string;
           properties_json?: Record<string, unknown>;
+          label_embedding?: string | null;
           created_at?: string;
         };
         Update: {
@@ -1468,6 +1471,7 @@ export type Database = {
           type?: string;
           label?: string;
           properties_json?: Record<string, unknown>;
+          label_embedding?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -2173,6 +2177,56 @@ export type Database = {
           label: string;
           score: number;
         }[];
+      };
+      scheduler_token_valid: {
+        Args: { p_token: string };
+        Returns: boolean;
+      };
+      scheduler_status: {
+        Args: Record<string, never>;
+        Returns: {
+          jobs: { name: string; schedule: string; active: boolean }[];
+          runs: { jobname: string; status: string; return_message: string | null; start_time: string; end_time: string | null }[];
+          responses: { id: number; status_code: number | null; timed_out: boolean | null; error_msg: string | null; content: string | null; created: string }[];
+        };
+      };
+      replace_document_graph: {
+        Args: {
+          p_document_id: string;
+          p_family_id: string;
+          p_title: string;
+          p_persons?: ConfirmRpcPerson[];
+          p_organizations?: ConfirmRpcOrganization[];
+          p_label_embeddings?: ConfirmRpcLabelEmbedding[];
+        };
+        Returns: string;
+      };
+      graph_traversal: {
+        Args: {
+          p_family_id: string;
+          p_patterns: string[];
+          p_query_embedding?: string | null;
+          p_semantic_threshold?: number;
+          p_semantic_limit?: number;
+          p_max_hops?: number;
+        };
+        Returns: {
+          seeds: { id: string; similarity: number | null }[];
+          edges: {
+            id: string;
+            source_node_id: string;
+            target_node_id: string;
+            source_document_id: string | null;
+            confidence: number | null;
+            confirmed: boolean;
+          }[];
+          nodes: {
+            id: string;
+            type: string;
+            label: string;
+            document_id: string | null;
+          }[];
+        };
       };
     };
     Enums: Record<string, never>;
