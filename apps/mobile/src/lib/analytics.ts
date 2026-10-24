@@ -22,8 +22,7 @@ export type ProductEventName =
   | "chat_question_sent"
   | "search_completed"
   | "task_created"
-  | "task_completed"
-  | "app_opened";
+  | "task_completed";
 
 export async function recordProductEvent(
   client: SupabaseClient,
@@ -117,10 +116,31 @@ export async function recordOnboardingStartedIfFirstTime(
   }
 }
 
+// In-memory only: the root layout calls this on every foreground, so skip
+// the round trip once today's open was recorded for this user in this app
+// session. Keyed by user so a sign-out and a different sign-in still
+// record.
+let lastRecordedAppOpen: string | null = null;
+
+// The mobile package cannot import the web's src/lib/berlin-date.ts; this
+// day is only the memo key — the database index decides the real day.
+function berlinDay(now: Date): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Berlin",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
+}
+
 /**
- * Record that the app was opened today — at most one event per user and
- * UTC day (same rule as the web, src/lib/analytics/product-events.ts).
- * Called on every Heute load; the lookup keeps it to one row per day.
+ * Record that the app was opened today. The record_app_open RPC and a
+ * unique index keep it to one row per user and German calendar day (same
+ * as the web, src/lib/analytics/product-events.ts). Never throws.
  */
 export async function recordDailyAppOpen(
   familyId: string | null,
@@ -128,29 +148,27 @@ export async function recordDailyAppOpen(
 ): Promise<void> {
   try {
     const client = getSupabase();
+    // Reads the stored session — no network round trip.
     const {
       data: { session },
     } = await client.auth.getSession();
     const userId = session?.user.id;
     if (!userId) return;
 
-    const dayStart = new Date(now);
-    dayStart.setUTCHours(0, 0, 0, 0);
-    const { data, error } = await client
-      .from("product_events")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("event_name", "app_opened")
-      .gte("occurred_at", dayStart.toISOString())
-      .limit(1);
-    if (error || (data && data.length > 0)) return;
-
-    await recordProductEvent(client, {
-      userId,
-      familyId,
-      eventName: "app_opened",
+    const key = `${userId}:${berlinDay(now)}`;
+    if (lastRecordedAppOpen === key) return;
+    const { data, error } = await client.rpc("record_app_open", {
+      p_family_id: familyId,
+      p_platform: getProductPlatform(),
     });
+    // false: setup not finished yet — ask again on the next open.
+    if (!error && data === true) lastRecordedAppOpen = key;
   } catch {
     // Analytics must never block a user-facing action.
   }
+}
+
+/** Test hook: forget the in-memory "already recorded today" marker. */
+export function resetDailyAppOpenForTests(): void {
+  lastRecordedAppOpen = null;
 }

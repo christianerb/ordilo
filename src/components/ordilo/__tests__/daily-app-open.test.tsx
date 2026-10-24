@@ -1,0 +1,52 @@
+import { act, render } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { recordDailyAppOpen } = vi.hoisted(() => ({
+  recordDailyAppOpen: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/analytics/product-events", () => ({ recordDailyAppOpen }));
+vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn(() => ({})) }));
+
+import { DailyAppOpen } from "../daily-app-open";
+
+function setVisibility(state: "visible" | "hidden") {
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: state });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+describe("DailyAppOpen", () => {
+  beforeEach(() => recordDailyAppOpen.mockClear());
+  afterEach(() => vi.useRealTimers());
+
+  it("records on mount and again when the tab comes back", () => {
+    const { unmount } = render(<DailyAppOpen familyId="family-1" />);
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    expect(recordDailyAppOpen).toHaveBeenLastCalledWith({}, { familyId: "family-1" });
+
+    act(() => setVisibility("hidden"));
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    act(() => setVisibility("visible"));
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(2);
+
+    unmount();
+    act(() => setVisibility("visible"));
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(2);
+  });
+
+  it("records again at Berlin midnight while the tab stays visible", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-22T21:59:00Z")); // 23:59 Berlin
+    setVisibility("visible");
+    const { unmount } = render(<DailyAppOpen familyId="family-1" />);
+    recordDailyAppOpen.mockClear();
+
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(recordDailyAppOpen).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+
+    unmount();
+    act(() => vi.advanceTimersByTime(48 * 60 * 60 * 1000));
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+  });
+});

@@ -24,7 +24,13 @@ describe("growth tracking migration", () => {
   it("can be reapplied", () => {
     expect(migration).toContain("drop constraint if exists");
     expect(migration.match(/drop trigger if exists/g)).toHaveLength(2);
-    expect(migration.match(/create or replace function/g)).toHaveLength(2);
+    expect(migration.match(/create (or replace )?function/g)).toHaveLength(6);
+    // Functions whose return type changed are dropped first so reapplying works.
+    expect(migration).toContain("drop function if exists public.record_app_open(uuid, text);");
+    expect(migration).toContain(
+      "drop function if exists public.admin_growth_event_days(timestamptz, text[]);",
+    );
+    expect(migration).toContain("create unique index if not exists product_events_app_opened_daily_idx");
   });
 
   it("never lets analytics block an invite", () => {
@@ -35,9 +41,72 @@ describe("growth tracking migration", () => {
     expect(migration).toContain("if new.role <> 'owner' then");
   });
 
-  it("runs the trigger functions with a fixed search path and no direct execute grant", () => {
-    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(2);
+  it("runs every definer function with a fixed search path and tight grants", () => {
+    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(5);
     expect(migration).toMatch(/revoke execute on function public\.record_invite_created_event\(\)/);
     expect(migration).toMatch(/revoke execute on function public\.record_invite_accepted_event\(\)/);
+    expect(migration).toContain(
+      "revoke execute on function public.admin_forwarding_family_count() from public, anon, authenticated;",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.admin_forwarding_family_count() to service_role;",
+    );
+    expect(migration).toContain("grant execute on function public.record_app_open(uuid, text) to authenticated;");
+  });
+
+  it("keeps app_opened to one row per user and German calendar day", () => {
+    expect(migration).toMatch(
+      /\(occurred_at at time zone 'Europe\/Berlin'\)::date\)\s+\)\s+where event_name = 'app_opened'/,
+    );
+    expect(migration).toContain("on conflict do nothing");
+    // The caller can only attach a family they belong to.
+    expect(migration).toContain("public.user_belongs_to_family(p_family_id)");
+  });
+
+  it("stops clients from inserting the database-written events", () => {
+    expect(migration).toContain('drop policy if exists "product_events_insert_own"');
+    expect(migration).toContain(
+      "and event_name not in ('invite_created', 'invite_accepted', 'app_opened')",
+    );
+    // The 0047 rules stay in place.
+    expect(migration).toContain("auth.uid() = user_id");
+    expect(migration).toContain("or public.user_belongs_to_family(family_id)");
+  });
+
+  it("aggregates growth events per user, event and Berlin day for the service role only", () => {
+    expect(migration).toContain(
+      "group by e.user_id, e.event_name, (e.occurred_at at time zone 'Europe/Berlin')::date",
+    );
+    expect(migration).toContain(
+      "revoke execute on function public.admin_growth_event_days(timestamptz, text[]) from public, anon, authenticated;",
+    );
+    expect(migration).toContain(
+      "grant execute on function public.admin_growth_event_days(timestamptz, text[]) to service_role;",
+    );
+  });
+
+  it("does not count reopening an unfinished setup as an app open", () => {
+    expect(migration).toContain("returns boolean");
+    expect(migration).toContain("and f.onboarding_completed_at is not null");
+  });
+
+  it("tags invite events with the platform from the request header", () => {
+    expect(migration).toContain("->> 'x-ordilo-platform'");
+    expect(
+      migration.match(/'platform', public\.request_product_platform\(\)/g),
+    ).toHaveLength(2);
+  });
+
+  it("returns the growth aggregate as a single JSON array", () => {
+    expect(migration).toContain("coalesce(jsonb_agg(day_rows), '[]'::jsonb)");
+  });
+
+  it("removes duplicate app_opened rows before building the unique index", () => {
+    const dedupe = migration.indexOf("delete from public.product_events e");
+    const index = migration.indexOf("create unique index if not exists product_events_app_opened_daily_idx");
+    expect(dedupe).toBeGreaterThan(-1);
+    expect(dedupe).toBeLessThan(index);
+    expect(migration).toContain("and (earlier.occurred_at, earlier.id) < (e.occurred_at, e.id);");
   });
 });
+

@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { berlinDay, startOfBerlinWeek } from "@/lib/berlin-date";
+import { resolveEffectivePlan, type PlanCode, type EntitlementStatus } from "@/lib/billing/entitlements";
 import {
   classifyChannel,
   type AcquisitionChannel,
@@ -16,6 +19,7 @@ import {
  * - Zurückgekommen in Woche 1 / Woche 4: any use (including just opening
  *   the app) on days 7–13 / 28–34 after signup. Onboarding steps and
  *   joining a family do not count as coming back.
+ * - Rates only count people whose window has fully passed (see Share).
  * - Aktiv genutzt: a core action (upload, confirm, question, task, …),
  *   as opposed to only opening the app.
  */
@@ -24,6 +28,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const ACTIVATION_WINDOW_DAYS = 7;
 /** An invite accepted this soon after signup means the invite brought them. */
 const INVITE_SIGNUP_WINDOW_MS = DAY_MS;
+/** Stored channels that do not explain why someone came. */
+const WEAK_CHANNELS = new Set<AcquisitionChannel>(["direkt", "app", "unbekannt"]);
 
 export type GrowthAccount = {
   id: string;
@@ -31,11 +37,32 @@ export type GrowthAccount = {
   attribution: SignupAttribution | null;
 };
 
-export type GrowthEvent = {
+/**
+ * Events of one user, one event name and one Berlin day, as aggregated by
+ * the admin_growth_event_days RPC. First and last time are enough for
+ * every window check below: a window is at least a day long, so it can
+ * cut a day at one end only.
+ */
+export type GrowthEventDay = {
   user_id: string;
   event_name: string;
-  occurred_at: string;
+  first_at: string;
+  last_at: string;
+  event_count: number;
 };
+
+const growthEventDaySchema = z.object({
+  user_id: z.string(),
+  event_name: z.string(),
+  first_at: z.string(),
+  last_at: z.string(),
+  event_count: z.coerce.number().int().nonnegative(),
+});
+
+/** Validate the JSON array returned by the admin_growth_event_days RPC. */
+export function parseGrowthEventDays(value: unknown): GrowthEventDay[] {
+  return z.array(growthEventDaySchema).parse(value ?? []);
+}
 
 const QUESTION_EVENTS = new Set(["chat_question_sent", "search_completed"]);
 
@@ -52,42 +79,60 @@ export const CORE_ACTIONS = new Set([
   "invite_created",
 ]);
 
-/** Events that say nothing about coming back. */
-const NON_RETURN_EVENTS = new Set([
-  "onboarding_started",
-  "onboarding_step_completed",
-  "onboarding_completed",
-  "onboarding_entry_selected",
-  "onboarding_scan_started",
-  "invite_accepted",
+/**
+ * Rows the database writes on its own: joining a family and opening the
+ * app. Neither is product use for the overview's "aktiv" numbers.
+ */
+export const NOT_PRODUCT_USE_EVENTS = ["app_opened", "invite_accepted"] as const;
+
+/** Use that counts as coming back. Onboarding and joining do not. */
+const RETURN_EVENTS = new Set([
+  ...CORE_ACTIONS,
+  "app_opened",
+  "document_result_viewed",
+  "document_upload_failed",
+  "chat_answer_repair_started",
 ]);
+
+/** Every event name the metrics read — the RPC loads only these. */
+export const GROWTH_EVENT_NAMES = [
+  ...new Set([...RETURN_EVENTS, "onboarding_completed", "invite_accepted"]),
+];
+
+type Interval = { from: number; to: number };
 
 type UserTimeline = {
   first: Map<string, number>;
-  /** Times of every event that counts as coming back. */
-  returns: number[];
-  /** Times of every core action. */
-  core: number[];
+  /** Days with use that counts as coming back. */
+  returns: Interval[];
+  /** Days with a core action. */
+  core: Interval[];
 };
 
-function buildTimelines(events: GrowthEvent[]): Map<string, UserTimeline> {
+function buildTimelines(events: GrowthEventDay[]): Map<string, UserTimeline> {
   const timelines = new Map<string, UserTimeline>();
   for (const event of events) {
-    const time = new Date(event.occurred_at).getTime();
-    if (Number.isNaN(time)) continue;
+    const from = new Date(event.first_at).getTime();
+    const to = new Date(event.last_at).getTime();
+    if (Number.isNaN(from) || Number.isNaN(to)) continue;
     let timeline = timelines.get(event.user_id);
     if (!timeline) {
       timeline = { first: new Map(), returns: [], core: [] };
       timelines.set(event.user_id, timeline);
     }
     const previous = timeline.first.get(event.event_name);
-    if (previous === undefined || time < previous) {
-      timeline.first.set(event.event_name, time);
+    if (previous === undefined || from < previous) {
+      timeline.first.set(event.event_name, from);
     }
-    if (!NON_RETURN_EVENTS.has(event.event_name)) timeline.returns.push(time);
-    if (CORE_ACTIONS.has(event.event_name)) timeline.core.push(time);
+    if (RETURN_EVENTS.has(event.event_name)) timeline.returns.push({ from, to });
+    if (CORE_ACTIONS.has(event.event_name)) timeline.core.push({ from, to });
   }
   return timelines;
+}
+
+/** Whether any event of these days falls in [start, end). */
+function anyBetween(days: Interval[] | undefined, start: number, end: number): boolean {
+  return days?.some((day) => day.to >= start && day.from < end) ?? false;
 }
 
 function firstOf(timeline: UserTimeline | undefined, names: Iterable<string>): number | null {
@@ -112,40 +157,64 @@ function channelForAccount(
   account: GrowthAccount,
   timeline: UserTimeline | undefined,
 ): AcquisitionChannel {
-  // Native invite joins and accounts created before attribution existed
-  // carry no "via: invite" — an invite accepted right after signup is
-  // the stronger signal for both.
+  const stored = classifyChannel(account.attribution);
+  // A real marketing channel always wins. Only when the stored touch says
+  // nothing about why they came (direct, the app's own login screen, or an
+  // account from before attribution) does an invite accepted right after
+  // signup explain it.
+  if (!WEAK_CHANNELS.has(stored)) return stored;
   const joined = firstOf(timeline, ["invite_accepted"]);
   const created = new Date(account.createdAt).getTime();
   if (joined !== null && joined - created <= INVITE_SIGNUP_WINDOW_MS) return "einladung";
-  return classifyChannel(account.attribution);
+  return stored;
 }
 
 /**
- * Share of people who came back in [startDay, endDay) after signup, among
- * those whose window has fully passed. `rate` is null while nobody in the
- * group is old enough yet.
+ * A share among the people whose window has fully passed. `rate` is null
+ * while nobody in the group is old enough yet, so young accounts never
+ * drag a rate down before they had their chance.
  */
+export type Share = { eligible: number; count: number; rate: number | null };
+
+function shareOf(
+  accounts: GrowthAccount[],
+  now: number,
+  windowDays: number,
+  hit: (account: GrowthAccount, created: number) => boolean,
+): Share {
+  let eligible = 0;
+  let count = 0;
+  for (const account of accounts) {
+    const created = new Date(account.createdAt).getTime();
+    if (now < created + windowDays * DAY_MS) continue;
+    eligible += 1;
+    if (hit(account, created)) count += 1;
+  }
+  return { eligible, count, rate: eligible === 0 ? null : count / eligible };
+}
+
+/** Came back on days [startDay, endDay) after signup. */
 function returnedBetween(
   accounts: GrowthAccount[],
   timelines: Map<string, UserTimeline>,
   startDay: number,
   endDay: number,
   now: number,
-): { eligible: number; returned: number; rate: number | null } {
-  let eligible = 0;
-  let returned = 0;
-  for (const account of accounts) {
-    const created = new Date(account.createdAt).getTime();
-    if (now < created + endDay * DAY_MS) continue;
-    eligible += 1;
-    const from = created + startDay * DAY_MS;
-    const to = created + endDay * DAY_MS;
-    if (timelines.get(account.id)?.returns.some((time) => time >= from && time < to)) {
-      returned += 1;
-    }
-  }
-  return { eligible, returned, rate: eligible === 0 ? null : returned / eligible };
+): Share {
+  return shareOf(accounts, now, endDay, (account, created) =>
+    anyBetween(timelines.get(account.id)?.returns, created + startDay * DAY_MS, created + endDay * DAY_MS),
+  );
+}
+
+/** Activated, among accounts whose 7-day window has passed. */
+function activationOf(
+  accounts: GrowthAccount[],
+  timelines: Map<string, UserTimeline>,
+  now: number,
+): Share {
+  return shareOf(accounts, now, ACTIVATION_WINDOW_DAYS, (account) =>
+    isActivated(account, timelines.get(account.id)),
+  );
 }
 
 function median(values: number[]): number | null {
@@ -155,12 +224,16 @@ function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-/** Monday 00:00 UTC of the week containing `time`. */
-export function weekStart(time: number): number {
-  const date = new Date(time);
-  date.setUTCHours(0, 0, 0, 0);
-  const weekday = (date.getUTCDay() + 6) % 7;
-  return date.getTime() - weekday * DAY_MS;
+/**
+ * Start instants (Monday 00:00 Berlin time) of the last `weeks` weeks,
+ * oldest first. Stepping from mid-week keeps a DST change from skipping
+ * or repeating a week.
+ */
+export function cohortWeekStarts(nowMs: number, weeks: number): number[] {
+  const current = startOfBerlinWeek(nowMs);
+  return Array.from({ length: weeks }, (_, index) =>
+    startOfBerlinWeek(current + 3 * DAY_MS - (weeks - 1 - index) * 7 * DAY_MS),
+  );
 }
 
 export type FunnelStep = { key: string; label: string; count: number };
@@ -168,23 +241,24 @@ export type FunnelStep = { key: string; label: string; count: number };
 export type ChannelRow = {
   channel: AcquisitionChannel;
   signups: number;
-  activated: number;
+  activation: Share;
   paying: number;
-  week1: { eligible: number; returned: number; rate: number | null };
+  week1: Share;
 };
 
 export type CohortRow = {
   weekStart: string;
   signups: number;
-  activated: number;
-  week1: { eligible: number; returned: number; rate: number | null };
-  week4: { eligible: number; returned: number; rate: number | null };
+  activation: Share;
+  week1: Share;
+  week4: Share;
 };
 
 export type GrowthSummary = {
   signups: number;
+  /** How far the window's new accounts got so far. */
   funnel: FunnelStep[];
-  activationRate: number | null;
+  activation: Share;
   /** Median hours from signup to the first confirmed document. */
   medianHoursToFirstConfirm: number | null;
   channels: ChannelRow[];
@@ -206,9 +280,9 @@ export function summarizeGrowth({
   cohortWeeks = 8,
 }: {
   accounts: GrowthAccount[];
-  events: GrowthEvent[];
+  events: GrowthEventDay[];
   payingUserIds: Set<string>;
-  /** Start of the signup window (ISO). */
+  /** Start of the signup window (ISO), a Berlin midnight. */
   since: string;
   now?: Date;
   cohortWeeks?: number;
@@ -222,17 +296,12 @@ export function summarizeGrowth({
 
   const reached = (names: string[]) =>
     inWindow.filter((account) => firstOf(timelines.get(account.id), names) !== null).length;
-  const activatedIds = new Set(
-    inWindow
-      .filter((account) => isActivated(account, timelines.get(account.id)))
-      .map((account) => account.id),
-  );
 
   const funnel: FunnelStep[] = [
     { key: "signup", label: "Konto angelegt", count: inWindow.length },
     {
       key: "family",
-      label: "In einer Familie (Onboarding fertig oder Einladung angenommen)",
+      label: "In einer Familie (Einrichtung fertig oder Einladung angenommen)",
       count: reached(["onboarding_completed", "invite_accepted"]),
     },
     { key: "upload", label: "Erstes Dokument hochgeladen", count: reached(["document_upload_succeeded"]) },
@@ -241,7 +310,7 @@ export function summarizeGrowth({
     {
       key: "activated",
       label: `Aktiviert (bestätigt und gefragt in ${ACTIVATION_WINDOW_DAYS} Tagen)`,
-      count: activatedIds.size,
+      count: inWindow.filter((account) => isActivated(account, timelines.get(account.id))).length,
     },
   ];
 
@@ -257,31 +326,31 @@ export function summarizeGrowth({
   const byChannel = new Map<AcquisitionChannel, GrowthAccount[]>();
   for (const account of inWindow) {
     const channel = channelForAccount(account, timelines.get(account.id));
-    byChannel.set(channel, [...(byChannel.get(channel) ?? []), account]);
+    const members = byChannel.get(channel) ?? [];
+    members.push(account);
+    byChannel.set(channel, members);
   }
   const channels: ChannelRow[] = [...byChannel]
     .map(([channel, members]) => ({
       channel,
       signups: members.length,
-      activated: members.filter((account) => activatedIds.has(account.id)).length,
+      activation: activationOf(members, timelines, nowMs),
       paying: members.filter((account) => payingUserIds.has(account.id)).length,
       week1: returnedBetween(members, timelines, 7, 14, nowMs),
     }))
     .sort((left, right) => right.signups - left.signups);
 
-  const currentWeek = weekStart(nowMs);
   const cohorts: CohortRow[] = [];
-  for (let index = cohortWeeks - 1; index >= 0; index -= 1) {
-    const start = currentWeek - index * 7 * DAY_MS;
-    const end = start + 7 * DAY_MS;
+  for (const start of cohortWeekStarts(nowMs, cohortWeeks)) {
+    const end = startOfBerlinWeek(start + 10 * DAY_MS);
     const members = accounts.filter((account) => {
       const created = new Date(account.createdAt).getTime();
       return created >= start && created < end;
     });
     cohorts.push({
-      weekStart: new Date(start).toISOString().slice(0, 10),
+      weekStart: berlinDay(new Date(start)),
       signups: members.length,
-      activated: members.filter((account) => isActivated(account, timelines.get(account.id))).length,
+      activation: activationOf(members, timelines, nowMs),
       week1: returnedBetween(members, timelines, 7, 14, nowMs),
       week4: returnedBetween(members, timelines, 28, 35, nowMs),
     });
@@ -291,20 +360,21 @@ export function summarizeGrowth({
   let weeklyActive = 0;
   let weeklyEngaged = 0;
   for (const timeline of timelines.values()) {
-    if (timeline.returns.some((time) => time >= weekAgo && time <= nowMs)) weeklyActive += 1;
-    if (timeline.core.some((time) => time >= weekAgo && time <= nowMs)) weeklyEngaged += 1;
+    if (anyBetween(timeline.returns, weekAgo, nowMs + 1)) weeklyActive += 1;
+    if (anyBetween(timeline.core, weekAgo, nowMs + 1)) weeklyEngaged += 1;
   }
 
+  // Rows are per Berlin day and `since` is a Berlin midnight, so a row is
+  // either fully inside the window or fully outside.
   const countInWindow = (name: string) =>
-    events.filter(
-      (event) =>
-        event.event_name === name && new Date(event.occurred_at).getTime() >= sinceMs,
-    ).length;
+    events
+      .filter((event) => event.event_name === name && new Date(event.first_at).getTime() >= sinceMs)
+      .reduce((sum, event) => sum + event.event_count, 0);
 
   return {
     signups: inWindow.length,
     funnel,
-    activationRate: inWindow.length === 0 ? null : activatedIds.size / inWindow.length,
+    activation: activationOf(inWindow, timelines, nowMs),
     medianHoursToFirstConfirm: median(hoursToConfirm),
     channels,
     cohorts,
@@ -313,4 +383,46 @@ export function summarizeGrowth({
     invitesCreated: countInWindow("invite_created"),
     invitesAccepted: countInWindow("invite_accepted"),
   };
+}
+
+export type EntitlementRow = {
+  family_id: string;
+  plan_code: PlanCode;
+  status: EntitlementStatus;
+  provider: string | null;
+  trial_ends_at: string | null;
+  current_period_ends_at: string | null;
+  grace_ends_at: string | null;
+};
+
+/**
+ * Families with paid access right now, split into paying and trialing.
+ * Uses the billing rules (resolveEffectivePlan), so a trial, period or
+ * grace window that already ended counts as free even if a late webhook
+ * has not updated the status yet. Manual grants have no provider and are
+ * not revenue.
+ */
+export function summarizeFamilyBilling(
+  rows: EntitlementRow[],
+  now: Date = new Date(),
+): { paidFamilies: Set<string>; trialingFamilies: Set<string> } {
+  const paidFamilies = new Set<string>();
+  const trialingFamilies = new Set<string>();
+  for (const row of rows) {
+    if (!row.provider) continue;
+    const plan = resolveEffectivePlan(
+      {
+        plan: row.plan_code,
+        status: row.status,
+        trialEndsAt: row.trial_ends_at ? new Date(row.trial_ends_at) : null,
+        currentPeriodEndsAt: row.current_period_ends_at ? new Date(row.current_period_ends_at) : null,
+        graceEndsAt: row.grace_ends_at ? new Date(row.grace_ends_at) : null,
+      },
+      now,
+    );
+    if (plan === "free") continue;
+    if (row.status === "trialing") trialingFamilies.add(row.family_id);
+    else paidFamilies.add(row.family_id);
+  }
+  return { paidFamilies, trialingFamilies };
 }

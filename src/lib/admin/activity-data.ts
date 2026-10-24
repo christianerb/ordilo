@@ -11,13 +11,16 @@ export type RecentActivityEvent = {
 
 /**
  * Latest product events across all accounts for the admin activity feed.
- * Contains no document content, filenames, or search terms.
+ * Contains no document content, filenames, or search terms. Daily
+ * app_opened rows are left out; the Wachstum tab counts them.
  */
 export async function getRecentActivity(limit = 60): Promise<RecentActivityEvent[]> {
   const client = createClient();
   const { data, error } = await client
     .from("product_events")
     .select("id,user_id,event_name,occurred_at,properties")
+    // One row per person and day would crowd out the real actions.
+    .neq("event_name", "app_opened")
     .order("occurred_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit);

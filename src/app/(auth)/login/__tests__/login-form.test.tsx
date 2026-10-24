@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { LoginForm } from "../login-form";
+import { resetFirstTouchForTests } from "@/lib/analytics/first-touch";
 
 const {
   signInWithOtp,
@@ -31,6 +32,7 @@ vi.mock("@/lib/auth/routing", () => ({
 describe("LoginForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetFirstTouchForTests();
     window.sessionStorage.clear();
     vi.stubGlobal(
       "matchMedia",

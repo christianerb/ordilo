@@ -26,7 +26,7 @@ import { webmailFor } from "@/lib/auth/webmail";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 import { getPostAuthDestination } from "@/lib/auth/routing";
-import { readAttribution } from "@/lib/analytics/attribution";
+import { captureFirstTouch } from "@/lib/analytics/first-touch";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
 
@@ -142,14 +142,9 @@ export function LoginForm() {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
           // Supabase stores this only when the request creates the account,
           // so it is the first touch and never overwritten on later logins.
-          data: {
-            signup_attribution: readAttribution({
-              search: window.location.search,
-              referrer: document.referrer,
-              ownHost: window.location.host,
-              pathname: window.location.pathname,
-            }),
-          },
+          // The first touch of this tab: the original landing page after
+          // client-side navigation, or this page's carried parameters.
+          data: { signup_attribution: captureFirstTouch() },
         },
       });
       return !error;

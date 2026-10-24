@@ -1,4 +1,5 @@
 import { withUsageScope } from "@/lib/analytics/api-usage";
+import { berlinDay } from "@/lib/berlin-date";
 import type { Resend } from "resend";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractEmailSuggestions } from "@/lib/ai/inbound-email-insights";
@@ -15,16 +16,6 @@ import type { Database } from "@/types/database";
  * keep or to erase — the app asks them, and `decide_inbound_email_retention`
  * carries out the answer.
  */
-
-/** Today as YYYY-MM-DD in the family's timezone (Germany). */
-export function berlinToday(now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Berlin",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-}
 
 /** Maps a model proposal onto its `inbound_suggestions` row. */
 export function toSuggestionRow(
@@ -125,7 +116,7 @@ export async function recordInboundEmailInsights(params: {
     subject: received.subject ?? "",
     from: received.from,
     bodyText,
-    today: berlinToday(),
+    today: berlinDay(),
     memberNames: (memberRows ?? []).map((member) => member.name),
   }));
   if (suggestions.length === 0) return { suggestionCount: 0 };

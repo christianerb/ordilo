@@ -2,6 +2,9 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { berlinDay, startOfBerlinDayBefore } from "@/lib/berlin-date";
+import { fetchAllRows } from "./paginate";
+import { NOT_PRODUCT_USE_EVENTS } from "./growth-metrics";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTH_PAGE_SIZE = 1_000;
@@ -35,14 +38,10 @@ export type PlatformOverview = {
   dailyMetrics: DailyPlatformMetric[];
 };
 
-function startOfDay(date: Date): Date {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
+// Days follow German time, like the Wachstum tab, so "7/30/90 Tage" means
+// the same hours on every admin tab.
 function dateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return berlinDay(date);
 }
 
 export async function listAllUsers(): Promise<User[]> {
@@ -72,68 +71,61 @@ export async function listAccountEmailMap(): Promise<Map<string, string>> {
   return new Map(users.map((user) => [user.id, user.email ?? "Ohne E-Mail"]));
 }
 
+/**
+ * Product use for the overview's "aktiv" numbers. The database-written
+ * app_opened and invite_accepted rows are left out on purpose: these
+ * numbers mean real use, as before those events existed; the Wachstum tab
+ * shows opening and using separately.
+ */
 async function listProductActivitySince(since: string) {
   const admin = createAdminClient();
-  const rows: Array<{ user_id: string; occurred_at: string }> = [];
-  const pageSize = 1_000;
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await admin
+  return fetchAllRows<{ user_id: string; occurred_at: string }>((from, to) =>
+    admin
       .from("product_events")
       .select("user_id, occurred_at")
       .gte("occurred_at", since)
+      .not("event_name", "in", `(${NOT_PRODUCT_USE_EVENTS.join(",")})`)
       .order("occurred_at", { ascending: false })
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-
-    rows.push(...(data ?? []));
-    if ((data?.length ?? 0) < pageSize) return rows;
-    from += pageSize;
-  }
+      .order("id")
+      .range(from, to),
+  );
 }
 
 export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<PlatformOverview> {
   const admin = createAdminClient();
   const now = new Date();
-  const windowStart = startOfDay(new Date(now.getTime() - (windowDays - 1) * DAY_MS));
+  const windowStart = new Date(startOfBerlinDayBefore(now.getTime(), windowDays - 1));
   const retentionStart = new Date(now.getTime() - EVENT_RETENTION_DAYS * DAY_MS).toISOString();
 
-  const [users, activityRows, familiesResult, memberCountResult, membershipsResult, documentCountResult, recentDocuments] =
+  const [users, activityRows, familiesResult, memberCountResult, memberships, documentCountResult, recentDocuments] =
     await Promise.all([
       listAllUsers(),
       listProductActivitySince(retentionStart),
       admin.from("families").select("id", { count: "exact", head: true }),
       admin.from("family_members").select("id", { count: "exact", head: true }),
-      admin.from("family_memberships").select("user_id"),
+      fetchAllRows<{ user_id: string }>((from, to) =>
+        admin.from("family_memberships").select("user_id").order("id").range(from, to),
+      ),
       admin.from("documents").select("id", { count: "exact", head: true }),
       // Uploads pro Tag fuer das 30-Tage-Chart. Manuell angelegte Notizen
       // (source = "manual") haben keine hochgeladene Datei und zaehlen nicht.
-      (async () => {
-        const chartStart = startOfDay(new Date(now.getTime() - 29 * DAY_MS)).toISOString();
-        const rows: Array<{ created_at: string }> = [];
-        for (let offset = 0; ; offset += 1000) {
-          const { data, error } = await admin
-            .from("documents")
-            .select("created_at")
-            .gte("created_at", chartStart)
-            .neq("source", "manual")
-            .order("id")
-            .range(offset, offset + 999);
-          if (error) throw error;
-          rows.push(...data);
-          if (data.length < 1000) return rows;
-        }
-      })(),
+      fetchAllRows<{ created_at: string }>((from, to) =>
+        admin
+          .from("documents")
+          .select("created_at")
+          .gte("created_at", new Date(startOfBerlinDayBefore(now.getTime(), 29)).toISOString())
+          .neq("source", "manual")
+          .order("id")
+          .range(from, to),
+      ),
     ]);
 
   if (familiesResult.error) throw familiesResult.error;
   if (memberCountResult.error) throw memberCountResult.error;
-  if (membershipsResult.error) throw membershipsResult.error;
   if (documentCountResult.error) throw documentCountResult.error;
 
   const familyCountByUser = new Map<string, number>();
-  for (const membership of membershipsResult.data ?? []) {
+  for (const membership of memberships) {
     familyCountByUser.set(
       membership.user_id,
       (familyCountByUser.get(membership.user_id) ?? 0) + 1,
@@ -177,7 +169,7 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
   const days = 30;
   const metricsByDate = new Map<string, { registrations: number; active: Set<string>; uploads: number }>();
   for (let offset = days - 1; offset >= 0; offset -= 1) {
-    const day = startOfDay(new Date(now.getTime() - offset * DAY_MS));
+    const day = new Date(startOfBerlinDayBefore(now.getTime(), offset));
     metricsByDate.set(dateKey(day), { registrations: 0, active: new Set(), uploads: 0 });
   }
   for (const account of accounts) {
@@ -206,7 +198,7 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
     averageAccountsPerFamily:
       familiesTotal === 0
         ? 0
-        : Math.round(((membershipsResult.data?.length ?? 0) / familiesTotal) * 10) / 10,
+        : Math.round((memberships.length / familiesTotal) * 10) / 10,
     averageMembersPerFamily:
       familiesTotal === 0
         ? 0

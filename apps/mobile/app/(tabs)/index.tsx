@@ -110,7 +110,6 @@ import {
   shouldShowNotificationPrimer,
 } from "@/src/lib/notifications";
 import { useSession } from "@/src/lib/session";
-import { recordDailyAppOpen } from "@/src/lib/analytics";
 import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
 
@@ -156,7 +155,6 @@ export default function HeuteScreen() {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
-      void recordDailyAppOpen(family.id);
       try {
         // Neuigkeiten ride along with every briefing refresh (focus,
         // pull-to-refresh, midnight/foreground) instead of a separate

@@ -1,102 +1,83 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/admin";
 import { parseStoredAttribution } from "@/lib/analytics/attribution";
+import { startOfBerlinDayBefore } from "@/lib/berlin-date";
+import { fetchAllRows } from "./paginate";
 import { listAllUsers } from "./platform-data";
 import {
+  cohortWeekStarts,
+  summarizeFamilyBilling,
   summarizeGrowth,
-  weekStart,
+  GROWTH_EVENT_NAMES,
+  parseGrowthEventDays,
   type GrowthAccount,
-  type GrowthEvent,
 } from "./growth-metrics";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const COHORT_WEEKS = 8;
-const PAGE_SIZE = 1000;
-const PAID_STATUSES = ["active", "past_due"];
+/** Family ids per `in` filter, so the request URL stays short. */
+const FAMILY_ID_CHUNK = 100;
 
-async function listEventsSince(since: string): Promise<GrowthEvent[]> {
+/** Accounts that belong to any of these families. */
+async function listMemberIds(familyIds: string[]): Promise<Set<string>> {
   const client = createClient();
-  const events: GrowthEvent[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await client
-      .from("product_events")
-      .select("user_id,event_name,occurred_at")
-      .gte("occurred_at", since)
-      .order("occurred_at")
-      .order("id")
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw error;
-    events.push(...data);
-    if (data.length < PAGE_SIZE) return events;
+  const userIds = new Set<string>();
+  for (let index = 0; index < familyIds.length; index += FAMILY_ID_CHUNK) {
+    const chunk = familyIds.slice(index, index + FAMILY_ID_CHUNK);
+    const rows = await fetchAllRows<{ user_id: string }>((from, to) =>
+      client
+        .from("family_memberships")
+        .select("user_id")
+        .in("family_id", chunk)
+        .order("id")
+        .range(from, to),
+    );
+    for (const row of rows) userIds.add(row.user_id);
   }
-}
-
-/** Families that ever forwarded an email (with or without attachment). */
-async function listForwardingFamilyIds(): Promise<Set<string>> {
-  const client = createClient();
-  const ids = new Set<string>();
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await client
-      .from("documents")
-      .select("family_id")
-      .eq("source", "email")
-      .order("id")
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data) ids.add(row.family_id);
-    if (data.length < PAGE_SIZE) break;
-  }
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await client
-      .from("inbound_emails")
-      .select("family_id")
-      .order("id")
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data) ids.add(row.family_id);
-    if (data.length < PAGE_SIZE) return ids;
-  }
+  return userIds;
 }
 
 /**
- * Everything the "Wachstum" tab needs. Accounts, events, memberships and
- * entitlements are loaded once and summarized in growth-metrics.ts.
+ * Everything the "Wachstum" tab needs. Accounts, aggregated events and
+ * entitlements are loaded once (memberships only for paying families) and
+ * summarized in growth-metrics.ts.
  */
 export async function getGrowthOverview(days: 7 | 30 | 90) {
   const client = createClient();
   const now = new Date();
-  const windowStart = new Date(now);
-  windowStart.setUTCHours(0, 0, 0, 0);
-  windowStart.setUTCDate(windowStart.getUTCDate() - days + 1);
-  const cohortStart = new Date(weekStart(now.getTime()) - (COHORT_WEEKS - 1) * 7 * DAY_MS);
-  const eventsSince = new Date(Math.min(windowStart.getTime(), cohortStart.getTime())).toISOString();
+  // Berlin calendar days, like the cohorts and the app_opened index.
+  const windowStart = new Date(startOfBerlinDayBefore(now.getTime(), days - 1));
+  const cohortStart = cohortWeekStarts(now.getTime(), COHORT_WEEKS)[0];
+  const eventsSince = new Date(Math.min(windowStart.getTime(), cohortStart)).toISOString();
 
-  const [users, events, memberships, entitlements, forwardingFamilies, familyCount] =
+  const [users, eventDays, entitlements, forwardingFamilies, familyCount] =
     await Promise.all([
       listAllUsers(),
-      listEventsSince(eventsSince),
-      client.from("family_memberships").select("family_id,user_id"),
-      client.from("family_entitlements").select("family_id,status,plan_code,provider"),
-      listForwardingFamilyIds(),
+      // Aggregated per user, event and Berlin day in SQL and returned as
+      // one JSON array — a fraction of the raw rows, in a single call.
+      client.rpc("admin_growth_event_days", {
+        p_since: eventsSince,
+        p_event_names: GROWTH_EVENT_NAMES,
+      }),
+      fetchAllRows((from, to) =>
+        client
+          .from("family_entitlements")
+          .select(
+            "family_id,status,plan_code,provider,trial_ends_at,current_period_ends_at,grace_ends_at",
+          )
+          .order("family_id")
+          .range(from, to),
+      ),
+      // Families that ever forwarded an email, counted in SQL.
+      client.rpc("admin_forwarding_family_count"),
       client.from("families").select("id", { count: "exact", head: true }),
     ]);
-  if (memberships.error) throw memberships.error;
-  if (entitlements.error) throw entitlements.error;
+  if (eventDays.error) throw eventDays.error;
+  if (forwardingFamilies.error) throw forwardingFamilies.error;
   if (familyCount.error) throw familyCount.error;
+  const events = parseGrowthEventDays(eventDays.data);
 
-  const paidFamilies = new Set<string>();
-  const trialingFamilies = new Set<string>();
-  for (const row of entitlements.data ?? []) {
-    // Manual grants (e.g. 0090) have no provider and are not revenue.
-    if (row.plan_code === "free" || !row.provider) continue;
-    if (PAID_STATUSES.includes(row.status)) paidFamilies.add(row.family_id);
-    else if (row.status === "trialing") trialingFamilies.add(row.family_id);
-  }
-  const payingUserIds = new Set(
-    (memberships.data ?? [])
-      .filter((membership) => paidFamilies.has(membership.family_id))
-      .map((membership) => membership.user_id),
-  );
+  const { paidFamilies, trialingFamilies } = summarizeFamilyBilling(entitlements, now);
+  const payingUserIds = await listMemberIds([...paidFamilies]);
 
   const accounts: GrowthAccount[] = users.map((user) => ({
     id: user.id,
@@ -116,6 +97,6 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
     familiesTotal: familyCount.count ?? 0,
     payingFamilies: paidFamilies.size,
     trialingFamilies: trialingFamilies.size,
-    forwardingFamilies: forwardingFamilies.size,
+    forwardingFamilies: Number(forwardingFamilies.data ?? 0),
   };
 }

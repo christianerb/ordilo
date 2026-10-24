@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import {
   recordDailyAppOpen,
+  resetDailyAppOpenForTests,
   recordProductEvent,
   recordOnboardingStartedIfFirstTime,
   recordScanFailure,
@@ -153,53 +154,63 @@ describe("platform metadata", () => {
 });
 
 describe("recordDailyAppOpen", () => {
-  function makeClient(alreadyToday: boolean) {
-    const inserts: unknown[] = [];
-    const lookup: Record<string, jest.Mock> = {};
-    lookup.select = jest.fn(() => lookup);
-    lookup.eq = jest.fn(() => lookup);
-    lookup.gte = jest.fn(() => lookup);
-    lookup.limit = jest.fn(async () => ({
-      data: alreadyToday ? [{ id: "event-1" }] : [],
-      error: null,
-    }));
-    const client = {
+  beforeEach(() => resetDailyAppOpenForTests());
+
+  function mockClient(
+    result: { data?: boolean | null; error: { message: string } | null } = { data: true, error: null },
+  ) {
+    const session = { current: "user-1" as string | null };
+    const rpc = jest.fn(async () => result);
+    jest.mocked(getSupabase).mockReturnValue({
+      rpc,
       auth: {
         getSession: jest.fn(async () => ({
-          data: { session: { user: { id: "user-1" } } },
+          data: { session: session.current ? { user: { id: session.current } } : null },
         })),
       },
-      from: jest.fn(() => ({
-        ...lookup,
-        insert: jest.fn(async (row: unknown) => {
-          inserts.push(row);
-          return { error: null };
-        }),
-      })),
-    };
-    return { client, inserts, lookup };
+    } as never);
+    return { rpc, session };
   }
 
-  it("records one app_opened per UTC day", async () => {
-    const { client, inserts, lookup } = makeClient(false);
-    jest.mocked(getSupabase).mockReturnValue(client as never);
-    await recordDailyAppOpen("family-1", new Date("2026-10-22T09:30:00Z"));
-    expect(lookup.gte).toHaveBeenCalledWith("occurred_at", "2026-10-22T00:00:00.000Z");
-    expect(inserts).toEqual([
-      {
-        user_id: "user-1",
-        family_id: "family-1",
-        event_name: "app_opened",
-        properties: { platform: Platform.OS },
-      },
-    ]);
+  it("records the open through the deduplicating RPC once per day", async () => {
+    const { rpc } = mockClient();
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T12:00:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("record_app_open", {
+      p_family_id: "family-1",
+      p_platform: Platform.OS,
+    });
   });
 
-  it("skips the write when today's open already exists", async () => {
-    const { client, inserts } = makeClient(true);
-    jest.mocked(getSupabase).mockReturnValue(client as never);
+  it("still records a different person signing in on the same device and day", async () => {
+    const { rpc, session } = mockClient();
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen("family-1", now);
+    session.current = "user-2";
+    await recordDailyAppOpen("family-1", now);
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again while setup is not finished (the RPC answers false)", async () => {
+    const { rpc } = mockClient({ data: false, error: null });
     await recordDailyAppOpen("family-1");
-    expect(inserts).toEqual([]);
+    await recordDailyAppOpen("family-1");
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("records nothing when signed out", async () => {
+    const { rpc, session } = mockClient();
+    session.current = null;
+    await recordDailyAppOpen("family-1");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("retries on the next load when the RPC failed", async () => {
+    const { rpc } = mockClient({ data: null, error: { message: "offline" } });
+    await recordDailyAppOpen("family-1");
+    await recordDailyAppOpen("family-1");
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it("never throws", async () => {

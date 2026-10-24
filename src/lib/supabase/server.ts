@@ -30,7 +30,10 @@ export async function getBearerToken(): Promise<string | null> {
  * validates it against the auth server and every PostgREST/Storage query
  * runs under RLS exactly as a browser cookie session would.
  */
-export function createBearerClient(accessToken: string) {
+export function createBearerClient(
+  accessToken: string,
+  platform: "ios" | "android" | "web" | "unknown" = "unknown",
+) {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
@@ -41,10 +44,18 @@ export function createBearerClient(accessToken: string) {
         detectSessionInUrl: false,
       },
       global: {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        // The platform rides along so database triggers can tag
+        // content-free product events (e.g. invites) by platform.
+        headers: { Authorization: `Bearer ${accessToken}`, "x-ordilo-platform": platform },
       },
     },
   );
+}
+
+/** The calling app's self-reported platform, as sent by the native client. */
+async function requestPlatform(): Promise<"ios" | "android" | "web" | "unknown"> {
+  const value = (await headers()).get("x-ordilo-platform");
+  return value === "ios" || value === "android" || value === "web" ? value : "unknown";
 }
 
 /**
@@ -60,7 +71,7 @@ export function createBearerClient(accessToken: string) {
 export async function createClient() {
   const bearerToken = await getBearerToken();
   if (bearerToken) {
-    return createBearerClient(bearerToken);
+    return createBearerClient(bearerToken, await requestPlatform());
   }
 
   const cookieStore = await cookies();
@@ -85,6 +96,9 @@ export async function createClient() {
           }
         },
       },
+      // Cookie sessions are always the web app. Database triggers read
+      // this to tag content-free product events (e.g. invites) by platform.
+      global: { headers: { "x-ordilo-platform": "web" } },
     },
   );
 }

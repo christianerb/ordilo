@@ -56,14 +56,22 @@ describe("readAttribution", () => {
     expect(JSON.stringify(attribution)).not.toContain("abc123secret");
   });
 
-  it("treats an fbclid without campaign tags as organic", () => {
+  it("only treats an fbclid as paid when the medium is paid", () => {
     expect(page({ search: "?fbclid=xyz" }).paid_click).toBeUndefined();
+    expect(page({ search: "?fbclid=xyz&utm_medium=social" }).paid_click).toBeUndefined();
+    expect(page({ search: "?fbclid=xyz&utm_medium=email" }).paid_click).toBeUndefined();
     expect(page({ search: "?fbclid=xyz&utm_medium=paid_social" }).paid_click).toBe("meta");
   });
 
+  it("classifies an organic tagged Instagram post opened via Facebook as social", () => {
+    expect(
+      classifyChannel(page({ search: "?utm_source=instagram&utm_medium=social&fbclid=xyz" })),
+    ).toBe("social");
+  });
+
   it("rejects landing paths that are not plain same-site paths", () => {
-    expect(page({ search: "?lp=//evil.example" }).landing).toBe("/");
-    expect(page({ search: "?lp=https://evil.example" }).landing).toBe("/");
+    expect(page({ search: "?lp=//evil.example" }).landing).toBeUndefined();
+    expect(page({ search: "?lp=https://evil.example" }).landing).toBeUndefined();
     expect(page({ search: "?lp=/ratgeber/x?email=a@b.de" }).landing).toBe("/ratgeber/x");
   });
 
@@ -71,6 +79,32 @@ describe("readAttribution", () => {
     const attribution = page({ search: `?utm_campaign=${"a".repeat(300)}<script>` });
     expect(attribution.campaign).toHaveLength(100);
     expect(attribution.campaign).not.toContain("<");
+  });
+
+  it("keeps percent-encoded and umlaut slugs of public pages", () => {
+    // window.location.pathname is percent-encoded; carried as lp it is encoded once more.
+    const encoded = "/ratgeber/elterngeld-%C3%BCbersicht";
+    const carried = attributionQuery({ landing: encoded });
+    expect(page({ search: `?${carried}`, pathname: "/login" }).landing).toBe(encoded);
+    expect(page({ pathname: encoded }).landing).toBe(encoded);
+    expect(page({ pathname: "/ratgeber/elterngeld-übersicht" }).landing).toBe("/ratgeber/elterngeld-übersicht");
+  });
+
+  it("keeps only the first segment of non-public paths", () => {
+    const token = "a".repeat(64);
+    expect(page({ pathname: `/invite/${token}` }).landing).toBe("/invite");
+    expect(page({ search: `?lp=/invite/${token}` }).landing).toBe("/invite");
+    expect(page({ pathname: "/dokumente/0b6c1f9e-1234" }).landing).toBe("/dokumente");
+    expect(page({ pathname: "/ratgeber/kindergeld" }).landing).toBe("/ratgeber/kindergeld");
+    expect(page({ pathname: "/login" }).landing).toBe("/login");
+  });
+
+  it("reads a non-host ref tag as the source", () => {
+    expect(page({ search: "?ref=producthunt" })).toEqual({ source: "producthunt", landing: "/" });
+    // An explicit utm_source wins over the ref tag.
+    expect(page({ search: "?ref=producthunt&utm_source=newsletter" }).source).toBe("newsletter");
+    // A host ref stays a referrer.
+    expect(page({ search: "?ref=elternforum.de" }).referrer).toBe("elternforum.de");
   });
 
   it("recognises an invite entry", () => {
@@ -138,9 +172,18 @@ describe("classifyChannel", () => {
     [{ referrer: "google.de" }, "suche"],
     [{ referrer: "news.google.com" }, "suche"],
     [{ referrer: "ecosia.org" }, "suche"],
+    [{ referrer: "mail.google.com" }, "email"],
+    [{ referrer: "com.google.android.gm" }, "email"],
+    [{ referrer: "web.de" }, "email"],
+    [{ referrer: "email.t-online.de" }, "email"],
     [{ referrer: "chatgpt.com" }, "ki_assistent"],
     [{ referrer: "gemini.google.com" }, "ki_assistent"],
     [{ source: "chatgpt" }, "ki_assistent"],
+    [{ source: "chatgpt.com" }, "ki_assistent"],
+    [{ source: "perplexity.ai" }, "ki_assistent"],
+    [{ source: "google", medium: "organic" }, "suche"],
+    [{ source: "bing" }, "suche"],
+    [{ source: "google", medium: "cpc" }, "bezahlt"],
     [{ source: "podcast-xy" }, "kampagne"],
     [{ referrer: "elternforum.de" }, "verweis"],
   ])("%j → %s", (attribution, channel) => {

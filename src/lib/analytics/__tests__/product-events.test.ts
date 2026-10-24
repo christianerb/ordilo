@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
   recordDailyAppOpen,
   recordProductEvent,
   productPlatformFromRequest,
+  resetDailyAppOpenForTests,
 } from "@/lib/analytics/product-events";
 
 describe("recordProductEvent", () => {
@@ -68,64 +69,71 @@ describe("product platform attribution", () => {
 });
 
 describe("recordDailyAppOpen", () => {
-  function makeClient({
-    userId = "user-1",
-    alreadyToday = false,
-    lookupError = null,
-  }: {
-    userId?: string | null;
-    alreadyToday?: boolean;
-    lookupError?: { message: string } | null;
-  } = {}) {
-    const insert = vi.fn().mockResolvedValue({ error: null });
-    const lookup: Record<string, ReturnType<typeof vi.fn>> = {};
-    lookup.select = vi.fn(() => lookup);
-    lookup.eq = vi.fn(() => lookup);
-    lookup.gte = vi.fn(() => lookup);
-    lookup.limit = vi.fn(async () => ({
-      data: alreadyToday ? [{ id: "event-1" }] : [],
-      error: lookupError,
-    }));
+  beforeEach(() => resetDailyAppOpenForTests());
+
+  function makeClient(
+    result: { data?: boolean | null; error: { message: string } | null } = { data: true, error: null },
+    userId: string | null = "user-1",
+  ) {
+    const rpc = vi.fn().mockResolvedValue(result);
+    const session = { current: userId };
     const client = {
+      rpc,
       auth: {
         getSession: vi.fn(async () => ({
-          data: { session: userId ? { user: { id: userId } } : null },
+          data: { session: session.current ? { user: { id: session.current } } : null },
         })),
       },
-      from: vi.fn(() => ({ ...lookup, insert })),
     } as unknown as SupabaseClient<Database>;
-    return { client, insert, lookup };
+    return { client, rpc, session };
   }
 
-  it("records the first open of the UTC day", async () => {
-    const { client, insert, lookup } = makeClient();
-    await recordDailyAppOpen(client, {
-      familyId: "family-1",
-      now: new Date("2026-10-22T09:30:00Z"),
-    });
-    expect(lookup.gte).toHaveBeenCalledWith("occurred_at", "2026-10-22T00:00:00.000Z");
-    expect(insert).toHaveBeenCalledWith({
-      user_id: "user-1",
-      family_id: "family-1",
-      event_name: "app_opened",
-      properties: { platform: "web" },
-    });
-  });
-
-  it("writes nothing when today's open is already recorded", async () => {
-    const { client, insert } = makeClient({ alreadyToday: true });
+  it("records the open through the deduplicating RPC", async () => {
+    const { client, rpc } = makeClient();
     await recordDailyAppOpen(client, { familyId: "family-1" });
-    expect(insert).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith("record_app_open", {
+      p_family_id: "family-1",
+      p_platform: "web",
+    });
   });
 
-  it("writes nothing without a session or when the lookup fails", async () => {
-    const signedOut = makeClient({ userId: null });
-    await recordDailyAppOpen(signedOut.client);
-    expect(signedOut.insert).not.toHaveBeenCalled();
+  it("skips the round trip after a successful call on the same Berlin day", async () => {
+    const { client, rpc } = makeClient();
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:00:00Z") });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T21:00:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    // 23:30 UTC is already the next day in Berlin.
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T23:30:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
 
-    const failing = makeClient({ lookupError: { message: "boom" } });
-    await recordDailyAppOpen(failing.client);
-    expect(failing.insert).not.toHaveBeenCalled();
+  it("still records a different person signing in on the same day", async () => {
+    const { client, rpc, session } = makeClient();
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen(client, { now });
+    session.current = "user-2";
+    await recordDailyAppOpen(client, { now });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again while setup is not finished (the RPC answers false)", async () => {
+    const { client, rpc } = makeClient({ data: false, error: null });
+    await recordDailyAppOpen(client);
+    await recordDailyAppOpen(client);
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("records nothing without a session", async () => {
+    const { client, rpc } = makeClient({ data: true, error: null }, null);
+    await recordDailyAppOpen(client);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("retries later when the RPC failed", async () => {
+    const { client, rpc } = makeClient({ data: null, error: { message: "offline" } });
+    await recordDailyAppOpen(client);
+    await recordDailyAppOpen(client);
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it("never throws", async () => {

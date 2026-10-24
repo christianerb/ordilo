@@ -1788,6 +1788,20 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      record_app_open: {
+        Args: { p_family_id?: string | null; p_platform?: string };
+        /** true once today's open is recorded; false before setup is done. */
+        Returns: boolean;
+      };
+      admin_forwarding_family_count: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      admin_growth_event_days: {
+        Args: { p_since: string; p_event_names: string[] };
+        /** One JSON array of per-user, per-event, per-Berlin-day rows. */
+        Returns: unknown;
+      };
       get_family_entitlement: {
         Args: { p_family_id: string; p_at?: string };
         Returns: {

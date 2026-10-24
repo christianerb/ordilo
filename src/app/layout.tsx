@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { FirstTouchCapture } from "@/components/ordilo/marketing/first-touch-capture";
 import "./globals.css";
 
 const figtree = Figtree({
@@ -53,6 +54,7 @@ export default function RootLayout({
   return (
     <html lang="de" className={figtree.variable} suppressHydrationWarning>
       <body className="font-sans antialiased">
+        <FirstTouchCapture />
         {children}
         <Toaster position="top-center" />
       </body>

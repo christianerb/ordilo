@@ -1,3 +1,5 @@
+import { isPublicMarketingPath } from "@/lib/public-routes";
+
 /**
  * Signup attribution without cookies or browser storage.
  *
@@ -54,7 +56,7 @@ export const ACQUISITION_CHANNEL_LABELS: Record<AcquisitionChannel, string> = {
   verweis: "Andere Website",
   kampagne: "Sonstige Kampagne",
   direkt: "Direkt",
-  unbekannt: "Unbekannt (vor dem Tracking)",
+  unbekannt: "Unbekannt (älteres Konto)",
 };
 
 /** Query parameters a link to /login may carry. */
@@ -67,6 +69,9 @@ const CARRIED_PARAMS = {
   ref: "referrer",
   lp: "landing",
 } as const satisfies Record<string, keyof SignupAttribution>;
+
+/** utm_medium values that mean the click was bought. */
+const PAID_MEDIUMS = ["cpc", "ppc", "paid", "paidsocial", "paid_social", "paid-social", "display", "cpm", "ads"];
 
 const MAX_VALUE_LENGTH = 100;
 const MAX_PATH_LENGTH = 200;
@@ -97,10 +102,19 @@ export function cleanHost(value: string | null | undefined): string | undefined 
   return host;
 }
 
+/**
+ * A same-site path, reduced to what is safe to keep in account metadata
+ * (which travels in every login token): public pages keep their path,
+ * anything else only its first segment — "/invite/<token>" becomes
+ * "/invite", "/dokumente/<id>" becomes "/dokumente".
+ */
 function cleanPath(value: string | null | undefined): string | undefined {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
   const path = value.split(/[?#]/)[0].slice(0, MAX_PATH_LENGTH);
-  return /^\/[a-z0-9\-/_.]*$/i.test(path) ? path : undefined;
+  // Letters in any script and percent-encoding (e.g. "%C3%BC"), nothing else.
+  if (!/^\/(?:[\p{L}\p{N}\-/_.]|%[0-9a-f]{2})*$/iu.test(path)) return undefined;
+  if (path === "/" || path === "/login" || isPublicMarketingPath(path)) return path;
+  return `/${path.split("/")[1]}`;
 }
 
 function isOwnHost(host: string, ownHost: string): boolean {
@@ -132,6 +146,11 @@ export function readAttribution({
     if (key === "referrer") {
       const host = cleanHost(raw);
       if (host && !isOwnHost(host, ownHost)) attribution.referrer = host;
+      // "?ref=producthunt" names a source rather than a host.
+      else if (!host && !params.get("utm_source")) {
+        const source = cleanValue(raw);
+        if (source) attribution.source = source;
+      }
     } else if (key === "landing") {
       const path = cleanPath(raw);
       if (path) attribution.landing = path;
@@ -145,9 +164,9 @@ export function readAttribution({
 
   if (params.has("gclid")) attribution.paid_click = "google";
   else if (params.has("msclkid")) attribution.paid_click = "microsoft";
-  else if (params.has("fbclid") && params.has("utm_medium")) {
-    // fbclid is also appended to organic shares; only count it as paid
-    // when the campaign itself says so via utm_medium.
+  else if (params.has("fbclid") && PAID_MEDIUMS.includes(attribution.medium ?? "")) {
+    // Facebook appends fbclid to every outbound click, organic posts and
+    // in-app browsers included; only a paid utm_medium makes it an ad.
     attribution.paid_click = "meta";
   }
 
@@ -155,7 +174,9 @@ export function readAttribution({
     const host = cleanHost(referrer);
     if (host && !isOwnHost(host, ownHost)) attribution.referrer = host;
   }
-  if (!attribution.landing) attribution.landing = cleanPath(pathname);
+  // A carried landing that does not pass is dropped, not replaced by this
+  // page — otherwise every such signup would look like it began on /login.
+  if (!attribution.landing && !params.has("lp")) attribution.landing = cleanPath(pathname);
 
   return attribution;
 }
@@ -199,10 +220,17 @@ export function parseStoredAttribution(value: unknown): SignupAttribution | null
   return attribution;
 }
 
+/** Webmail and mail apps — checked before search, they share domains. */
+const EMAIL_HOSTS = [
+  "mail.google.com", "com.google.android.gm", "outlook.live.com",
+  "outlook.office.com", "outlook.office365.com", "mail.yahoo.com",
+  "web.de", "gmx.net", "gmx.de", "gmx.at", "gmx.ch", "t-online.de",
+  "freenet.de", "mail.proton.me", "icloud.com", "posteo.de", "mailbox.org",
+];
 const SEARCH_ENGINES = [
   "google.", "bing.com", "duckduckgo.com", "ecosia.org", "startpage.com",
   "search.yahoo.com", "yahoo.com", "qwant.com", "search.brave.com", "yandex.",
-  "baidu.com", "web.de", "t-online.de",
+  "baidu.com",
 ];
 const AI_ASSISTANTS = [
   "chatgpt.com", "chat.openai.com", "perplexity.ai", "claude.ai",
@@ -214,11 +242,12 @@ const SOCIAL_NETWORKS = [
   "youtube.com", "youtu.be", "whatsapp.com", "wa.me", "threads.net",
   "bsky.app", "xing.com",
 ];
+const AI_SOURCES = ["chatgpt", "openai", "perplexity", "claude", "gemini", "copilot"];
+const SEARCH_SOURCES = ["google", "bing", "duckduckgo", "ecosia", "yahoo", "qwant", "startpage", "brave"];
 const SOCIAL_SOURCES = [
   "facebook", "fb", "instagram", "ig", "meta", "linkedin", "tiktok",
   "twitter", "x", "pinterest", "reddit", "youtube", "whatsapp", "threads",
 ];
-const PAID_MEDIUMS = ["cpc", "ppc", "paid", "paidsocial", "paid_social", "paid-social", "display", "cpm", "ads"];
 const EMAIL_MEDIUMS = ["email", "e-mail", "newsletter", "mail"];
 const SOCIAL_MEDIUMS = ["social", "social-media", "social_media", "organic_social"];
 
@@ -246,16 +275,18 @@ export function classifyChannel(attribution: SignupAttribution | null): Acquisit
   if (EMAIL_MEDIUMS.includes(medium)) return "email";
   if (SOCIAL_MEDIUMS.includes(medium) || SOCIAL_SOURCES.includes(source)) return "social";
 
-  const host = attribution.referrer;
-  if (host) {
+  // Tools tag their own links with a host as source, e.g. ChatGPT's
+  // "utm_source=chatgpt.com"; treat those like a referrer.
+  const sourceHost = cleanHost(source);
+  for (const host of [attribution.referrer, sourceHost]) {
+    if (!host) continue;
     if (matchesHost(host, AI_ASSISTANTS)) return "ki_assistent";
+    if (matchesHost(host, EMAIL_HOSTS)) return "email";
     if (matchesHost(host, SEARCH_ENGINES)) return "suche";
     if (matchesHost(host, SOCIAL_NETWORKS)) return "social";
   }
-  if (["chatgpt", "openai", "perplexity", "claude", "gemini", "copilot"].includes(source)) {
-    return "ki_assistent";
-  }
+  if (AI_SOURCES.includes(source)) return "ki_assistent";
+  if (SEARCH_SOURCES.includes(source)) return "suche";
   if (source || attribution.campaign) return "kampagne";
-  if (host) return "verweis";
-  return "direkt";
+  return attribution.referrer ? "verweis" : "direkt";
 }

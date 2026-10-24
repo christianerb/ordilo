@@ -26,3 +26,10 @@ it("names the failed pipeline leg on scan failures", () => {
   expect(describeActivityEvent("document_upload_failed", { stage: "upload", reason: "network" })).toBe("Scan fehlgeschlagen (Upload)");
   expect(describeActivityEvent("document_upload_failed", null)).toBe("Scan fehlgeschlagen");
 });
+
+it("labels the growth events written by the database", () => {
+  expect(describeActivityEvent("invite_created")).toBe("Einladungslink erstellt");
+  expect(describeActivityEvent("invite_accepted")).toBe("Einladung angenommen");
+  expect(describeActivityEvent("app_opened")).toBe("App geöffnet");
+  expect(describeActivityEvent("live_conversation_ended")).toBe("Live-Gespräch beendet");
+});

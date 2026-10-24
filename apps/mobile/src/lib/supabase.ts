@@ -1,5 +1,6 @@
 import "react-native-url-polyfill/auto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getProductPlatform } from "./event-platform";
 
 import { secureStorage } from "./secure-storage";
 
@@ -36,6 +37,9 @@ export function getSupabase(): SupabaseClient {
       // 6-digit email code (verifyOtp) and universal links.
       detectSessionInUrl: false,
     },
+    // Database triggers read this to tag content-free product events
+    // (e.g. invites) by platform — same header the API requests carry.
+    global: { headers: { "x-ordilo-platform": getProductPlatform() } },
   });
   return instance;
 }

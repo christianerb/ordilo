@@ -18,13 +18,14 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { CloudOff } from "lucide-react-native";
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { AppState, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useReducedMotion } from "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { AiConsentProvider } from "@/src/lib/ai-consent-context";
+import { recordDailyAppOpen } from "@/src/lib/analytics";
 import { AppLockProvider } from "@/src/lib/app-lock";
 import { noteAppLaunched } from "@/src/lib/app-review";
 import { BillingProvider } from "@/src/lib/billing";
@@ -74,6 +75,9 @@ const ordiloTheme = {
     notification: colors.warmApricot,
   },
 };
+
+/** How often an open app re-checks for a new day (cheap: memoized). */
+const APP_OPEN_RECHECK_MS = 15 * 60 * 1000;
 
 function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -137,6 +141,29 @@ function RootLayoutNav() {
   } = useFamily();
   const segments = useSegments();
   const router = useRouter();
+
+  // One "app opened" per user and German day, on start, on every return to
+  // the foreground — whichever screen opens (push, deep link, share) — and
+  // periodically while it stays open, so a session across midnight counts
+  // the new day. Repeat calls on the same day cost no round trip.
+  // Only once setup is done (reopening onboarding is not "coming back");
+  // keyed by ids so a token refresh does not restart the listeners.
+  const userId = session?.user.id ?? null;
+  const familyId = family && isOnboardingComplete(family) ? family.id : null;
+  useEffect(() => {
+    if (!userId || !familyId) return;
+    void recordDailyAppOpen(familyId);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void recordDailyAppOpen(familyId);
+    });
+    const interval = setInterval(() => {
+      if (AppState.currentState === "active") void recordDailyAppOpen(familyId);
+    }, APP_OPEN_RECHECK_MS);
+    return () => {
+      subscription.remove();
+      clearInterval(interval);
+    };
+  }, [userId, familyId]);
 
   // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):
   // no session → einstieg intro (which links to login); no family or

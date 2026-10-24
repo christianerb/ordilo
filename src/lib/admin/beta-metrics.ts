@@ -1,3 +1,5 @@
+import { berlinDay } from "@/lib/berlin-date";
+
 export type BetaEvent = { user_id: string; event_name: string; occurred_at: string; properties?: unknown };
 const ACTIONS = new Set(["document_upload_succeeded", "document_result_viewed", "document_confirmed", "document_next_step_selected", "chat_question_sent", "search_completed", "task_created", "task_completed", "calendar_event_created"]);
 
@@ -33,7 +35,7 @@ export function summarizeBetaEvents(events: BetaEvent[], since: string) {
       if (step && (!latest.has(event.user_id) || latest.get(event.user_id)!.at < event.occurred_at)) latest.set(event.user_id, { step, at: event.occurred_at });
     }
     if (ACTIONS.has(event.event_name)) {
-      const day = event.occurred_at.slice(0, 10);
+      const day = berlinDay(new Date(event.occurred_at));
       const people = activeByDay.get(day) ?? new Set<string>();
       people.add(event.user_id);
       activeByDay.set(day, people);
