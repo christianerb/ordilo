@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
 import type { Database } from "@/types/database";
+import { parseProductPlatform, type ProductPlatform } from "@/lib/analytics/product-events";
 import {
   FAMILY_ID_HEADER,
   FAMILY_NAME_HEADER,
@@ -32,7 +33,7 @@ export async function getBearerToken(): Promise<string | null> {
  */
 export function createBearerClient(
   accessToken: string,
-  platform: "ios" | "android" | "web" | "unknown" = "unknown",
+  platform: ProductPlatform = "unknown",
 ) {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,9 +54,8 @@ export function createBearerClient(
 }
 
 /** The calling app's self-reported platform, as sent by the native client. */
-async function requestPlatform(): Promise<"ios" | "android" | "web" | "unknown"> {
-  const value = (await headers()).get("x-ordilo-platform");
-  return value === "ios" || value === "android" || value === "web" ? value : "unknown";
+async function requestPlatform(): Promise<ProductPlatform> {
+  return parseProductPlatform((await headers()).get("x-ordilo-platform"));
 }
 
 /**

@@ -107,9 +107,9 @@ describe("readAttribution", () => {
     expect(page({ search: "?ref=elternforum.de" }).referrer).toBe("elternforum.de");
   });
 
-  it("recognises an invite entry", () => {
-    expect(page({ search: "?via=invite" }).via).toBe("invite");
-    expect(page({ search: "?via=admin" }).via).toBeUndefined();
+  it("never takes the invite or app entry from a URL", () => {
+    expect(page({ search: "?via=invite" }).via).toBeUndefined();
+    expect(attributionQuery({ via: "invite", source: "x" })).toBe("utm_source=x");
   });
 });
 

@@ -79,12 +79,6 @@ export const CORE_ACTIONS = new Set([
   "invite_created",
 ]);
 
-/**
- * Rows the database writes on its own: joining a family and opening the
- * app. Neither is product use for the overview's "aktiv" numbers.
- */
-export const NOT_PRODUCT_USE_EVENTS = ["app_opened", "invite_accepted"] as const;
-
 /** Use that counts as coming back. Onboarding and joining do not. */
 const RETURN_EVENTS = new Set([
   ...CORE_ACTIONS,

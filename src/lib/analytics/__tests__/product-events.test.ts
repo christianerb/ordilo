@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
+  parseProductPlatform,
   recordDailyAppOpen,
   recordProductEvent,
   productPlatformFromRequest,
@@ -141,5 +142,15 @@ describe("recordDailyAppOpen", () => {
       auth: { getSession: vi.fn().mockRejectedValue(new Error("offline")) },
     } as unknown as SupabaseClient<Database>;
     await expect(recordDailyAppOpen(client)).resolves.toBeUndefined();
+  });
+});
+
+describe("parseProductPlatform", () => {
+  it("accepts only known platforms", () => {
+    expect(parseProductPlatform("ios")).toBe("ios");
+    expect(parseProductPlatform("android")).toBe("android");
+    expect(parseProductPlatform("web")).toBe("web");
+    expect(parseProductPlatform("macos")).toBe("unknown");
+    expect(parseProductPlatform(null)).toBe("unknown");
   });
 });

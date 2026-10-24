@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/admin";
+import { eventNameList, FEED_HIDDEN_EVENTS } from "./event-filters";
 
 export type RecentActivityEvent = {
   id: string;
@@ -20,7 +21,7 @@ export async function getRecentActivity(limit = 60): Promise<RecentActivityEvent
     .from("product_events")
     .select("id,user_id,event_name,occurred_at,properties")
     // One row per person and day would crowd out the real actions.
-    .neq("event_name", "app_opened")
+    .not("event_name", "in", eventNameList(FEED_HIDDEN_EVENTS))
     .order("occurred_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(limit);

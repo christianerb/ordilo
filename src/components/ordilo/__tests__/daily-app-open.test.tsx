@@ -6,8 +6,10 @@ const { recordDailyAppOpen } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/analytics/product-events", () => ({ recordDailyAppOpen }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn(() => ({})) }));
+const { pathname } = vi.hoisted(() => ({ pathname: { current: "/home" } }));
+vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
 
-import { DailyAppOpen } from "../daily-app-open";
+import { DailyAppOpen, DailyAppOpenTracker } from "../daily-app-open";
 
 function setVisibility(state: "visible" | "hidden") {
   Object.defineProperty(document, "visibilityState", { configurable: true, value: state });
@@ -48,5 +50,22 @@ describe("DailyAppOpen", () => {
     unmount();
     act(() => vi.advanceTimersByTime(48 * 60 * 60 * 1000));
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits until setup is done before recording", () => {
+    pathname.current = "/onboarding";
+    const { rerender } = render(<DailyAppOpenTracker familyId="family-1" />);
+    expect(recordDailyAppOpen).not.toHaveBeenCalled();
+
+    // Finishing onboarding navigates on — the recorder mounts and records.
+    pathname.current = "/home";
+    rerender(<DailyAppOpenTracker familyId="family-1" />);
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("records nothing without a family", () => {
+    pathname.current = "/home";
+    render(<DailyAppOpenTracker familyId={null} />);
+    expect(recordDailyAppOpen).not.toHaveBeenCalled();
   });
 });

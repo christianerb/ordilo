@@ -13,7 +13,7 @@ import {
   writeCollapsedPreference,
 } from "@/components/ordilo/app-shell-shared";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { DailyAppOpen } from "@/components/ordilo/daily-app-open";
+import { DailyAppOpenTracker } from "@/components/ordilo/daily-app-open";
 import { forgetFirstTouch } from "@/lib/analytics/first-touch";
 import { AiConsentProvider } from "@/lib/ai/consent-context";
 import { ScanProvider } from "@/lib/scan/scan-context";
@@ -84,8 +84,8 @@ export function AppShell({
 
   return (
     <TooltipProvider delayDuration={300}>
-      {/* One "app opened" per user and day once a family exists. */}
-      {familyId && <DailyAppOpen key={familyId} familyId={familyId} />}
+      {/* One "app opened" per user and day once setup is done. */}
+      <DailyAppOpenTracker familyId={familyId} />
       <AiConsentProvider>
       <ActiveSearchProvider>
         <ScanProvider initialFamilyId={familyId}>

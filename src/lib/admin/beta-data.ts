@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/admin";
 import { berlinDay, startOfBerlinDayBefore } from "@/lib/berlin-date";
+import { eventNameList, NOT_PRODUCT_USE_EVENTS } from "./event-filters";
 import { fetchAllRows } from "./paginate";
 import {
   summarizeBetaEvents,
@@ -16,6 +17,8 @@ export async function getBetaOverview(days: number) {
   const events: BetaEvent[] = await fetchAllRows<BetaEvent>((from, to) =>
     client.from("product_events")
       .select("user_id,event_name,occurred_at,properties").gte("occurred_at", since)
+      // The beta funnel never reads the database-written events.
+      .not("event_name", "in", eventNameList(NOT_PRODUCT_USE_EVENTS))
       .order("occurred_at").order("id").range(from, to),
   );
   const documents = await fetchAllRows<{ status: string; failure_stage: string | null }>((from, to) =>

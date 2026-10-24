@@ -10,27 +10,39 @@
 const TIME_ZONE = "Europe/Berlin";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const dayFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: TIME_ZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+// Created on first use, not at import: an engine without time zone data
+// would otherwise throw while loading every page that imports this module,
+// instead of inside the (guarded) caller.
+let dayFormatter: Intl.DateTimeFormat | null = null;
+let wallClockFormatter: Intl.DateTimeFormat | null = null;
 
-const wallClockFormatter = new Intl.DateTimeFormat("en-US", {
-  timeZone: TIME_ZONE,
-  year: "numeric",
-  month: "numeric",
-  day: "numeric",
-  hour: "numeric",
-  minute: "numeric",
-  second: "numeric",
-  hour12: false,
-});
+function getDayFormatter(): Intl.DateTimeFormat {
+  dayFormatter ??= new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return dayFormatter;
+}
+
+function getWallClockFormatter(): Intl.DateTimeFormat {
+  wallClockFormatter ??= new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hour12: false,
+  });
+  return wallClockFormatter;
+}
 
 /** The Berlin calendar day as YYYY-MM-DD. */
 export function berlinDay(now: Date = new Date()): string {
-  return dayFormatter.format(now);
+  return getDayFormatter().format(now);
 }
 
 /**
@@ -39,7 +51,7 @@ export function berlinDay(now: Date = new Date()): string {
  */
 function berlinOffsetMs(time: number): number {
   const parts: Record<string, number> = {};
-  for (const part of wallClockFormatter.formatToParts(new Date(time))) {
+  for (const part of getWallClockFormatter().formatToParts(new Date(time))) {
     if (part.type !== "literal") parts[part.type] = Number(part.value);
   }
   const wallClock = Date.UTC(

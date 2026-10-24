@@ -17,23 +17,26 @@ const COHORT_WEEKS = 8;
 /** Family ids per `in` filter, so the request URL stays short. */
 const FAMILY_ID_CHUNK = 100;
 
-/** Accounts that belong to any of these families. */
+/** Accounts that belong to any of these families (chunks run in parallel). */
 async function listMemberIds(familyIds: string[]): Promise<Set<string>> {
   const client = createClient();
-  const userIds = new Set<string>();
+  const chunks: string[][] = [];
   for (let index = 0; index < familyIds.length; index += FAMILY_ID_CHUNK) {
-    const chunk = familyIds.slice(index, index + FAMILY_ID_CHUNK);
-    const rows = await fetchAllRows<{ user_id: string }>((from, to) =>
-      client
-        .from("family_memberships")
-        .select("user_id")
-        .in("family_id", chunk)
-        .order("id")
-        .range(from, to),
-    );
-    for (const row of rows) userIds.add(row.user_id);
+    chunks.push(familyIds.slice(index, index + FAMILY_ID_CHUNK));
   }
-  return userIds;
+  const pages = await Promise.all(
+    chunks.map((chunk) =>
+      fetchAllRows<{ user_id: string }>((from, to) =>
+        client
+          .from("family_memberships")
+          .select("user_id")
+          .in("family_id", chunk)
+          .order("id")
+          .range(from, to),
+      ),
+    ),
+  );
+  return new Set(pages.flat().map((row) => row.user_id));
 }
 
 /**

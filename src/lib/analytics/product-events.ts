@@ -30,12 +30,15 @@ export type ProductEventName =
 
 export type ProductPlatform = "web" | "ios" | "android" | "unknown";
 
+/** The x-ordilo-platform header value, narrowed to a known platform. */
+export function parseProductPlatform(value: string | null): ProductPlatform {
+  return value === "web" || value === "ios" || value === "android" ? value : "unknown";
+}
+
 /** Self-reported measurement metadata, never an authentication signal. */
 export function productPlatformFromRequest(request: Request): ProductPlatform {
   const value = request.headers.get("x-ordilo-platform");
-  if (value !== null) {
-    return value === "web" || value === "ios" || value === "android" ? value : "unknown";
-  }
+  if (value !== null) return parseProductPlatform(value);
   // Older native clients have a bearer token but no platform header.
   if (request.headers.has("authorization")) return "unknown";
   return request.headers.has("sec-fetch-site") ? "web" : "unknown";

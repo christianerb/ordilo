@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { berlinDay, startOfBerlinDayBefore } from "@/lib/berlin-date";
 import { fetchAllRows } from "./paginate";
-import { NOT_PRODUCT_USE_EVENTS } from "./growth-metrics";
+import { eventNameList, NOT_PRODUCT_USE_EVENTS } from "./event-filters";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTH_PAGE_SIZE = 1_000;
@@ -84,7 +84,7 @@ async function listProductActivitySince(since: string) {
       .from("product_events")
       .select("user_id, occurred_at")
       .gte("occurred_at", since)
-      .not("event_name", "in", `(${NOT_PRODUCT_USE_EVENTS.join(",")})`)
+      .not("event_name", "in", eventNameList(NOT_PRODUCT_USE_EVENTS))
       .order("occurred_at", { ascending: false })
       .order("id")
       .range(from, to),

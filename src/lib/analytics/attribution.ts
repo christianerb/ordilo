@@ -26,7 +26,10 @@ export type SignupAttribution = {
   referrer?: string;
   /** First public path the visitor saw, e.g. "/ratgeber/kindergeld". */
   landing?: string;
-  /** Entry path that is not a marketing channel: an invite or the app. */
+  /**
+   * Entry path that is not a marketing channel: set directly in the signup
+   * metadata by the invite flows and the native app, never read from a URL.
+   */
   via?: "invite" | "app";
   /** Set when a paid click id was present; the id itself is dropped. */
   paid_click?: "google" | "meta" | "microsoft";
@@ -160,7 +163,6 @@ export function readAttribution({
     }
   }
 
-  if (params.get("via") === "invite") attribution.via = "invite";
 
   if (params.has("gclid")) attribution.paid_click = "google";
   else if (params.has("msclkid")) attribution.paid_click = "microsoft";
@@ -188,7 +190,6 @@ export function attributionQuery(attribution: SignupAttribution): string {
     const value = attribution[key];
     if (typeof value === "string" && value) params.set(param, value);
   }
-  if (attribution.via === "invite") params.set("via", "invite");
   if (attribution.paid_click === "google") params.set("gclid", "1");
   if (attribution.paid_click === "microsoft") params.set("msclkid", "1");
   if (attribution.paid_click === "meta") params.set("fbclid", "1");
