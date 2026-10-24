@@ -73,6 +73,20 @@ describe("readAttribution", () => {
     expect(page({ search: "?lp=/ratgeber/x?email=a@b.de" }).landing).toBe("/ratgeber/x");
   });
 
+  it("drops campaign values that look like personal data", () => {
+    const attribution = page({
+      search:
+        "?utm_source=newsletter&utm_term=max.mustermann@gmail.com&utm_content=0170%201234567&utm_campaign=a8f3k2m9x7q1w5e4r6t2",
+    });
+    expect(attribution).toEqual({ source: "newsletter", landing: "/" });
+    expect(page({ search: "?utm_term=max%40example.de" }).term).toBeUndefined();
+    // Ordinary campaign names stay.
+    expect(page({ search: "?utm_campaign=herbst-2026&utm_content=banner-oben" })).toMatchObject({
+      campaign: "herbst-2026",
+      content: "banner-oben",
+    });
+  });
+
   it("caps and cleans free-text values", () => {
     const attribution = page({ search: `?utm_campaign=${"a".repeat(300)}<script>` });
     expect(attribution.campaign).toHaveLength(100);

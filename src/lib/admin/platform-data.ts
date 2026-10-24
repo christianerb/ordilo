@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { createBerlinDayCache, startOfBerlinDayBefore } from "@/lib/berlin-date";
 import { fetchAllRows } from "./paginate";
+import { signupConfirmedAt } from "./signups";
 import { eventNameList, NOT_PRODUCT_USE_EVENTS } from "./event-filters";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,12 +38,13 @@ export type PlatformOverview = {
   averageMembersPerFamily: number;
   documentsTotal: number;
   accounts: PlatformAccount[];
+  /** Confirmed accounts only, with createdAt = confirmation (see signups). */
+  signupAccounts: PlatformAccount[];
   dailyMetrics: DailyPlatformMetric[];
 };
 
 // Days follow German time, like the Wachstum tab, so "7/30/90 Tage" means
 // the same hours on every admin tab.
-const dateKey = createBerlinDayCache();
 
 export async function listAllUsers(): Promise<User[]> {
   const admin = createAdminClient();
@@ -93,6 +95,8 @@ async function listProductActivitySince(since: string) {
 
 export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<PlatformOverview> {
   const admin = createAdminClient();
+  // Per request, so the cache never outlives one overview.
+  const dateKey = createBerlinDayCache();
   const now = new Date();
   const windowStart = new Date(startOfBerlinDayBefore(now.getTime(), windowDays - 1));
   const retentionStart = new Date(now.getTime() - EVENT_RETENTION_DAYS * DAY_MS).toISOString();
@@ -144,7 +148,7 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
       id: user.id,
       email: user.email ?? "Ohne E-Mail",
       createdAt: user.created_at,
-      confirmedAt: user.email_confirmed_at ?? null,
+      confirmedAt: signupConfirmedAt(user),
       lastSignInAt: user.last_sign_in_at ?? null,
       lastActivityAt: lastActivityByUser.get(user.id) ?? null,
       familyCount: familyCountByUser.get(user.id) ?? 0,
@@ -218,6 +222,9 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
         : Math.round(((memberCountResult.count ?? 0) / familiesTotal) * 10) / 10,
     documentsTotal: documentCountResult.count ?? 0,
     accounts,
+    signupAccounts: accounts.flatMap((account) =>
+      account.confirmedAt ? [{ ...account, createdAt: account.confirmedAt }] : [],
+    ),
     dailyMetrics: [...metricsByDate.entries()].map(([date, metric]) => ({
       date,
       registrations: metric.registrations,

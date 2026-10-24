@@ -177,22 +177,19 @@ describe("recordDailyAppOpen", () => {
     await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
     await recordDailyAppOpen("family-1", new Date("2026-10-22T08:20:00Z"));
     expect(rpc).toHaveBeenCalledTimes(1);
-    // The memo expires, so a skewed device clock cannot skip a day for long.
-    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:40:00Z"));
-    expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc).toHaveBeenCalledWith("record_app_open", {
       p_family_id: "family-1",
       p_platform: Platform.OS,
     });
   });
 
-  it("lets a periodic check skip until the day changes", async () => {
+  it("asks again once the Berlin day changes", async () => {
     const { rpc } = mockClient();
     await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
-    await recordDailyAppOpen("family-1", new Date("2026-10-22T15:00:00Z"), { onlyOnNewDay: true });
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T21:00:00Z"));
     expect(rpc).toHaveBeenCalledTimes(1);
     // 22:05 UTC is the next day in Berlin.
-    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:05:00Z"), { onlyOnNewDay: true });
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:05:00Z"));
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 

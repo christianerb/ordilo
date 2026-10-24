@@ -8,6 +8,8 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /** Slack after midnight so the new Berlin day has surely begun. */
 const MIDNIGHT_SLACK_MS = 5_000;
+/** Re-check interval when the Berlin midnight cannot be computed. */
+const FALLBACK_RECHECK_MS = 60 * 60 * 1000;
 
 /**
  * Records "app opened" on a visible mount, whenever the tab becomes visible,
@@ -26,10 +28,17 @@ export function DailyAppOpen({ familyId }: { familyId: string }) {
 
     let midnightTimer: ReturnType<typeof setTimeout>;
     const scheduleMidnight = () => {
+      let delay = FALLBACK_RECHECK_MS;
+      try {
+        delay = nextBerlinMidnight(Date.now()) - Date.now() + MIDNIGHT_SLACK_MS;
+      } catch {
+        // No time zone data in this engine: analytics must never break
+        // the page, so fall back to a plain periodic check.
+      }
       midnightTimer = setTimeout(() => {
         if (document.visibilityState === "visible") record();
         scheduleMidnight();
-      }, nextBerlinMidnight(Date.now()) - Date.now() + MIDNIGHT_SLACK_MS);
+      }, delay);
     };
 
     // A tab restored or opened in the background is not a visit yet.

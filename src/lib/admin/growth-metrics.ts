@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   berlinDay,
-  startOfBerlinDay,
   startOfBerlinDayBefore,
   startOfBerlinWeek,
 } from "@/lib/berlin-date";
@@ -303,8 +302,8 @@ export function summarizeGrowth({
   const nowMs = now.getTime();
   const sinceMs = new Date(since).getTime();
   const timelines = buildTimelines(events);
-  const trackedSince =
-    appOpensSince === null ? null : startOfBerlinDay(new Date(appOpensSince).getTime());
+  // The exact first record, not its day: opens earlier that day left no trace.
+  const trackedSince = appOpensSince === null ? null : new Date(appOpensSince).getTime();
   const inWindow = accounts.filter(
     (account) => new Date(account.createdAt).getTime() >= sinceMs,
   );

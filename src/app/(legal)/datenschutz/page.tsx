@@ -84,9 +84,12 @@ export default function DatenschutzPage() {
             anlegst, merken wir uns einmalig, wie du zu Ordilo gekommen
             bist: die Website, von der du kamst (nur der Name, z. B.
             „google.com“), die erste Ordilo-Seite und Kampagnen-Angaben aus
-            dem Link (z. B. „utm_source“). Dafür nutzen wir keine Cookies
-            und speichern nichts auf deinem Gerät. So sehen wir, welche
-            Wege Familien wirklich zu Ordilo führen.
+            dem Link (z. B. „utm_source“). Angaben, die nach persönlichen
+            Daten aussehen (etwa eine E-Mail-Adresse im Link), speichern
+            wir nicht. Für diese Messung setzen wir kein eigenes Cookie.
+            Die Angaben gehören zu deinem Konto und sind damit, wie deine
+            anderen Kontodaten, auch Teil deiner Anmeldung. So sehen wir,
+            welche Wege Familien wirklich zu Ordilo führen.
           </li>
           <li>
             <strong>Käufe und Abos:</strong> In der iPhone-App nutzen wir die

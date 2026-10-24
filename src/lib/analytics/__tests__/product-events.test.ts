@@ -98,14 +98,11 @@ describe("recordDailyAppOpen", () => {
     });
   });
 
-  it("skips the round trip for a while after a successful call", async () => {
+  it("skips the round trip for the rest of the Berlin day", async () => {
     const { client, rpc } = makeClient();
     await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:00:00Z") });
-    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:20:00Z") });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T21:50:00Z") });
     expect(rpc).toHaveBeenCalledTimes(1);
-    // The memo expires, so a skewed device clock cannot skip a day for long.
-    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:40:00Z") });
-    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it("asks again right away on a new Berlin day", async () => {

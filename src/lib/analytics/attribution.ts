@@ -81,14 +81,29 @@ const MAX_PATH_LENGTH = 200;
 /** Longer paths are not a page anyone landed on; drop them. */
 const MAX_RAW_PATH_LENGTH = 1000;
 
+/**
+ * Clean a free-text campaign value. Values that look like personal data —
+ * an email address, a phone number, or a long id/token some mail tools put
+ * into utm_term or utm_content — are dropped entirely, not reshaped.
+ */
 function cleanValue(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
-  const cleaned = value
+  const raw = value.trim();
+  if (looksPersonal(raw)) return undefined;
+  const cleaned = raw
     .replace(/[^\p{L}\p{N} ._\-+/:]/gu, "")
     .trim()
     .toLowerCase()
     .slice(0, MAX_VALUE_LENGTH);
   return cleaned || undefined;
+}
+
+function looksPersonal(value: string): boolean {
+  if (value.includes("@") || /%40/i.test(value)) return true;
+  // Phone numbers: 7 or more digits, maybe separated.
+  if ((value.match(/\d/g) ?? []).length >= 7 && /^[\d\s+()./-]+$/.test(value)) return true;
+  // Ids and tokens: a long run of letters and digits mixed together.
+  return /(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{20,}/i.test(value);
 }
 
 /** Reduce a referrer (host or URL) to a bare host without "www.". */

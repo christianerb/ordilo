@@ -6,6 +6,17 @@ const { recordDailyAppOpen } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/analytics/product-events", () => ({ recordDailyAppOpen }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn(() => ({})) }));
+const { midnight } = vi.hoisted(() => ({ midnight: { fail: false } }));
+vi.mock("@/lib/berlin-date", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/berlin-date")>();
+  return {
+    ...actual,
+    nextBerlinMidnight: (time: number) => {
+      if (midnight.fail) throw new RangeError("Invalid time zone specified: Europe/Berlin");
+      return actual.nextBerlinMidnight(time);
+    },
+  };
+});
 const { pathname } = vi.hoisted(() => ({ pathname: { current: "/home" } }));
 vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
 
@@ -76,5 +87,17 @@ describe("DailyAppOpen", () => {
     expect(recordDailyAppOpen).not.toHaveBeenCalled();
     act(() => setVisibility("visible"));
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the page alive when the engine has no time zone data", () => {
+    midnight.fail = true;
+    try {
+      pathname.current = "/home";
+      setVisibility("visible");
+      expect(() => render(<DailyAppOpen familyId="family-1" />)).not.toThrow();
+      expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    } finally {
+      midnight.fail = false;
+    }
   });
 });

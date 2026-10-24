@@ -4,6 +4,7 @@ import { parseStoredAttribution } from "@/lib/analytics/attribution";
 import { startOfBerlinDayBefore } from "@/lib/berlin-date";
 import { fetchAllRows } from "./paginate";
 import { listAllUsers } from "./platform-data";
+import { signupConfirmedAt } from "./signups";
 import {
   cohortWeekStarts,
   summarizeFamilyBilling,
@@ -89,19 +90,18 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   const { paidFamilies, trialingFamilies } = summarizeFamilyBilling(entitlements, now);
   const payingUserIds = await listMemberIds([...paidFamilies]);
 
-  // Requesting a login code already creates the auth user. Only accounts
-  // whose code was confirmed are real signups; their clock starts then.
-  const accounts: GrowthAccount[] = users.flatMap((user) =>
-    user.email_confirmed_at
+  const accounts: GrowthAccount[] = users.flatMap((user) => {
+    const confirmedAt = signupConfirmedAt(user);
+    return confirmedAt
       ? [
           {
             id: user.id,
-            createdAt: user.email_confirmed_at,
+            createdAt: confirmedAt,
             attribution: parseStoredAttribution(user.user_metadata?.signup_attribution),
           },
         ]
-      : [],
-  );
+      : [];
+  });
 
   return {
     ...summarizeGrowth({

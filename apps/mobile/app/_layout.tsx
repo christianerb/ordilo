@@ -159,7 +159,7 @@ function RootLayoutNav() {
     });
     const interval = setInterval(() => {
       if (AppState.currentState === "active") {
-        void recordDailyAppOpen(familyId, new Date(), { onlyOnNewDay: true });
+        void recordDailyAppOpen(familyId);
       }
     }, APP_OPEN_RECHECK_MS);
     return () => {
