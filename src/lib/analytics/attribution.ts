@@ -112,7 +112,7 @@ function safeDecode(value: string): string {
 function looksPersonal(value: string): boolean {
   if (value.includes("@") || /%40/i.test(value)) return true;
   // Phone numbers start with "+" or "0"; dates ("2026-10-24", "05.10.2026")
-  // are fine. Same rule as clean_signup_attribution in migration 0097.
+  // are fine. Migration 0097's guard drops such values too.
   const isDate = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(value);
   if (!isDate && (value.match(/\d/g) ?? []).length >= 7 && /^(\+|0)[\d\s()./-]+$/.test(value)) {
     return true;
@@ -258,7 +258,7 @@ const EMAIL_HOSTS = [
   "outlook.office.com", "outlook.office365.com", "mail.yahoo.com",
   "navigator.web.de", "3c.web.de", "navigator.gmx.net", "3c.gmx.net",
   "navigator.gmx.de", "email.t-online.de", "mail.freenet.de",
-  "mail.proton.me", "icloud.com", "posteo.de", "office.mailbox.org",
+  "mail.proton.me", "posteo.de", "office.mailbox.org",
 ]
 const SEARCH_ENGINES = [
   "bing.com", "duckduckgo.com", "ecosia.org", "startpage.com",

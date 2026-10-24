@@ -82,7 +82,7 @@ let lastRecordedAppOpen: { key: string; verified: boolean; at: number } | null =
  * When the server's day did not match (clock skew, no time zone data) or
  * setup is not finished, ask again at most this often.
  */
-const UNVERIFIED_RETRY_MS = 10 * 60 * 1000;
+export const UNVERIFIED_RETRY_MS = 10 * 60 * 1000;
 
 /**
  * The memo's day. Without time zone data (some older engines) fall back to
@@ -115,6 +115,12 @@ export async function recordDailyAppOpen(
   }: { familyId?: string | null; platform?: ProductPlatform; now?: Date } = {},
 ): Promise<boolean> {
   try {
+    // Already verified today: skip even the session read. On the web a
+    // different person signing in always means a full page load, which
+    // clears this memo.
+    const day = memoDay(now);
+    if (lastRecordedAppOpen?.verified && lastRecordedAppOpen.key.endsWith(`:${day}`)) return true;
+
     // Reads the local session — no network round trip.
     const {
       data: { session },
@@ -122,7 +128,6 @@ export async function recordDailyAppOpen(
     const userId = session?.user.id;
     if (!userId) return false;
 
-    const day = memoDay(now);
     const key = `${userId}:${day}`;
     const nowMs = now.getTime();
     if (lastRecordedAppOpen?.key === key) {

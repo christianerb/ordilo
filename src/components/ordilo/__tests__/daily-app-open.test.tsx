@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { recordDailyAppOpen } = vi.hoisted(() => ({
   recordDailyAppOpen: vi.fn().mockResolvedValue(true),
 }));
-vi.mock("@/lib/analytics/product-events", () => ({ recordDailyAppOpen }));
+vi.mock("@/lib/analytics/product-events", () => ({ recordDailyAppOpen, UNVERIFIED_RETRY_MS: 10 * 60 * 1000 }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn(() => ({})) }));
 const { midnight } = vi.hoisted(() => ({ midnight: { fail: false } }));
 vi.mock("@/lib/berlin-date", async (importOriginal) => {

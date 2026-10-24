@@ -132,11 +132,21 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("still records a different person signing in on the same day", async () => {
+  it("skips even the session read once today is verified", async () => {
+    const { client, rpc } = makeClient({ current: "2026-10-22" });
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen(client, { now });
+    await recordDailyAppOpen(client, { now });
+    expect(client.auth.getSession).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a different person after the full page load a web sign-in does", async () => {
     const { client, rpc, session } = makeClient({ current: "2026-10-22" });
     const now = new Date("2026-10-22T08:00:00Z");
     await recordDailyAppOpen(client, { now });
     session.current = "user-2";
+    resetDailyAppOpenForTests(); // what the page reload after signing in does
     await recordDailyAppOpen(client, { now });
     expect(rpc).toHaveBeenCalledTimes(2);
   });

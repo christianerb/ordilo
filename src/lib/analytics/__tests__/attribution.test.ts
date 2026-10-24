@@ -243,7 +243,8 @@ describe("classifyChannel", () => {
     // Portal news articles are referrals, not e-mail.
     [{ referrer: "web.de" }, "verweis"],
     [{ referrer: "t-online.de" }, "verweis"],
-    [{ referrer: "icloud.com" }, "email"],
+    // www.icloud.com also serves shared notes and files: a referral.
+    [{ referrer: "icloud.com" }, "verweis"],
     [{ referrer: "de.news.yahoo.com" }, "verweis"],
     [{ referrer: "search.yahoo.com" }, "suche"],
     [{ referrer: "chatgpt.com" }, "ki_assistent"],

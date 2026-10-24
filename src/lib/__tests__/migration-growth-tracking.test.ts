@@ -38,12 +38,12 @@ describe("growth tracking migration", () => {
   });
 
   it("only attributes invite events to the signed-in person", () => {
-    expect(migration).toContain("and (auth.uid() is null or auth.uid() = new.created_by) then");
-    expect(migration).toContain("and (auth.uid() is null or auth.uid() = new.user_id) then");
+    expect(migration).toContain("if new.created_by is not null and auth.uid() = new.created_by then");
+    expect(migration).toContain("if new.role <> 'owner' and auth.uid() = new.user_id then");
   });
 
   it("does not count the family creator's own membership as an accepted invite", () => {
-    expect(migration).toContain("if new.role <> 'owner'\n     and (auth.uid() is null or auth.uid() = new.user_id) then");
+    expect(migration).toContain("if new.role <> 'owner' and auth.uid() = new.user_id then");
   });
 
   it("runs every definer function with a fixed search path and tight grants", () => {
@@ -157,7 +157,7 @@ describe("growth tracking migration", () => {
       "where public.clean_signup_attribution(raw_user_meta_data -> 'signup_attribution') <> '{}'::jsonb",
     );
     // Untrusted client JSON is reduced to known keys without personal data.
-    expect(migration).toContain("and value not like '%@%'");
+    expect(migration).toContain("and value ~ '^([[:alnum:] ._+/-]|%[0-9A-Fa-f]{2})+$'");
     expect(migration).toContain("and value !~* '%40'");
     expect(migration).toContain("and length(value) between 1 and 200");
   });

@@ -73,11 +73,10 @@ security definer
 set search_path = public
 as $$
 begin
-  -- Attribute the event to the creator only when that is who is signed in
-  -- (or a server-side insert without a session): a client cannot write an
-  -- invite_created event for someone else by setting created_by.
-  if new.created_by is not null
-     and (auth.uid() is null or auth.uid() = new.created_by) then
+  -- Only when the creator is the one signed in: a client cannot write an
+  -- invite_created event for someone else, and support or service-role
+  -- inserts without a session are not product use.
+  if new.created_by is not null and auth.uid() = new.created_by then
     insert into public.product_events (user_id, family_id, event_name, properties)
     values (
       new.created_by,
@@ -105,11 +104,10 @@ security definer
 set search_path = public
 as $$
 begin
-  -- Only the person joining (accept_family_invite runs as them) or a
-  -- server-side insert without a session: an owner adding someone's
-  -- membership directly is not that person accepting an invite.
-  if new.role <> 'owner'
-     and (auth.uid() is null or auth.uid() = new.user_id) then
+  -- Only the person joining (accept_family_invite runs with their session):
+  -- an owner adding someone's membership, or a support/service-role insert
+  -- without a session, is not that person accepting an invite.
+  if new.role <> 'owner' and auth.uid() = new.user_id then
     insert into public.product_events (user_id, family_id, event_name, properties)
     values (
       new.user_id,
@@ -364,9 +362,13 @@ alter table public.signup_attributions
   add column if not exists updated_at timestamptz not null default now();
 alter table public.signup_attributions enable row level security;
 
--- Client-sent metadata is untrusted: keep only the known keys as short
--- strings, and drop anything that looks like personal data (an e-mail, a
--- UUID, a phone number). The admin page cleans it again when reading.
+-- Client-sent metadata is untrusted. The login form already coarsens it
+-- (attribution.ts: host instead of URL, public page instead of full path);
+-- this guard only keeps values of that coarse shape and drops everything
+-- else rather than reshaping it, so there is one set of coarsening rules.
+-- Dropped: other keys, non-strings, anything with characters outside a
+-- small set (no "?", "#", "@", ":"), and values that look like
+-- personal data (phone numbers, UUIDs, hex ids, long letter-digit tokens).
 create or replace function public.clean_signup_attribution(p_raw jsonb)
 returns jsonb
 language sql
@@ -375,52 +377,30 @@ set search_path = public
 as $$
   select coalesce(jsonb_object_agg(key, value), '{}'::jsonb)
   from (
-    -- Only plain string values; nested objects or numbers are dropped.
-    -- Coarse like attribution.ts: a URL keeps only its host, a landing
-    -- path only a public page or its first segment.
-    select
-      raw.key,
-      case
-        when raw.key = 'landing' then
-          case
-            when raw.value ~ '^/(ratgeber|hilfe|ueber-uns|datenschutz|impressum|nutzungsbedingungen)(/|$)'
-              or raw.value in ('/', '/login')
-              then split_part(split_part(raw.value, '?', 1), '#', 1)
-            else '/' || split_part(raw.value, '/', 2)
-          end
-        when raw.value ~* '^[a-z][a-z0-9+.-]*://' or raw.key = 'referrer' then
-          lower(substring(raw.value from '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/:?#]+)'))
-        else raw.value
-      end as value
-    from (
-      select entry.key, entry.value #>> '{}' as value
-      from jsonb_each(case when jsonb_typeof(p_raw) = 'object' then p_raw else '{}'::jsonb end) as entry
-      where jsonb_typeof(entry.value) = 'string'
-    ) as raw
+    select entry.key, entry.value #>> '{}' as value
+    from jsonb_each(case when jsonb_typeof(p_raw) = 'object' then p_raw else '{}'::jsonb end) as entry
+    where jsonb_typeof(entry.value) = 'string'
   ) as fields
   where key in (
       'source', 'medium', 'campaign', 'content', 'term',
       'referrer', 'landing', 'via', 'paid_click'
     )
     and length(value) between 1 and 200
-    and value not like '%@%'
+    -- Percent-encoding is allowed (umlaut slugs like "%C3%BC"), but not an
+    -- encoded "@" ("%40").
+    and value ~ '^([[:alnum:] ._+/-]|%[0-9A-Fa-f]{2})+$'
     and value !~* '%40'
+    and (key <> 'referrer' or value ~* '^[a-z0-9.-]+\.[a-z0-9-]+$')
+    and (key <> 'landing' or value ~ '^/')
+    -- Phone numbers ("0170 1234567", "+49 170 …"; dates like 05.10.2026 pass).
+    and value !~ '[0-9]{3,}[ ./-]?[0-9]{4,}'
     and value !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}'
-    -- Hex ids without dashes, and long letter-digit tokens that are at
-    -- least 30 % digits (same rule as looksPersonal in attribution.ts).
     and regexp_replace(value, '[-_.]', '', 'g') !~* '^[0-9a-f]{16,}$'
     and not exists (
       select 1
       from regexp_matches(value, '[A-Za-z0-9]{20,}', 'g') as run(parts)
       where run.parts[1] ~ '[A-Za-z]'
         and length(regexp_replace(run.parts[1], '[^0-9]', '', 'g')) >= 0.3 * length(run.parts[1])
-    )
-    -- Phone numbers, as in looksPersonal: start with "+" or "0", only
-    -- digits and separators, at least 7 digits — dates are fine.
-    and not (
-      value ~ '^(\+|0)[0-9[:space:]()./-]+$'
-      and length(regexp_replace(value, '[^0-9]', '', 'g')) >= 7
-      and value !~ '^[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}$'
     );
 $$;
 

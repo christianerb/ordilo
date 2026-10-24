@@ -1,15 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { recordDailyAppOpen } from "@/lib/analytics/product-events";
+import { recordDailyAppOpen, UNVERIFIED_RETRY_MS } from "@/lib/analytics/product-events";
 import { nextBerlinMidnight } from "@/lib/berlin-date";
 import { createClient } from "@/lib/supabase/client";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /** Slack after midnight so the new Berlin day has surely begun. */
 const MIDNIGHT_SLACK_MS = 5_000;
-/** Matches UNVERIFIED_RETRY_MS in product-events.ts. */
-const RETRY_AFTER_MS = 10 * 60 * 1000;
 /** What counts as using an already open tab. */
 const INTERACTION_EVENTS = ["pointerdown", "keydown"] as const;
 /** Re-check interval when the Berlin midnight cannot be computed. */
@@ -35,7 +33,7 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
       void recordDailyAppOpen(supabase, { familyId }).then((recorded) => {
         if (recorded || unmounted) return;
         clearTimeout(retryTimer);
-        retryTimer = setTimeout(armInteraction, RETRY_AFTER_MS);
+        retryTimer = setTimeout(armInteraction, UNVERIFIED_RETRY_MS);
       });
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") record();
