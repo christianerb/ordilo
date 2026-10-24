@@ -43,7 +43,7 @@ describe("growth tracking migration", () => {
   });
 
   it("does not count the family creator's own membership as an accepted invite", () => {
-    expect(migration).toContain("if new.role <> 'owner' then");
+    expect(migration).toContain("if new.role <> 'owner'\n     and (auth.uid() is null or auth.uid() = new.user_id) then");
   });
 
   it("runs every definer function with a fixed search path and tight grants", () => {
