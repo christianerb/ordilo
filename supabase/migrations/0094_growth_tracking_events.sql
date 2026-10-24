@@ -345,16 +345,39 @@ create table if not exists public.signup_attributions (
 );
 alter table public.signup_attributions enable row level security;
 
+-- Client-sent metadata is untrusted: keep only the known keys as short
+-- strings, and drop anything that looks like personal data (an e-mail, a
+-- UUID, a phone number). The admin page cleans it again when reading.
+create or replace function public.clean_signup_attribution(p_raw jsonb)
+returns jsonb
+language sql
+immutable
+set search_path = public
+as $$
+  select coalesce(jsonb_object_agg(key, value), '{}'::jsonb)
+  from jsonb_each_text(case when jsonb_typeof(p_raw) = 'object' then p_raw else '{}'::jsonb end)
+  where key in (
+      'source', 'medium', 'campaign', 'content', 'term',
+      'referrer', 'landing', 'via', 'paid_click'
+    )
+    and length(value) between 1 and 200
+    and value not like '%@%'
+    and value !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}'
+    and value !~ '^(\+|0)[0-9 ()./-]{6,}$';
+$$;
+
 create or replace function public.store_signup_attribution()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_attribution jsonb := public.clean_signup_attribution(new.raw_user_meta_data -> 'signup_attribution');
 begin
-  if jsonb_typeof(new.raw_user_meta_data -> 'signup_attribution') = 'object' then
+  if v_attribution <> '{}'::jsonb then
     insert into public.signup_attributions (user_id, attribution)
-    values (new.id, new.raw_user_meta_data -> 'signup_attribution')
+    values (new.id, v_attribution)
     on conflict (user_id) do nothing;
   end if;
   return new;
@@ -373,7 +396,7 @@ create trigger store_signup_attribution_on_auth_user
 
 -- Accounts created before this migration: copy what their metadata holds.
 insert into public.signup_attributions (user_id, attribution)
-select id, raw_user_meta_data -> 'signup_attribution'
+select id, public.clean_signup_attribution(raw_user_meta_data -> 'signup_attribution')
 from auth.users
-where jsonb_typeof(raw_user_meta_data -> 'signup_attribution') = 'object'
+where public.clean_signup_attribution(raw_user_meta_data -> 'signup_attribution') <> '{}'::jsonb
 on conflict (user_id) do nothing;

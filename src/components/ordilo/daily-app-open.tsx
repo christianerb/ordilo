@@ -23,6 +23,7 @@ const FALLBACK_RECHECK_MS = 60 * 60 * 1000;
 export function DailyAppOpen({ familyId }: { familyId: string | null }) {
   useMountEffect(() => {
     const supabase = createClient();
+    let unmounted = false;
     const record = () => void recordDailyAppOpen(supabase, { familyId });
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") record();
@@ -32,7 +33,11 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
     // left on screen overnight is not a visit.
     const onInteraction = () => {
       disarmInteraction();
-      record();
+      // Offline or the clock a moment ahead of the server: wait for the
+      // next interaction instead of giving up for the day.
+      void recordDailyAppOpen(supabase, { familyId }).then((recorded) => {
+        if (!recorded && !unmounted) armInteraction();
+      });
     };
     const armInteraction = () => {
       for (const type of INTERACTION_EVENTS) {
@@ -63,6 +68,7 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
     scheduleMidnight();
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
+      unmounted = true;
       clearTimeout(midnightTimer);
       disarmInteraction();
       document.removeEventListener("visibilitychange", onVisibilityChange);

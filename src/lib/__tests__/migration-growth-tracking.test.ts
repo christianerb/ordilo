@@ -24,7 +24,7 @@ describe("growth tracking migration", () => {
   it("can be reapplied", () => {
     expect(migration).toContain("drop constraint if exists");
     expect(migration.match(/drop trigger if exists/g)).toHaveLength(3);
-    expect(migration.match(/create (or replace )?function/g)).toHaveLength(8);
+    expect(migration.match(/create (or replace )?function/g)).toHaveLength(9);
     // Functions whose return type changed are dropped first so reapplying works.
     expect(migration).toContain("drop function if exists public.record_app_open(uuid, text);");
     expect(migration).toContain(
@@ -132,7 +132,12 @@ describe("growth tracking migration", () => {
     expect(migration).toContain("after insert on auth.users");
     expect(migration).not.toMatch(/create policy[^;]*signup_attributions/);
     // Existing accounts are backfilled once.
-    expect(migration).toContain("from auth.users\nwhere jsonb_typeof(raw_user_meta_data -> 'signup_attribution') = 'object'");
+    expect(migration).toContain(
+      "where public.clean_signup_attribution(raw_user_meta_data -> 'signup_attribution') <> '{}'::jsonb",
+    );
+    // Untrusted client JSON is reduced to known keys without personal data.
+    expect(migration).toContain("and value not like '%@%'");
+    expect(migration).toContain("and length(value) between 1 and 200");
   });
 });
 

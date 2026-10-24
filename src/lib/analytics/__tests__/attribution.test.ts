@@ -137,6 +137,11 @@ describe("readAttribution", () => {
     expect(page({ pathname: `/${"a".repeat(1200)}` }).landing).toBeUndefined();
   });
 
+  it("keeps no landing when the first segment itself looks personal", () => {
+    expect(page({ search: "?lp=/a8f3k2m9x7q1w5e4r6t2", pathname: "/login" }).landing).toBeUndefined();
+    expect(page({ pathname: "/max%40example.de" }).landing).toBeUndefined();
+  });
+
   it("drops path segments that look like personal data, also under public pages", () => {
     expect(page({ pathname: "/ratgeber/max%40example.de" }).landing).toBe("/ratgeber");
     expect(page({ search: "?lp=/ratgeber/550e8400-e29b-41d4-a716-446655440000" }).landing).toBe("/ratgeber");
@@ -225,6 +230,9 @@ describe("classifyChannel", () => {
     [{ referrer: "l.instagram.com" }, "social"],
     [{ referrer: "google.de" }, "suche"],
     [{ referrer: "news.google.com" }, "suche"],
+    [{ referrer: "google.co.uk" }, "suche"],
+    [{ referrer: "docs.google.com" }, "verweis"],
+    [{ referrer: "sites.google.com" }, "verweis"],
     [{ referrer: "ecosia.org" }, "suche"],
     [{ referrer: "mail.google.com" }, "email"],
     [{ referrer: "com.google.android.gm" }, "email"],

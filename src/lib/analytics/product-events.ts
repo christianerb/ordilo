@@ -96,7 +96,8 @@ function memoDay(now: Date): string {
  * Record that the user opened the app today, so "aktiv" also counts
  * visits that trigger no other action (reading Heute, checking a date).
  * The record_app_open RPC and a unique index keep it to one row per user
- * and German calendar day, even with concurrent tabs. Never throws.
+ * and German calendar day, even with concurrent tabs. Resolves to whether
+ * today's open is known to be recorded. Never throws.
  */
 export async function recordDailyAppOpen(
   client: SupabaseClient<Database>,
@@ -105,18 +106,18 @@ export async function recordDailyAppOpen(
     platform = typeof window === "undefined" ? "unknown" : "web",
     now = new Date(),
   }: { familyId?: string | null; platform?: ProductPlatform; now?: Date } = {},
-): Promise<void> {
+): Promise<boolean> {
   try {
     // Reads the local session — no network round trip.
     const {
       data: { session },
     } = await client.auth.getSession();
     const userId = session?.user.id;
-    if (!userId) return;
+    if (!userId) return false;
 
     const day = memoDay(now);
     const key = `${userId}:${day}`;
-    if (lastRecordedAppOpen === key) return;
+    if (lastRecordedAppOpen === key) return true;
     const { data, error } = await client.rpc("record_app_open", {
       p_family_id: familyId,
       p_platform: platform,
@@ -124,9 +125,14 @@ export async function recordDailyAppOpen(
     // Remember only when the database recorded *this device's* day. null
     // (setup not finished) or another day (clock skew around midnight)
     // means: ask again on the next open.
-    if (!error && data === day) lastRecordedAppOpen = key;
+    if (!error && data === day) {
+      lastRecordedAppOpen = key;
+      return true;
+    }
+    return false;
   } catch {
     // Analytics must never block a user-facing action.
+    return false;
   }
 }
 

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { growthEventDaysSchema } from "@/lib/schemas/growth";
 import {
   berlinDay,
   startOfBerlinDayBefore,
@@ -41,17 +41,6 @@ export const LONGEST_RATE_WINDOW_DAYS = 14;
 /** Week-1 return: days 7 up to (not including) 14 after signup. */
 const WEEK1_START_DAYS = 7;
 const WEEK1_END_DAYS = 14;
-// Parsed once per account object: summarizeGrowth reads it many times.
-const createdMsCache = new WeakMap<GrowthAccount, number>();
-function createdMs(account: GrowthAccount): number {
-  let ms = createdMsCache.get(account);
-  if (ms === undefined) {
-    ms = new Date(account.createdAt).getTime();
-    createdMsCache.set(account, ms);
-  }
-  return ms;
-}
-
 /** An invite accepted this soon after signup means the invite brought them. */
 const INVITE_SIGNUP_WINDOW_MS = DAY_MS;
 /** Stored channels that do not explain why someone came. */
@@ -62,6 +51,9 @@ export type GrowthAccount = {
   createdAt: string;
   attribution: SignupAttribution | null;
 };
+
+/** An account with its signup time parsed once (summarizeGrowth reads it often). */
+type TimedAccount = GrowthAccount & { createdMs: number };
 
 /**
  * Events of one user, one event name and one Berlin day, as aggregated by
@@ -77,17 +69,9 @@ export type GrowthEventDay = {
   event_count: number;
 };
 
-const growthEventDaySchema = z.object({
-  user_id: z.string(),
-  event_name: z.string(),
-  first_at: z.string(),
-  last_at: z.string(),
-  event_count: z.coerce.number().int().nonnegative(),
-});
-
 /** Validate the JSON array returned by the admin_growth_event_days RPC. */
 export function parseGrowthEventDays(value: unknown): GrowthEventDay[] {
-  return z.array(growthEventDaySchema).parse(value ?? []);
+  return growthEventDaysSchema.parse(value ?? []);
 }
 
 const QUESTION_EVENTS = new Set(["chat_question_sent", "search_completed"]);
@@ -152,8 +136,8 @@ function firstOf(timeline: UserTimeline | undefined, names: Iterable<string>): n
   return earliest;
 }
 
-function isActivated(account: GrowthAccount, timeline: UserTimeline | undefined): boolean {
-  const start = createdMs(account);
+function isActivated(account: TimedAccount, timeline: UserTimeline | undefined): boolean {
+  const start = account.createdMs;
   const deadline = start + ACTIVATION_WINDOW_DAYS * DAY_MS;
   const confirmed = firstOf(timeline, ["document_confirmed"]);
   const asked = firstOf(timeline, QUESTION_EVENTS);
@@ -161,7 +145,7 @@ function isActivated(account: GrowthAccount, timeline: UserTimeline | undefined)
 }
 
 function channelForAccount(
-  account: GrowthAccount,
+  account: TimedAccount,
   timeline: UserTimeline | undefined,
 ): AcquisitionChannel {
   const stored = classifyChannel(account.attribution);
@@ -171,7 +155,7 @@ function channelForAccount(
   // signup explain it.
   if (!WEAK_CHANNELS.has(stored)) return stored;
   const joined = firstOf(timeline, ["invite_accepted"]);
-  const created = createdMs(account);
+  const created = account.createdMs;
   if (joined !== null && joined - created <= INVITE_SIGNUP_WINDOW_MS) return "einladung";
   return stored;
 }
@@ -184,16 +168,16 @@ function channelForAccount(
 export type Share = { eligible: number; count: number; rate: number | null };
 
 function shareOf(
-  accounts: GrowthAccount[],
+  accounts: TimedAccount[],
   now: number,
   windowDays: number,
-  hit: (account: GrowthAccount, created: number) => boolean,
+  hit: (account: TimedAccount, created: number) => boolean,
   measurableFrom: (created: number) => boolean = () => true,
 ): Share {
   let eligible = 0;
   let count = 0;
   for (const account of accounts) {
-    const created = createdMs(account);
+    const created = account.createdMs;
     if (now < created + windowDays * DAY_MS || !measurableFrom(created)) continue;
     eligible += 1;
     if (hit(account, created)) count += 1;
@@ -208,7 +192,7 @@ function shareOf(
  * came back. `trackedSince` null means no app open was recorded yet.
  */
 function returnedBetween(
-  accounts: GrowthAccount[],
+  accounts: TimedAccount[],
   timelines: Map<string, UserTimeline>,
   startDay: number,
   endDay: number,
@@ -228,7 +212,7 @@ function returnedBetween(
 
 /** Activated, among accounts whose 7-day window has passed. */
 function activationOf(
-  accounts: GrowthAccount[],
+  accounts: TimedAccount[],
   timelines: Map<string, UserTimeline>,
   now: number,
 ): Share {
@@ -318,8 +302,12 @@ export function summarizeGrowth({
   const timelines = buildTimelines(events);
   // The exact first record, not its day: opens earlier that day left no trace.
   const trackedSince = appOpensSince === null ? null : new Date(appOpensSince).getTime();
-  const inWindow = accounts.filter(
-    (account) => createdMs(account) >= sinceMs,
+  const timed: TimedAccount[] = accounts.map((account) => ({
+    ...account,
+    createdMs: new Date(account.createdAt).getTime(),
+  }));
+  const inWindow = timed.filter(
+    (account) => account.createdMs >= sinceMs,
   );
 
   const reached = (names: string[]) =>
@@ -347,24 +335,24 @@ export function summarizeGrowth({
     const confirmed = firstOf(timelines.get(account.id), ["document_confirmed"]);
     if (confirmed === null) continue;
     hoursToConfirm.push(
-      Math.max(0, (confirmed - createdMs(account)) / (60 * 60 * 1000)),
+      Math.max(0, (confirmed - account.createdMs) / (60 * 60 * 1000)),
     );
   }
 
   // Rates for the period look at accounts whose window *ended* in it —
   // accounts that signed up in the period would not have had their 7 or
   // 14 days yet (with "7 Tage" none of them would).
-  const endedInPeriod = (account: GrowthAccount, windowDays: number) => {
-    const end = createdMs(account) + windowDays * DAY_MS;
+  const endedInPeriod = (account: TimedAccount, windowDays: number) => {
+    const end = account.createdMs + windowDays * DAY_MS;
     return end >= sinceMs && end <= nowMs;
   };
-  const activationPool = accounts.filter((account) => endedInPeriod(account, ACTIVATION_WINDOW_DAYS));
-  const week1Pool = accounts.filter((account) => endedInPeriod(account, WEEK1_END_DAYS));
+  const activationPool = timed.filter((account) => endedInPeriod(account, ACTIVATION_WINDOW_DAYS));
+  const week1Pool = timed.filter((account) => endedInPeriod(account, WEEK1_END_DAYS));
 
   // Group each pool by channel once; an account's channel is computed once.
   const channelOf = new Map<string, AcquisitionChannel>();
-  const groupByChannel = (pool: GrowthAccount[]) => {
-    const groups = new Map<AcquisitionChannel, GrowthAccount[]>();
+  const groupByChannel = (pool: TimedAccount[]) => {
+    const groups = new Map<AcquisitionChannel, TimedAccount[]>();
     for (const account of pool) {
       let channel = channelOf.get(account.id);
       if (channel === undefined) {
@@ -403,8 +391,8 @@ export function summarizeGrowth({
   const cohorts: CohortRow[] = [];
   for (const start of cohortWeekStarts(nowMs, cohortWeeks)) {
     const end = startOfBerlinWeek(start + 10 * DAY_MS);
-    const members = accounts.filter((account) => {
-      const created = createdMs(account);
+    const members = timed.filter((account) => {
+      const created = account.createdMs;
       return created >= start && created < end;
     });
     cohorts.push({

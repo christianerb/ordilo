@@ -1,4 +1,5 @@
 import { isPublicMarketingPath } from "@/lib/public-routes";
+import { storedAttributionSchema } from "@/lib/schemas/growth";
 
 /**
  * Signup attribution without cookies or browser storage.
@@ -153,11 +154,14 @@ function cleanPath(value: string | null | undefined): string | undefined {
   if (path.length > MAX_RAW_PATH_LENGTH) return undefined;
   // Letters in any script and percent-encoding (e.g. "%C3%BC"), nothing else.
   if (!/^\/(?:[\p{L}\p{N}\-/_.]|%[0-9a-f]{2})*$/iu.test(path)) return undefined;
-  const firstSegment = `/${path.split("/")[1]}`;
+  const segments = path.split("/").slice(1);
+  // The first segment itself personal ("/<token>"): keep no landing at all.
+  if (segments[0] && looksPersonal(safeDecode(segments[0]))) return undefined;
+  const firstSegment = `/${segments[0] ?? ""}`;
   if (path.length > MAX_PATH_LENGTH) return firstSegment;
   // A segment that looks like personal data (an e-mail, an id from a mail
   // tool) never goes into account metadata, even under a public page.
-  if (path.split("/").slice(2).some((segment) => looksPersonal(safeDecode(segment)))) {
+  if (segments.slice(1).some((segment) => looksPersonal(safeDecode(segment)))) {
     return firstSegment;
   }
   if (path === "/" || path === "/login" || isPublicMarketingPath(path)) return path;
@@ -248,22 +252,20 @@ export function attributionQuery(attribution: SignupAttribution): string {
  */
 export function parseStoredAttribution(value: unknown): SignupAttribution | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
-  const text = (key: string) =>
-    typeof raw[key] === "string" ? (raw[key] as string) : undefined;
+  const parsed = storedAttributionSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const raw = parsed.data;
   const attribution: SignupAttribution = {};
   for (const key of ["source", "medium", "campaign", "content", "term"] as const) {
-    const cleaned = cleanValue(text(key));
+    const cleaned = cleanValue(raw[key]);
     if (cleaned) attribution[key] = cleaned;
   }
-  const referrer = cleanHost(text("referrer"));
+  const referrer = cleanHost(raw.referrer);
   if (referrer) attribution.referrer = referrer;
-  const landing = cleanPath(text("landing"));
+  const landing = cleanPath(raw.landing);
   if (landing) attribution.landing = landing;
-  if (raw.via === "invite" || raw.via === "app") attribution.via = raw.via;
-  if (raw.paid_click === "google" || raw.paid_click === "microsoft") {
-    attribution.paid_click = raw.paid_click;
-  }
+  if (raw.via) attribution.via = raw.via;
+  if (raw.paid_click) attribution.paid_click = raw.paid_click;
   return attribution;
 }
 
@@ -275,7 +277,7 @@ const EMAIL_HOSTS = [
   "freenet.de", "mail.proton.me", "icloud.com", "posteo.de", "mailbox.org",
 ];
 const SEARCH_ENGINES = [
-  "google.", "bing.com", "duckduckgo.com", "ecosia.org", "startpage.com",
+  "bing.com", "duckduckgo.com", "ecosia.org", "startpage.com",
   "search.yahoo.com", "yahoo.com", "qwant.com", "search.brave.com", "yandex.",
   "baidu.com",
 ];
@@ -297,6 +299,14 @@ const SOCIAL_SOURCES = [
 ];
 const EMAIL_MEDIUMS = ["email", "e-mail", "newsletter", "mail"];
 const SOCIAL_MEDIUMS = ["social", "social-media", "social_media", "organic_social"];
+
+/**
+ * Google search only: www./news. or the bare google.<tld>. Other Google
+ * hosts (docs, drive, sites, maps) are links shared somewhere — "verweis".
+ */
+function isGoogleSearch(host: string): boolean {
+  return /^(?:www\.|news\.)?google\.[a-z]{2,3}(?:\.[a-z]{2})?$/.test(host);
+}
 
 function matchesHost(host: string, list: string[]): boolean {
   return list.some((entry) =>
@@ -330,7 +340,7 @@ export function classifyChannel(attribution: SignupAttribution | null): Acquisit
     if (!host) continue;
     if (matchesHost(host, AI_ASSISTANTS)) return "ki_assistent";
     if (matchesHost(host, EMAIL_HOSTS)) return "email";
-    if (matchesHost(host, SEARCH_ENGINES)) return "suche";
+    if (isGoogleSearch(host) || matchesHost(host, SEARCH_ENGINES)) return "suche";
     if (matchesHost(host, SOCIAL_NETWORKS)) return "social";
   }
   if (AI_SOURCES.includes(source)) return "ki_assistent";

@@ -2,7 +2,7 @@ import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { recordDailyAppOpen } = vi.hoisted(() => ({
-  recordDailyAppOpen: vi.fn().mockResolvedValue(undefined),
+  recordDailyAppOpen: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("@/lib/analytics/product-events", () => ({ recordDailyAppOpen }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn(() => ({})) }));
@@ -28,7 +28,10 @@ function setVisibility(state: "visible" | "hidden") {
 }
 
 describe("DailyAppOpen", () => {
-  beforeEach(() => recordDailyAppOpen.mockClear());
+  beforeEach(() => {
+    recordDailyAppOpen.mockClear();
+    recordDailyAppOpen.mockResolvedValue(true);
+  });
   afterEach(() => vi.useRealTimers());
 
   it("records on mount and again when the tab comes back", () => {
@@ -116,5 +119,24 @@ describe("DailyAppOpen", () => {
     } finally {
       midnight.fail = false;
     }
+  });
+
+  it("waits for the next interaction when the first one could not record", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-22T21:59:00Z"));
+    setVisibility("visible");
+    render(<DailyAppOpen familyId="family-1" />);
+    act(() => vi.advanceTimersByTime(2 * 60 * 1000));
+    recordDailyAppOpen.mockClear();
+    recordDailyAppOpen.mockResolvedValueOnce(false);
+
+    await act(async () => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      window.dispatchEvent(new Event("keydown"));
+    });
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(2);
   });
 });

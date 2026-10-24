@@ -178,7 +178,7 @@ describe("recordDailyAppOpen", () => {
     const client = {
       auth: { getSession: vi.fn().mockRejectedValue(new Error("offline")) },
     } as unknown as SupabaseClient<Database>;
-    await expect(recordDailyAppOpen(client)).resolves.toBeUndefined();
+    await expect(recordDailyAppOpen(client)).resolves.toBe(false);
   });
 });
 
