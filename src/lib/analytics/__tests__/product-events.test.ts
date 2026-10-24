@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as berlinDate from "@/lib/berlin-date";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { recordProductEvent, productPlatformFromRequest } from "@/lib/analytics/product-events";
+import {
+  parseProductPlatform,
+  recordDailyAppOpen,
+  recordProductEvent,
+  productPlatformFromRequest,
+  resetDailyAppOpenForTests,
+} from "@/lib/analytics/product-events";
 
 describe("recordProductEvent", () => {
   it("writes metadata-only product events", async () => {
@@ -60,5 +67,141 @@ describe("product platform attribution", () => {
     const client = { from: vi.fn(() => ({ insert })) } as unknown as SupabaseClient<Database>;
     await recordProductEvent(client, { userId: "user-1", eventName: "onboarding_started", platform: "ios", properties: { platform: "web", step: "start" } });
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ properties: { platform: "ios", step: "start" } }));
+  });
+});
+
+describe("recordDailyAppOpen", () => {
+  beforeEach(() => resetDailyAppOpenForTests());
+
+  /** The RPC answers with the Berlin day it recorded (or null). */
+  function makeClient(
+    serverDay: { current: string | null } = { current: null },
+    error: { message: string } | null = null,
+    userId: string | null = "user-1",
+  ) {
+    const session = { current: userId };
+    const rpc = vi.fn().mockImplementation(async () => ({ data: serverDay.current, error }));
+    const client = {
+      rpc,
+      auth: {
+        getSession: vi.fn(async () => ({
+          data: { session: session.current ? { user: { id: session.current } } : null },
+        })),
+      },
+    } as unknown as SupabaseClient<Database>;
+    return { client, rpc, session, serverDay };
+  }
+
+  it("records the open through the deduplicating RPC", async () => {
+    const { client, rpc } = makeClient({ current: "2026-10-22" });
+    await recordDailyAppOpen(client, { familyId: "family-1", now: new Date("2026-10-22T08:00:00Z") });
+    expect(rpc).toHaveBeenCalledWith("record_app_open", {
+      p_family_id: "family-1",
+      p_platform: "web",
+    });
+  });
+
+  it("skips the round trip for the rest of the Berlin day", async () => {
+    const { client, rpc } = makeClient({ current: "2026-10-22" });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:00:00Z") });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T21:50:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again right away on a new Berlin day", async () => {
+    const serverDay = { current: "2026-10-22" };
+    const { client, rpc } = makeClient(serverDay);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T21:50:00Z") });
+    serverDay.current = "2026-10-23";
+    // 22:05 UTC is already the next day in Berlin (CEST).
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:05:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again, at most every 10 minutes, while a fast clock is ahead of the server", async () => {
+    // Device already says 23 Oct, the server still recorded 22 Oct.
+    const serverDay = { current: "2026-10-22" };
+    const { client, rpc } = makeClient(serverDay);
+    expect(await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:00:30Z") })).toBe(false);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:05:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    // Ten minutes later the server agrees: recorded and remembered.
+    serverDay.current = "2026-10-23";
+    expect(await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:11:00Z") })).toBe(true);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T23:00:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips even the session read once today is verified", async () => {
+    const { client, rpc } = makeClient({ current: "2026-10-22" });
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen(client, { now });
+    await recordDailyAppOpen(client, { now });
+    expect(client.auth.getSession).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a different person after the full page load a web sign-in does", async () => {
+    const { client, rpc, session } = makeClient({ current: "2026-10-22" });
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen(client, { now });
+    session.current = "user-2";
+    resetDailyAppOpenForTests(); // what the page reload after signing in does
+    await recordDailyAppOpen(client, { now });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again while setup is not finished (the RPC answers null), rate-limited", async () => {
+    const { client, rpc } = makeClient({ current: null });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:00:00Z") });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:01:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:11:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("records nothing without a session", async () => {
+    const { client, rpc } = makeClient({ current: "2026-10-22" }, null, null);
+    await recordDailyAppOpen(client);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed call, at most every 10 minutes", async () => {
+    const { client, rpc } = makeClient({ current: null }, { message: "offline" });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:00:00Z") });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:01:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:11:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("still records on engines without time zone data", async () => {
+    const spy = vi.spyOn(berlinDate, "berlinDay").mockImplementation(() => {
+      throw new RangeError("Invalid time zone specified: Europe/Berlin");
+    });
+    try {
+      const { client, rpc } = makeClient({ current: "2026-10-22" });
+      await recordDailyAppOpen(client);
+      expect(rpc).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("never throws", async () => {
+    const client = {
+      auth: { getSession: vi.fn().mockRejectedValue(new Error("offline")) },
+    } as unknown as SupabaseClient<Database>;
+    await expect(recordDailyAppOpen(client)).resolves.toBe(false);
+  });
+});
+
+describe("parseProductPlatform", () => {
+  it("accepts only known platforms", () => {
+    expect(parseProductPlatform("ios")).toBe("ios");
+    expect(parseProductPlatform("android")).toBe("android");
+    expect(parseProductPlatform("web")).toBe("web");
+    expect(parseProductPlatform("macos")).toBe("unknown");
+    expect(parseProductPlatform(null)).toBe("unknown");
   });
 });

@@ -13,6 +13,8 @@ import {
   writeCollapsedPreference,
 } from "@/components/ordilo/app-shell-shared";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { DailyAppOpenTracker } from "@/components/ordilo/daily-app-open";
+import { forgetFirstTouch } from "@/lib/analytics/first-touch";
 import { AiConsentProvider } from "@/lib/ai/consent-context";
 import { ScanProvider } from "@/lib/scan/scan-context";
 import {
@@ -74,8 +76,16 @@ export function AppShell({
   recentQueries?: string[];
 }) {
   const hasServerData = initialCollections !== undefined;
+
+  // Signed in: the pre-signup first touch has done its job (see first-touch).
+  useMountEffect(() => {
+    forgetFirstTouch();
+  });
+
   return (
     <TooltipProvider delayDuration={300}>
+      {/* One "app opened" per user and day once setup is done. */}
+      <DailyAppOpenTracker familyId={familyId} />
       <AiConsentProvider>
       <ActiveSearchProvider>
         <ScanProvider initialFamilyId={familyId}>

@@ -157,6 +157,8 @@ export default function LoginScreen() {
     try {
       const { error } = await getSupabase().auth.signInWithOtp({
         email: targetEmail,
+        // Applied only when this request creates the account (first touch).
+        options: { data: { signup_attribution: { via: "app" } } },
       });
       return !error;
     } catch {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SignupLink } from "@/components/ordilo/marketing/signup-link";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import { APP_STORE_URL } from "@/lib/marketing";
 
@@ -85,12 +86,11 @@ export function AppInvitation() {
         >
           Ordilo im App Store laden
         </a>
-        <Link
-          href="/login"
+        <SignupLink
           className="focus-ring py-3 underline underline-offset-4"
         >
           Im Browser starten
-        </Link>
+        </SignupLink>
       </div>
     </aside>
   );

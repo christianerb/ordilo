@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { LoginForm } from "../login-form";
+import { resetFirstTouchForTests } from "@/lib/analytics/first-touch";
 
 const {
   signInWithOtp,
@@ -31,6 +32,7 @@ vi.mock("@/lib/auth/routing", () => ({
 describe("LoginForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetFirstTouchForTests();
     window.sessionStorage.clear();
     vi.stubGlobal(
       "matchMedia",
@@ -61,12 +63,42 @@ describe("LoginForm", () => {
       email: "familie@example.com",
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: { signup_attribution: { landing: "/" } },
       },
     });
     expect(screen.getByTestId("sent-email").textContent).toBe(
       "familie@example.com",
     );
     expect(screen.getByTestId("resend-button").textContent).toContain("(60s)");
+  });
+
+  it("hands the carried first touch to the signup as metadata", async () => {
+    window.history.pushState(
+      {},
+      "",
+      "/login?utm_source=newsletter&utm_medium=email&ref=google.com&lp=/ratgeber/kindergeld",
+    );
+    try {
+      render(<LoginForm />);
+      fireEvent.change(screen.getByLabelText("E-Mail-Adresse"), {
+        target: { value: "familie@example.com" },
+      });
+      fireEvent.submit(
+        screen.getByRole("button", { name: /loslegen/i }).closest("form")!,
+      );
+      await screen.findByLabelText("Ziffer 1 des Anmelde-Codes");
+
+      expect(signInWithOtp.mock.calls[0][0].options.data).toEqual({
+        signup_attribution: {
+          source: "newsletter",
+          medium: "email",
+          referrer: "google.com",
+          landing: "/ratgeber/kindergeld",
+        },
+      });
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
   });
 
   it("does not generate two codes for duplicate form submissions", async () => {

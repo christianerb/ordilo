@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { SignupLink } from "@/components/ordilo/marketing/signup-link";
 import {
   ArrowRight,
   BellRing,
@@ -169,12 +170,11 @@ export function LandingPage() {
               >
                 Ratgeber
               </Link>
-              <Link
-                href="/login"
+              <SignupLink
                 className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
               >
                 Anmelden
-              </Link>
+              </SignupLink>
             </nav>
           </header>
 
@@ -209,12 +209,11 @@ export function LandingPage() {
                   Kostenlos im App Store laden
                   <ArrowRight className="size-4" aria-hidden="true" />
                 </a>
-                <Link
-                  href="/login"
+                <SignupLink
                   className="focus-ring py-3 text-sm text-white/80 underline underline-offset-4"
                 >
                   Im Browser starten
-                </Link>
+                </SignupLink>
               </div>
 
               <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm text-white/75 sm:mt-8">
@@ -437,14 +436,13 @@ export function LandingPage() {
                     ))}
                   </ul>
 
-                  <Link
-                    href="/login"
+                  <SignupLink
                     className="focus-ring press-scale mt-8 inline-flex min-h-12 items-center justify-center gap-2 rounded-ordilo-sm bg-[var(--petrol)] px-6 text-sm font-semibold text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)] lg:mt-auto"
                     data-testid="landing-cta-pricing"
                   >
                     Kostenlos starten
                     <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
+                  </SignupLink>
                 </article>
 
                 <article className="flex flex-col bg-[var(--auth-story-surface)] p-6 sm:p-8">

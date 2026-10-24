@@ -6,7 +6,7 @@ vi.mock("@/lib/ai/inbound-email-insights", () => ({
   extractEmailSuggestions: vi.fn(),
 }));
 
-const { berlinToday, toSuggestionRow } = await import(
+const { toSuggestionRow } = await import(
   "@/lib/inbound-email-insights"
 );
 
@@ -29,13 +29,6 @@ describe("inbound email insight boundary", () => {
     expect(source).not.toContain(
       "after(async () => {\n        await recordInboundEmailInsights({",
     );
-  });
-});
-
-describe("berlinToday", () => {
-  it("anchors relative dates on the family's day, not on UTC", () => {
-    // 00:30 Berlin time on 2 March is still 23:30 UTC on 1 March.
-    expect(berlinToday(new Date("2026-03-01T23:30:00Z"))).toBe("2026-03-02");
   });
 });
 

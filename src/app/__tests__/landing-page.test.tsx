@@ -15,7 +15,7 @@ describe("LandingPage", () => {
       screen
         .getByRole("link", { name: "Im Browser starten" })
         .getAttribute("href"),
-    ).toBe("/login");
+    ).toMatch(/^\/login(\?|$)/);
   });
 
   it("renders the mobile scan-to-answer journey", () => {
@@ -81,7 +81,7 @@ describe("LandingPage", () => {
 
     const cta = screen.getByTestId("landing-cta-pricing");
     expect(cta.textContent).toContain("Kostenlos starten");
-    expect(cta.getAttribute("href")).toBe("/login");
+    expect(cta.getAttribute("href")).toMatch(/^\/login(\?|$)/);
   });
 
   it("names the persona who carries the paperwork", () => {
@@ -99,7 +99,7 @@ describe("LandingPage", () => {
   it("offers a quiet login link in the header", () => {
     render(<LandingPage />);
     const login = screen.getByRole("link", { name: "Anmelden" });
-    expect(login.getAttribute("href")).toBe("/login");
+    expect(login.getAttribute("href")).toMatch(/^\/login(\?|$)/);
   });
 
   it("repeats the CTA at the bottom", () => {

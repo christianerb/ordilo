@@ -115,3 +115,89 @@ export async function recordOnboardingStartedIfFirstTime(
     // Analytics must never block login.
   }
 }
+
+// In-memory only: the root layout calls this on every foreground, so skip
+// the round trip once today's open was recorded for this user in this app
+// session. Keyed by user so a sign-out and a different sign-in still
+// record.
+// The day key comes from this device's clock; the database answers with
+// the day it actually recorded, and the memo is only set when both agree.
+let lastRecordedAppOpen: { key: string; verified: boolean; at: number } | null = null;
+/**
+ * When the server's day did not match (clock skew, no time zone data) or
+ * setup is not finished, ask again at most this often.
+ */
+const UNVERIFIED_RETRY_MS = 10 * 60 * 1000;
+
+// The mobile package cannot import the web's src/lib/berlin-date.ts; this
+// day is only the memo key — the database index decides the real day.
+let berlinDayFormatter: Intl.DateTimeFormat | null = null;
+
+function berlinDay(now: Date): string {
+  try {
+    berlinDayFormatter ??= new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Berlin",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    // Built from parts: the joined format differs between engines.
+    const parts: Record<string, string> = {};
+    for (const part of berlinDayFormatter.formatToParts(now)) parts[part.type] = part.value;
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  } catch {
+    // No time zone data: the memo key is only an optimization; the
+    // database decides the real day.
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+/**
+ * Record that the app was opened today. The record_app_open RPC and a
+ * unique index keep it to one row per user and German calendar day (same
+ * as the web, src/lib/analytics/product-events.ts). Never throws.
+ */
+export async function recordDailyAppOpen(
+  familyId: string | null,
+  now: Date = new Date(),
+  knownUserId?: string,
+): Promise<void> {
+  try {
+    // The caller usually knows the user: check the memo before touching
+    // the session (a keychain read) on every screen change.
+    if (knownUserId && lastRecordedAppOpen?.verified && lastRecordedAppOpen.key === `${knownUserId}:${berlinDay(now)}`) {
+      return;
+    }
+    const client = getSupabase();
+    // Reads the stored session — no network round trip.
+    const {
+      data: { session },
+    } = await client.auth.getSession();
+    const userId = session?.user.id;
+    if (!userId) return;
+
+    const day = berlinDay(now);
+    const key = `${userId}:${day}`;
+    const nowMs = now.getTime();
+    if (lastRecordedAppOpen?.key === key) {
+      if (lastRecordedAppOpen.verified) return;
+      if (nowMs - lastRecordedAppOpen.at < UNVERIFIED_RETRY_MS) return;
+    }
+    const { data, error } = await client.rpc("record_app_open", {
+      p_family_id: familyId,
+      p_platform: getProductPlatform(),
+    });
+    // null (setup not finished) or another day (clock skew, no time zone
+    // data) is unverified: asked again, at most every UNVERIFIED_RETRY_MS.
+    // Verified only when the database recorded *this device's* day. A
+    // failed call (offline, 5xx) is unverified too, so it is rate-limited.
+    lastRecordedAppOpen = { key, verified: !error && data === day, at: nowMs };
+  } catch {
+    // Analytics must never block a user-facing action.
+  }
+}
+
+/** Test hook: forget the in-memory "already recorded today" marker. */
+export function resetDailyAppOpenForTests(): void {
+  lastRecordedAppOpen = null;
+}

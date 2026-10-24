@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
 import type { Database } from "@/types/database";
+import { parseProductPlatform, type ProductPlatform } from "@/lib/analytics/product-events";
 import {
   FAMILY_ID_HEADER,
   FAMILY_NAME_HEADER,
@@ -30,7 +31,10 @@ export async function getBearerToken(): Promise<string | null> {
  * validates it against the auth server and every PostgREST/Storage query
  * runs under RLS exactly as a browser cookie session would.
  */
-export function createBearerClient(accessToken: string) {
+export function createBearerClient(
+  accessToken: string,
+  platform: ProductPlatform = "unknown",
+) {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
@@ -41,10 +45,17 @@ export function createBearerClient(accessToken: string) {
         detectSessionInUrl: false,
       },
       global: {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        // The platform rides along so database triggers can tag
+        // content-free product events (e.g. invites) by platform.
+        headers: { Authorization: `Bearer ${accessToken}`, "x-ordilo-platform": platform },
       },
     },
   );
+}
+
+/** The calling app's self-reported platform, as sent by the native client. */
+async function requestPlatform(): Promise<ProductPlatform> {
+  return parseProductPlatform((await headers()).get("x-ordilo-platform"));
 }
 
 /**
@@ -60,7 +71,7 @@ export function createBearerClient(accessToken: string) {
 export async function createClient() {
   const bearerToken = await getBearerToken();
   if (bearerToken) {
-    return createBearerClient(bearerToken);
+    return createBearerClient(bearerToken, await requestPlatform());
   }
 
   const cookieStore = await cookies();
@@ -85,6 +96,9 @@ export async function createClient() {
           }
         },
       },
+      // Cookie sessions are always the web app. Database triggers read
+      // this to tag content-free product events (e.g. invites) by platform.
+      global: { headers: { "x-ordilo-platform": "web" } },
     },
   );
 }

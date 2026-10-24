@@ -18,13 +18,14 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { CloudOff } from "lucide-react-native";
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { AppState, StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useReducedMotion } from "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { AiConsentProvider } from "@/src/lib/ai-consent-context";
+import { recordDailyAppOpen } from "@/src/lib/analytics";
 import { AppLockProvider } from "@/src/lib/app-lock";
 import { noteAppLaunched } from "@/src/lib/app-review";
 import { BillingProvider } from "@/src/lib/billing";
@@ -137,6 +138,31 @@ function RootLayoutNav() {
   } = useFamily();
   const segments = useSegments();
   const router = useRouter();
+
+  // One "app opened" per user and German day, on start and on every return
+  // to the foreground — whichever screen opens (push, deep link, share).
+  // Only setup-complete families count (reopening onboarding is not "coming
+  // back"); keyed by ids so a token refresh does not restart the listener.
+  const userId = session?.user.id ?? null;
+  const familyId = family && isOnboardingComplete(family) ? family.id : null;
+  useEffect(() => {
+    if (!userId || !familyId) return;
+    // The first record comes from the route effect below (it also runs on
+    // launch), so starting here would send a second, parallel request.
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void recordDailyAppOpen(familyId, new Date(), userId);
+    });
+    return () => subscription.remove();
+  }, [userId, familyId]);
+
+  // Moving between screens is use too: covers a new day (or a failed
+  // call) while the app stayed in the foreground. Same-day repeats cost no
+  // request (memoized), failed ones are rate-limited.
+  const route = segments.join("/");
+  useEffect(() => {
+    if (!userId || !familyId || AppState.currentState !== "active") return;
+    void recordDailyAppOpen(familyId, new Date(), userId);
+  }, [route, userId, familyId]);
 
   // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):
   // no session → einstieg intro (which links to login); no family or

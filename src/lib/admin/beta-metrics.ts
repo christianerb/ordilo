@@ -1,13 +1,20 @@
+import { createBerlinDayCache } from "@/lib/berlin-date";
+import { PRODUCT_USE_EVENTS } from "./event-filters";
+
 export type BetaEvent = { user_id: string; event_name: string; occurred_at: string; properties?: unknown };
-const ACTIONS = new Set(["document_upload_succeeded", "document_result_viewed", "document_confirmed", "document_next_step_selected", "chat_question_sent", "search_completed", "task_created", "task_completed", "calendar_event_created"]);
 
 /** Counts people, not events. Funnel completion must follow cohort entry. */
 export function summarizeBetaEvents(events: BetaEvent[], since: string) {
+  // Compare instants, not strings: the database prints "+00:00" and JS
+  // prints ".000Z", which sort differently at the exact boundary second.
+  const sinceMs = Date.parse(since);
+  const at = (iso: string) => Date.parse(iso);
+  const dayOf = createBerlinDayCache();
   const entrants = new Map<string, string>();
   for (const event of events) {
-    if (event.event_name === "onboarding_started" && event.occurred_at >= since) {
+    if (event.event_name === "onboarding_started" && at(event.occurred_at) >= sinceMs) {
       const previous = entrants.get(event.user_id);
-      if (!previous || event.occurred_at < previous) entrants.set(event.user_id, event.occurred_at);
+      if (!previous || at(event.occurred_at) < at(previous)) entrants.set(event.user_id, event.occurred_at);
     }
   }
   const completed = new Set<string>();
@@ -18,9 +25,9 @@ export function summarizeBetaEvents(events: BetaEvent[], since: string) {
   let searches = 0;
   let questions = 0;
   for (const event of events) {
-    if (event.occurred_at < since) continue;
+    if (at(event.occurred_at) < sinceMs) continue;
     const entry = entrants.get(event.user_id);
-    if (entry && event.occurred_at >= entry) {
+    if (entry && at(event.occurred_at) >= at(entry)) {
       if (event.event_name === "onboarding_completed") completed.add(event.user_id);
       if (event.event_name === "document_upload_succeeded") firstUpload.add(event.user_id);
       let step: string | null = null;
@@ -30,10 +37,10 @@ export function summarizeBetaEvents(events: BetaEvent[], since: string) {
         const names: Record<string, string> = { family_name: "Familie angelegt", self_member_added: "Eigenes Profil angelegt", member_added: "Weiteres Mitglied angelegt" };
         if (typeof event.properties.step === "string") step = names[event.properties.step] ?? null;
       }
-      if (step && (!latest.has(event.user_id) || latest.get(event.user_id)!.at < event.occurred_at)) latest.set(event.user_id, { step, at: event.occurred_at });
+      if (step && (!latest.has(event.user_id) || at(latest.get(event.user_id)!.at) < at(event.occurred_at))) latest.set(event.user_id, { step, at: event.occurred_at });
     }
-    if (ACTIONS.has(event.event_name)) {
-      const day = event.occurred_at.slice(0, 10);
+    if (PRODUCT_USE_EVENTS.has(event.event_name)) {
+      const day = dayOf(event.occurred_at);
       const people = activeByDay.get(day) ?? new Set<string>();
       people.add(event.user_id);
       activeByDay.set(day, people);

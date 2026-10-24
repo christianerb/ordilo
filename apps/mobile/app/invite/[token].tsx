@@ -295,6 +295,8 @@ function InviteScreen({ token }: { token: string }) {
     try {
       const { error } = await getSupabase().auth.signInWithOtp({
         email: targetEmail,
+        // Applied only when this request creates the account (first touch).
+        options: { data: { signup_attribution: { via: "invite" } } },
       });
       return !error;
     } catch {

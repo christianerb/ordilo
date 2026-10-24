@@ -26,3 +26,9 @@ export function AdminPeriodNav({ tab, days }: { tab: string; days: number }) {
     </nav>
   );
 }
+
+/** Share as a whole percent; `emptyLabel` when there is nothing to divide. */
+export function formatAdminPercent(rate: number | null, emptyLabel = "Noch keine Daten"): string {
+  if (rate === null) return emptyLabel;
+  return `${Math.round(rate * 100)} %`;
+}

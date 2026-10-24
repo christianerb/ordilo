@@ -20,6 +20,10 @@ const EVENT_LABELS: Record<string, string> = {
   search_completed: "Suche abgeschlossen",
   task_created: "Aufgabe angelegt",
   task_completed: "Aufgabe erledigt",
+  live_conversation_ended: "Live-Gespräch beendet",
+  invite_created: "Einladungslink erstellt",
+  invite_accepted: "Einladung angenommen",
+  app_opened: "App geöffnet",
 };
 
 const ONBOARDING_STEP_LABELS: Record<string, string> = {

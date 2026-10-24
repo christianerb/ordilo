@@ -500,6 +500,12 @@ export type Database = {
         };
         Relationships: [];
       };
+      signup_attributions: {
+        Row: { user_id: string; attribution: unknown; created_at: string; updated_at: string };
+        Insert: { user_id: string; attribution: unknown; created_at?: string; updated_at?: string };
+        Update: { user_id?: string; attribution?: unknown; created_at?: string; updated_at?: string };
+        Relationships: [];
+      };
       inbound_emails: {
         Row: {
           id: string;
@@ -1792,6 +1798,24 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      record_app_open: {
+        Args: { p_family_id?: string | null; p_platform?: string };
+        /** The Berlin day (YYYY-MM-DD) whose open is recorded; null before setup. */
+        Returns: string | null;
+      };
+      admin_app_opens_tracked_since: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
+      admin_forwarding_family_count: {
+        Args: Record<string, never>;
+        Returns: number;
+      };
+      admin_growth_event_days: {
+        Args: { p_since: string; p_event_names: string[] };
+        /** One JSON array of per-user, per-event, per-Berlin-day rows. */
+        Returns: unknown;
+      };
       get_family_entitlement: {
         Args: { p_family_id: string; p_at?: string };
         Returns: {

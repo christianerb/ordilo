@@ -93,9 +93,41 @@ describe("createClient", () => {
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
       expect.objectContaining({
         global: {
-          headers: { Authorization: "Bearer mobile-token" },
+          headers: { Authorization: "Bearer mobile-token", "x-ordilo-platform": "unknown" },
         },
       }),
+    );
+  });
+
+  it("forwards the native app's platform to the database", async () => {
+    mockRequestHeaders({ authorization: "Bearer mobile-token", "x-ordilo-platform": "ios" });
+    await createClient();
+    expect(mockCreateSupabaseClient).toHaveBeenLastCalledWith(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+      expect.objectContaining({
+        global: { headers: { Authorization: "Bearer mobile-token", "x-ordilo-platform": "ios" } },
+      }),
+    );
+
+    mockRequestHeaders({ authorization: "Bearer mobile-token", "x-ordilo-platform": "evil" });
+    await createClient();
+    expect(mockCreateSupabaseClient).toHaveBeenLastCalledWith(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+      expect.objectContaining({
+        global: { headers: { Authorization: "Bearer mobile-token", "x-ordilo-platform": "unknown" } },
+      }),
+    );
+  });
+
+  it("tags the cookie client as the web app", async () => {
+    mockRequestHeaders({});
+    await createClient();
+    expect(mockCreateServerClient).toHaveBeenCalledWith(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+      expect.objectContaining({ global: { headers: { "x-ordilo-platform": "web" } } }),
     );
   });
 

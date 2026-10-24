@@ -5,12 +5,8 @@ import {
   summarizeStickiness,
 } from "@/lib/admin/account-status";
 import { formatGermanDateTime, formatRelativeTime } from "@/lib/format";
-import { AdminPeriodNav, formatAdminNumber } from "./period-nav";
-
-function formatPercent(rate: number | null): string {
-  if (rate === null) return "Noch keine Daten";
-  return `${Math.round(rate * 100)} %`;
-}
+import { AdminPeriodNav, formatAdminNumber, formatAdminPercent } from "./period-nav";
+import { AdminMetricCard } from "@/components/ordilo/admin-metric-card";
 
 type DailyMetric = { date: string; registrations: number; activeAccounts: number; uploads: number };
 
@@ -61,9 +57,12 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
     getHappinessOverview(),
   ]);
 
-  const retention = summarizeRetention(overview.accounts);
+  // Only confirmed accounts are signups; account-status reads confirmedAt
+  // as their signup time.
+  const signups = overview.accounts.filter((account) => account.confirmedAt);
+  const retention = summarizeRetention(signups);
   const stickiness = summarizeStickiness(
-    overview.accounts,
+    signups,
     overview.dailyMetrics.map((metric) => metric.activeAccounts),
   );
 
@@ -107,17 +106,17 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
   const healthMetrics = [
     {
       label: "Chat-Feedback positiv",
-      value: formatPercent(feedback.window.positiveRate),
+      value: formatAdminPercent(feedback.window.positiveRate),
       detail: `${feedback.window.positive + feedback.window.negative} Bewertungen in 30 Tagen`,
     },
     {
       label: "Wiederkehrer-Quote",
-      value: formatPercent(retention.rate),
+      value: formatAdminPercent(retention.rate),
       detail: `${retention.returned} von ${retention.eligible} Konten älter als 7 Tage waren diese Woche da`,
     },
     {
       label: "Engagement",
-      value: formatPercent(stickiness.ratio),
+      value: formatAdminPercent(stickiness.ratio),
       detail: `Ø ${formatAdminNumber(stickiness.averageDailyActive)} täglich aktive von ${stickiness.active30Days} aktiven Konten (30 Tage)`,
     },
     {
@@ -164,11 +163,7 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Kennzahlen">
         {metrics.map((metric) => (
-          <article key={metric.label} className="rounded-ordilo-sm border border-border bg-card p-4 shadow-card">
-            <p className="text-sm text-muted-foreground">{metric.label}</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{metric.detail}</p>
-          </article>
+          <AdminMetricCard key={metric.label} {...metric} />
         ))}
       </section>
 

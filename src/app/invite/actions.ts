@@ -131,6 +131,8 @@ export async function requestInviteSignIn(
     email: trimmedEmail,
     options: {
       emailRedirectTo: `${baseUrl}/auth/callback`,
+      // Applied only when this request creates the account (first touch).
+      data: { signup_attribution: { via: "invite" } },
     },
   });
 

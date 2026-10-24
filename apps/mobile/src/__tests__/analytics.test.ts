@@ -1,5 +1,7 @@
 import { Platform } from "react-native";
 import {
+  recordDailyAppOpen,
+  resetDailyAppOpenForTests,
   recordProductEvent,
   recordOnboardingStartedIfFirstTime,
   recordScanFailure,
@@ -148,5 +150,113 @@ describe("platform metadata", () => {
       await recordProductEvent(client as never, { userId: "user", eventName: "onboarding_started", properties: { step: "start", platform: "web" } });
       expect(client.inserts).toEqual([{ table: "product_events", rows: expect.objectContaining({ properties: { step: "start", platform: os } }) }]);
     } finally { spy.restore(); }
+  });
+});
+
+describe("recordDailyAppOpen", () => {
+  beforeEach(() => resetDailyAppOpenForTests());
+
+  /** The RPC answers with the Berlin day it recorded (or null). */
+  function mockClient(
+    serverDay: { current: string | null } = { current: "2026-10-22" },
+    error: { message: string } | null = null,
+  ) {
+    const session = { current: "user-1" as string | null };
+    const rpc = jest.fn(async (..._args: unknown[]) => ({ data: serverDay.current, error }));
+    jest.mocked(getSupabase).mockReturnValue({
+      rpc,
+      auth: {
+        getSession: jest.fn(async () => ({
+          data: { session: session.current ? { user: { id: session.current } } : null },
+        })),
+      },
+    } as never);
+    return { rpc, session, serverDay };
+  }
+
+  it("records the open through the deduplicating RPC once per day", async () => {
+    const { rpc } = mockClient();
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:20:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("record_app_open", {
+      p_family_id: "family-1",
+      p_platform: Platform.OS,
+    });
+  });
+
+  it("asks again once the Berlin day changes", async () => {
+    const serverDay = { current: "2026-10-22" as string | null };
+    const { rpc } = mockClient(serverDay);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T21:00:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    serverDay.current = "2026-10-23";
+    // 22:05 UTC is the next day in Berlin.
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:05:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again, at most every 10 minutes, while the phone's clock is ahead", async () => {
+    const serverDay = { current: "2026-10-22" as string | null };
+    const { rpc } = mockClient(serverDay);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:01:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:02:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    serverDay.current = "2026-10-23";
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:12:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T23:00:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips the session read when the caller's user already recorded today", async () => {
+    const { rpc } = mockClient();
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen("family-1", now, "user-1");
+    const getSupabaseCalls = jest.mocked(getSupabase).mock.calls.length;
+    await recordDailyAppOpen("family-1", now, "user-1");
+    expect(jest.mocked(getSupabase).mock.calls.length).toBe(getSupabaseCalls);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("still records a different person signing in on the same device and day", async () => {
+    const { rpc, session } = mockClient();
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen("family-1", now);
+    session.current = "user-2";
+    await recordDailyAppOpen("family-1", now);
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks again while setup is not finished (the RPC answers null), rate-limited", async () => {
+    const { rpc } = mockClient({ current: null });
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:01:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:11:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("records nothing when signed out", async () => {
+    const { rpc, session } = mockClient();
+    session.current = null;
+    await recordDailyAppOpen("family-1");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed call, at most every 10 minutes", async () => {
+    const { rpc } = mockClient({ current: null }, { message: "offline" });
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:01:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:11:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("never throws", async () => {
+    jest.mocked(getSupabase).mockImplementation(() => {
+      throw new Error("no client");
+    });
+    await expect(recordDailyAppOpen("family-1")).resolves.toBeUndefined();
   });
 });
