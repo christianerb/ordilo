@@ -1,4 +1,4 @@
--- 0094_growth_tracking_events.sql
+-- 0097_growth_tracking_events.sql
 --
 -- Growth tracking: invites and daily app opens become product events.
 --

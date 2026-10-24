@@ -10,7 +10,7 @@ import { isPublicMarketingPath } from "@/lib/public-routes";
  * /login, and the login form hands that to Supabase as user metadata on
  * the one request that creates the account. Supabase only applies that
  * metadata at signup, and a database trigger copies it at that moment into
- * signup_attributions, which users cannot change (migration 0094).
+ * signup_attributions, which users cannot change (migration 0097).
  *
  * Only coarse, content-free values are kept: a referrer is reduced to its
  * host, a landing page to its path.
@@ -112,7 +112,7 @@ function safeDecode(value: string): string {
 function looksPersonal(value: string): boolean {
   if (value.includes("@") || /%40/i.test(value)) return true;
   // Phone numbers start with "+" or "0"; dates ("2026-10-24", "05.10.2026")
-  // are fine. Same rule as clean_signup_attribution in migration 0094.
+  // are fine. Same rule as clean_signup_attribution in migration 0097.
   const isDate = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(value);
   if (!isDate && (value.match(/\d/g) ?? []).length >= 7 && /^(\+|0)[\d\s()./-]+$/.test(value)) {
     return true;

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("growth tracking migration", () => {
   const migration = readFileSync(
-    resolve(process.cwd(), "supabase/migrations/0094_growth_tracking_events.sql"),
+    resolve(process.cwd(), "supabase/migrations/0097_growth_tracking_events.sql"),
     "utf8",
   );
   const previous = readFileSync(
