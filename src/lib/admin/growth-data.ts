@@ -52,7 +52,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   const cohortStart = cohortWeekStarts(now.getTime(), COHORT_WEEKS)[0];
   const eventsSince = new Date(Math.min(windowStart.getTime(), cohortStart)).toISOString();
 
-  const [users, eventDays, entitlements, forwardingFamilies, familyCount] =
+  const [users, eventDays, entitlements, forwardingFamilies, familyCount, appOpensSince] =
     await Promise.all([
       listAllUsers(),
       // Aggregated per user, event and Berlin day in SQL and returned as
@@ -73,7 +73,10 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
       // Families that ever forwarded an email, counted in SQL.
       client.rpc("admin_forwarding_family_count"),
       client.from("families").select("id", { count: "exact", head: true }),
+      // The real start of app-open tracking, not the loaded window's start.
+      client.rpc("admin_app_opens_tracked_since"),
     ]);
+  if (appOpensSince.error) throw appOpensSince.error;
   if (eventDays.error) throw eventDays.error;
   if (forwardingFamilies.error) throw forwardingFamilies.error;
   if (familyCount.error) throw familyCount.error;
@@ -102,6 +105,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
       events,
       payingUserIds,
       since: windowStart.toISOString(),
+      appOpensSince: appOpensSince.data ?? null,
       now,
       cohortWeeks: COHORT_WEEKS,
     }),

@@ -14,6 +14,8 @@ export type PlatformAccount = {
   id: string;
   email: string;
   createdAt: string;
+  /** When the login code was first confirmed; null for abandoned signups. */
+  confirmedAt: string | null;
   lastSignInAt: string | null;
   lastActivityAt: string | null;
   familyCount: number;
@@ -144,6 +146,7 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
       id: user.id,
       email: user.email ?? "Ohne E-Mail",
       createdAt: user.created_at,
+      confirmedAt: user.email_confirmed_at ?? null,
       lastSignInAt: user.last_sign_in_at ?? null,
       lastActivityAt: lastActivityByUser.get(user.id) ?? null,
       familyCount: familyCountByUser.get(user.id) ?? 0,
@@ -177,8 +180,10 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
   const chartStart = startOfBerlinDayBefore(now.getTime(), days - 1);
   const inChart = (iso: string) => new Date(iso).getTime() >= chartStart;
   for (const account of accounts) {
-    if (inChart(account.createdAt)) {
-      const bucket = metricsByDate.get(dateKey(new Date(account.createdAt)));
+    // A signup counts once its login code was confirmed (as on Wachstum);
+    // requesting a code alone already creates the auth user.
+    if (account.confirmedAt && inChart(account.confirmedAt)) {
+      const bucket = metricsByDate.get(dateKey(new Date(account.confirmedAt)));
       if (bucket) bucket.registrations += 1;
     }
     if (account.lastSignInAt && inChart(account.lastSignInAt)) {
@@ -199,8 +204,10 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
 
   const familiesTotal = familiesResult.count ?? 0;
   return {
-    accountsTotal: accounts.length,
-    accountsNew: accounts.filter((account) => new Date(account.createdAt) >= windowStart).length,
+    accountsTotal: accounts.filter((account) => account.confirmedAt).length,
+    accountsNew: accounts.filter(
+      (account) => account.confirmedAt && new Date(account.confirmedAt) >= windowStart,
+    ).length,
     accountsActive: activeAccountIds.size,
     familiesTotal,
     averageAccountsPerFamily:

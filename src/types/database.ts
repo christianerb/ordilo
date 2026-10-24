@@ -1793,6 +1793,10 @@ export type Database = {
         /** true once today's open is recorded; false before setup is done. */
         Returns: boolean;
       };
+      admin_app_opens_tracked_since: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
       admin_forwarding_family_count: {
         Args: Record<string, never>;
         Returns: number;

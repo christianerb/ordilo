@@ -148,8 +148,10 @@ create unique index if not exists product_events_app_opened_daily_idx
   where event_name = 'app_opened';
 
 -- Returns true when today's open is recorded (now or earlier today), false
--- when the caller does not count yet: no session, or no family that has
--- finished setup — reopening an unfinished onboarding is not "coming back".
+-- when the caller does not count yet: no session, or only an own family
+-- whose setup is unfinished — reopening onboarding is not "coming back".
+-- Invited members are set up the moment they join, whatever the owner's
+-- setup state (the same rule both clients use).
 drop function if exists public.record_app_open(uuid, text);
 create function public.record_app_open(
   p_family_id uuid default null,
@@ -172,7 +174,7 @@ begin
     from public.family_memberships m
     join public.families f on f.id = m.family_id
     where m.user_id = v_user_id
-      and f.onboarding_completed_at is not null
+      and (f.onboarding_completed_at is not null or m.role <> 'owner')
   ) then
     return false;
   end if;
@@ -276,3 +278,22 @@ $$;
 
 revoke execute on function public.admin_growth_event_days(timestamptz, text[]) from public, anon, authenticated;
 grant execute on function public.admin_growth_event_days(timestamptz, text[]) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Admin: when app opens were first recorded
+-- ---------------------------------------------------------------------------
+-- Return windows before this point cannot be judged (someone who only
+-- opened the app left no trace), so the dashboard leaves them open.
+
+create or replace function public.admin_app_opens_tracked_since()
+returns timestamptz
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select min(occurred_at) from public.product_events where event_name = 'app_opened';
+$$;
+
+revoke execute on function public.admin_app_opens_tracked_since() from public, anon, authenticated;
+grant execute on function public.admin_app_opens_tracked_since() to service_role;

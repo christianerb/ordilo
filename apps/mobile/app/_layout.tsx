@@ -76,7 +76,7 @@ const ordiloTheme = {
   },
 };
 
-/** How often an open app re-checks for a new day (cheap: memoized). */
+/** How often an open app checks whether a new day began (no request until then). */
 const APP_OPEN_RECHECK_MS = 15 * 60 * 1000;
 
 function RootLayout() {
@@ -152,12 +152,15 @@ function RootLayoutNav() {
   const familyId = family && isOnboardingComplete(family) ? family.id : null;
   useEffect(() => {
     if (!userId || !familyId) return;
-    void recordDailyAppOpen(familyId);
+    // Launched in the background (e.g. by the OS) is not a visit yet.
+    if (AppState.currentState === "active") void recordDailyAppOpen(familyId);
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void recordDailyAppOpen(familyId);
     });
     const interval = setInterval(() => {
-      if (AppState.currentState === "active") void recordDailyAppOpen(familyId);
+      if (AppState.currentState === "active") {
+        void recordDailyAppOpen(familyId, new Date(), { onlyOnNewDay: true });
+      }
     }, APP_OPEN_RECHECK_MS);
     return () => {
       subscription.remove();

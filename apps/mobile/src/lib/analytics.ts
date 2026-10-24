@@ -148,6 +148,7 @@ function berlinDay(now: Date): string {
 export async function recordDailyAppOpen(
   familyId: string | null,
   now: Date = new Date(),
+  { onlyOnNewDay = false }: { onlyOnNewDay?: boolean } = {},
 ): Promise<void> {
   try {
     const client = getSupabase();
@@ -160,7 +161,10 @@ export async function recordDailyAppOpen(
 
     const key = `${userId}:${berlinDay(now)}`;
     const nowMs = now.getTime();
-    if (lastRecordedAppOpen?.key === key && nowMs - lastRecordedAppOpen.at < APP_OPEN_MEMO_MS) return;
+    if (lastRecordedAppOpen?.key === key) {
+      // A periodic check only cares about the day changing.
+      if (onlyOnNewDay || nowMs - lastRecordedAppOpen.at < APP_OPEN_MEMO_MS) return;
+    }
     const { data, error } = await client.rpc("record_app_open", {
       p_family_id: familyId,
       p_platform: getProductPlatform(),

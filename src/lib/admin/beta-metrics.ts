@@ -1,7 +1,8 @@
 import { berlinDay } from "@/lib/berlin-date";
+import { PRODUCT_USE_EVENTS } from "./event-filters";
 
 export type BetaEvent = { user_id: string; event_name: string; occurred_at: string; properties?: unknown };
-const ACTIONS = new Set(["document_upload_succeeded", "document_result_viewed", "document_confirmed", "document_next_step_selected", "chat_question_sent", "search_completed", "task_created", "task_completed", "calendar_event_created"]);
+const ACTIONS = PRODUCT_USE_EVENTS;
 
 /** Counts people, not events. Funnel completion must follow cohort entry. */
 export function summarizeBetaEvents(events: BetaEvent[], since: string) {

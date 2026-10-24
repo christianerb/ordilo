@@ -96,7 +96,7 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
       <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
         <h2 className="text-lg font-semibold">Beta: vom Einstieg zur Nutzung</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Letzte {days} Tage (UTC). Kohorte: Onboarding-Start im Zeitraum, Abschlüsse und erste Uploads zählen auch später. Ein Login allein ist keine Produktaktivität.
+          Letzte {days} Tage (deutsche Zeit). Kohorte: Onboarding-Start im Zeitraum, Abschlüsse und erste Uploads zählen auch später. Ein Login allein ist keine Produktaktivität.
         </p>
         <div className="mt-5 space-y-3" aria-label="Onboarding-Trichter">
           {[
@@ -164,7 +164,7 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
           {beta.daily.length ? (
             <table className="mt-3 w-full text-left text-sm">
               <thead>
-                <tr><th>Tag (UTC)</th><th>Personen</th></tr>
+                <tr><th>Tag</th><th>Personen</th></tr>
               </thead>
               <tbody>
                 {beta.daily.map(({ day, users }) => (

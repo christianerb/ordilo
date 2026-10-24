@@ -186,6 +186,16 @@ describe("recordDailyAppOpen", () => {
     });
   });
 
+  it("lets a periodic check skip until the day changes", async () => {
+    const { rpc } = mockClient();
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T15:00:00Z"), { onlyOnNewDay: true });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    // 22:05 UTC is the next day in Berlin.
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:05:00Z"), { onlyOnNewDay: true });
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
   it("still records a different person signing in on the same device and day", async () => {
     const { rpc, session } = mockClient();
     const now = new Date("2026-10-22T08:00:00Z");

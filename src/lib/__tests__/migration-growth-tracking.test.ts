@@ -24,7 +24,7 @@ describe("growth tracking migration", () => {
   it("can be reapplied", () => {
     expect(migration).toContain("drop constraint if exists");
     expect(migration.match(/drop trigger if exists/g)).toHaveLength(2);
-    expect(migration.match(/create (or replace )?function/g)).toHaveLength(6);
+    expect(migration.match(/create (or replace )?function/g)).toHaveLength(7);
     // Functions whose return type changed are dropped first so reapplying works.
     expect(migration).toContain("drop function if exists public.record_app_open(uuid, text);");
     expect(migration).toContain(
@@ -42,7 +42,7 @@ describe("growth tracking migration", () => {
   });
 
   it("runs every definer function with a fixed search path and tight grants", () => {
-    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(5);
+    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(6);
     expect(migration).toMatch(/revoke execute on function public\.record_invite_created_event\(\)/);
     expect(migration).toMatch(/revoke execute on function public\.record_invite_accepted_event\(\)/);
     expect(migration).toContain(
@@ -87,7 +87,7 @@ describe("growth tracking migration", () => {
 
   it("does not count reopening an unfinished setup as an app open", () => {
     expect(migration).toContain("returns boolean");
-    expect(migration).toContain("and f.onboarding_completed_at is not null");
+    expect(migration).toContain("and (f.onboarding_completed_at is not null or m.role <> 'owner')");
   });
 
   it("tags invite events with the platform from the request header", () => {
@@ -95,6 +95,12 @@ describe("growth tracking migration", () => {
     expect(
       migration.match(/'platform', public\.request_product_platform\(\)/g),
     ).toHaveLength(2);
+  });
+
+  it("lets only the service role read when app opens were first recorded", () => {
+    expect(migration).toContain(
+      "grant execute on function public.admin_app_opens_tracked_since() to service_role;",
+    );
   });
 
   it("returns the growth aggregate as a single JSON array", () => {

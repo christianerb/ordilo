@@ -15,3 +15,22 @@ export const FEED_HIDDEN_EVENTS = ["app_opened"] as const;
 export function eventNameList(names: readonly string[]): string {
   return `(${names.join(",")})`;
 }
+
+/**
+ * Real product use — one definition for every admin tab (beta funnel
+ * activity, Wachstum's "echte Nutzung"). Opening the app, onboarding steps
+ * and joining a family are not in it.
+ */
+export const PRODUCT_USE_EVENTS: ReadonlySet<string> = new Set([
+  "document_upload_succeeded",
+  "document_result_viewed",
+  "document_confirmed",
+  "document_next_step_selected",
+  "chat_question_sent",
+  "search_completed",
+  "task_created",
+  "task_completed",
+  "calendar_event_created",
+  "live_conversation_ended",
+  "invite_created",
+]);

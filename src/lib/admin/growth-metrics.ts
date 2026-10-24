@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { berlinDay, startOfBerlinDay, startOfBerlinWeek } from "@/lib/berlin-date";
+import { PRODUCT_USE_EVENTS } from "./event-filters";
 import { resolveEffectivePlan, type PlanCode, type EntitlementStatus } from "@/lib/billing/entitlements";
 import {
   classifyChannel,
@@ -67,24 +68,13 @@ export function parseGrowthEventDays(value: unknown): GrowthEventDay[] {
 
 const QUESTION_EVENTS = new Set(["chat_question_sent", "search_completed"]);
 
-export const CORE_ACTIONS = new Set([
-  "document_upload_succeeded",
-  "document_confirmed",
-  "document_next_step_selected",
-  "chat_question_sent",
-  "search_completed",
-  "task_created",
-  "task_completed",
-  "calendar_event_created",
-  "live_conversation_ended",
-  "invite_created",
-]);
+/** Real product use, shared with the other admin tabs. */
+export const CORE_ACTIONS = PRODUCT_USE_EVENTS;
 
 /** Use that counts as coming back. Onboarding and joining do not. */
 const RETURN_EVENTS = new Set([
   ...CORE_ACTIONS,
   "app_opened",
-  "document_result_viewed",
   "document_upload_failed",
   "chat_answer_repair_started",
 ]);
@@ -213,16 +203,6 @@ function returnedBetween(
   );
 }
 
-/** Start of the Berlin day of the first recorded app open, or null. */
-function appOpensTrackedSince(events: GrowthEventDay[]): number | null {
-  let earliest: number | null = null;
-  for (const event of events) {
-    if (event.event_name !== "app_opened") continue;
-    const time = new Date(event.first_at).getTime();
-    if (!Number.isNaN(time) && (earliest === null || time < earliest)) earliest = time;
-  }
-  return earliest === null ? null : startOfBerlinDay(earliest);
-}
 
 /** Activated, among accounts whose 7-day window has passed. */
 function activationOf(
@@ -296,6 +276,7 @@ export function summarizeGrowth({
   events,
   payingUserIds,
   since,
+  appOpensSince = null,
   now = new Date(),
   cohortWeeks = 8,
 }: {
@@ -304,13 +285,16 @@ export function summarizeGrowth({
   payingUserIds: Set<string>;
   /** Start of the signup window (ISO), a Berlin midnight. */
   since: string;
+  /** First app_opened ever recorded (ISO), or null if none yet. */
+  appOpensSince?: string | null;
   now?: Date;
   cohortWeeks?: number;
 }): GrowthSummary {
   const nowMs = now.getTime();
   const sinceMs = new Date(since).getTime();
   const timelines = buildTimelines(events);
-  const trackedSince = appOpensTrackedSince(events);
+  const trackedSince =
+    appOpensSince === null ? null : startOfBerlinDay(new Date(appOpensSince).getTime());
   const inWindow = accounts.filter(
     (account) => new Date(account.createdAt).getTime() >= sinceMs,
   );
