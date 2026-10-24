@@ -197,11 +197,15 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps asking while the phone's clock is ahead of the server's day", async () => {
+  it("asks again, at most every 10 minutes, while the phone's clock is ahead", async () => {
     const serverDay = { current: "2026-10-22" as string | null };
     const { rpc } = mockClient(serverDay);
     await recordDailyAppOpen("family-1", new Date("2026-10-22T22:01:00Z"));
     await recordDailyAppOpen("family-1", new Date("2026-10-22T22:02:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    serverDay.current = "2026-10-23";
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:12:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T23:00:00Z"));
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
@@ -214,10 +218,12 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("asks again while setup is not finished (the RPC answers null)", async () => {
+  it("asks again while setup is not finished (the RPC answers null), rate-limited", async () => {
     const { rpc } = mockClient({ current: null });
-    await recordDailyAppOpen("family-1");
-    await recordDailyAppOpen("family-1");
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:01:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:11:00Z"));
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 

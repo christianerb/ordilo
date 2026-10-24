@@ -257,11 +257,11 @@ const EMAIL_HOSTS = [
   "outlook.office.com", "outlook.office365.com", "mail.yahoo.com",
   "navigator.web.de", "3c.web.de", "navigator.gmx.net", "3c.gmx.net",
   "navigator.gmx.de", "email.t-online.de", "mail.freenet.de",
-  "mail.proton.me", "www.icloud.com", "posteo.de", "office.mailbox.org",
+  "mail.proton.me", "icloud.com", "posteo.de", "office.mailbox.org",
 ]
 const SEARCH_ENGINES = [
   "bing.com", "duckduckgo.com", "ecosia.org", "startpage.com",
-  "search.yahoo.com", "yahoo.com", "qwant.com", "search.brave.com", "yandex.",
+  "search.yahoo.com", "qwant.com", "search.brave.com", "yandex.",
   "baidu.com",
 ];
 const AI_ASSISTANTS = [

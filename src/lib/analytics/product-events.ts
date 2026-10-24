@@ -77,7 +77,12 @@ export async function recordProductEvent(
 // Keyed by user so a sign-out and a different sign-in still record.
 // The day key comes from this device's clock; the database answers with
 // the day it actually recorded, and the memo is only set when both agree.
-let lastRecordedAppOpen: string | null = null;
+let lastRecordedAppOpen: { key: string; verified: boolean; at: number } | null = null;
+/**
+ * When the server's day did not match (clock skew, no time zone data) or
+ * setup is not finished, ask again at most this often.
+ */
+const UNVERIFIED_RETRY_MS = 10 * 60 * 1000;
 
 /**
  * The memo's day. Without time zone data (some older engines) fall back to
@@ -119,19 +124,22 @@ export async function recordDailyAppOpen(
 
     const day = memoDay(now);
     const key = `${userId}:${day}`;
-    if (lastRecordedAppOpen === key) return true;
+    const nowMs = now.getTime();
+    if (lastRecordedAppOpen?.key === key) {
+      if (lastRecordedAppOpen.verified) return true;
+      if (nowMs - lastRecordedAppOpen.at < UNVERIFIED_RETRY_MS) return false;
+    }
     const { data, error } = await client.rpc("record_app_open", {
       p_family_id: familyId,
       p_platform: platform,
     });
-    // Remember only when the database recorded *this device's* day. null
-    // (setup not finished) or another day (clock skew around midnight)
-    // means: ask again on the next open.
-    if (!error && data === day) {
-      lastRecordedAppOpen = key;
-      return true;
-    }
-    return false;
+    // null (setup not finished) or another day (clock skew, no time zone
+    // data) is unverified: asked again, at most every UNVERIFIED_RETRY_MS.
+    if (error) return false;
+    // Verified only when the database recorded *this device's* day.
+    const verified = data === day;
+    lastRecordedAppOpen = { key, verified, at: nowMs };
+    return verified;
   } catch {
     // Analytics must never block a user-facing action.
     return false;

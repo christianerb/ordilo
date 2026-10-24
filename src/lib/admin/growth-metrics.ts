@@ -1,4 +1,5 @@
-import { growthEventDaysSchema } from "@/lib/schemas/growth";
+import type { z } from "zod";
+import { growthEventDaySchema, growthEventDaysSchema } from "@/lib/schemas/growth";
 import {
   berlinDay,
   startOfBerlinDayBefore,
@@ -61,13 +62,7 @@ type TimedAccount = GrowthAccount & { createdMs: number };
  * every window check below: a window is at least a day long, so it can
  * cut a day at one end only.
  */
-export type GrowthEventDay = {
-  user_id: string;
-  event_name: string;
-  first_at: string;
-  last_at: string;
-  event_count: number;
-};
+export type GrowthEventDay = z.infer<typeof growthEventDaySchema>;
 
 /** Validate the JSON array returned by the admin_growth_event_days RPC. */
 export function parseGrowthEventDays(value: unknown): GrowthEventDay[] {

@@ -242,6 +242,9 @@ describe("classifyChannel", () => {
     // Portal news articles are referrals, not e-mail.
     [{ referrer: "web.de" }, "verweis"],
     [{ referrer: "t-online.de" }, "verweis"],
+    [{ referrer: "icloud.com" }, "email"],
+    [{ referrer: "de.news.yahoo.com" }, "verweis"],
+    [{ referrer: "search.yahoo.com" }, "suche"],
     [{ referrer: "chatgpt.com" }, "ki_assistent"],
     [{ referrer: "gemini.google.com" }, "ki_assistent"],
     [{ source: "chatgpt" }, "ki_assistent"],

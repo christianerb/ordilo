@@ -8,7 +8,6 @@ import { cleanHost, cleanPath, cleanValue, type SignupAttribution } from "./attr
  * again. Server-only: keeps Zod out of the marketing pages' bundle.
  */
 export function parseStoredAttribution(value: unknown): SignupAttribution | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const parsed = storedAttributionSchema.safeParse(value);
   if (!parsed.success) return null;
   const raw = parsed.data;

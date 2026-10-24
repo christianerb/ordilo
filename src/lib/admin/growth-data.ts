@@ -22,14 +22,15 @@ const ID_CHUNK = 100;
 /**
  * First touch as stored at signup (signup_attributions, one row per
  * account); user metadata itself stays editable by its owner and is not
- * trusted here. Paged directly — far fewer requests than id filters.
+ * trusted here. Paged directly — far fewer requests than id filters, and
+ * independent of the user list, so both load in parallel.
  */
-async function listAttributions(userIds: Set<string>): Promise<Map<string, unknown>> {
+async function listAttributions(): Promise<Map<string, unknown>> {
   const client = createClient();
   const rows = await fetchAllRows<{ user_id: string; attribution: unknown }>((from, to) =>
     client.from("signup_attributions").select("user_id,attribution").order("user_id").range(from, to),
   );
-  return new Map(rows.filter((row) => userIds.has(row.user_id)).map((row) => [row.user_id, row.attribution]));
+  return new Map(rows.map((row) => [row.user_id, row.attribution]));
 }
 
 /** Owners of these families (chunks run in parallel). */
@@ -75,23 +76,12 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   const ratePoolStart = startOfBerlinDayBefore(now.getTime(), days + LONGEST_RATE_WINDOW_DAYS);
   const eventsSince = new Date(Math.min(ratePoolStart, cohortStart)).toISOString();
 
-  const [{ users, attributionByUser }, eventDays, billing, forwardingFamilies, familyCount, appOpensSince] =
+  const [users, allAttributions, eventDays, billing, forwardingFamilies, familyCount, appOpensSince] =
     await Promise.all([
-      // Users, then the first touch of those who can reach a cohort or a
-      // rate pool (confirmed since the earliest loaded event).
-      listAllUsers().then(async (allUsers) => ({
-        users: allUsers,
-        attributionByUser: await listAttributions(
-          new Set(
-            allUsers
-              .filter((user) => {
-                const confirmedAt = signupConfirmedAt(user);
-                return confirmedAt !== null && Date.parse(confirmedAt) >= Date.parse(eventsSince);
-              })
-              .map((user) => user.id),
-          ),
-        ),
-      })),
+      listAllUsers(),
+      // signup_attributions is one row per account; loaded alongside the
+      // users and narrowed to the relevant accounts below.
+      listAttributions(),
       // Aggregated per user, event and Berlin day in SQL and returned as
       // one JSON array — a fraction of the raw rows, in a single call.
       client.rpc("admin_growth_event_days", {
@@ -133,7 +123,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
           {
             id: user.id,
             createdAt: confirmedAt,
-            attribution: parseStoredAttribution(attributionByUser.get(user.id)),
+            attribution: parseStoredAttribution(allAttributions.get(user.id)),
           },
         ]
       : [];

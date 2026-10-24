@@ -118,18 +118,18 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps asking while a fast device clock is ahead of the server's day", async () => {
+  it("asks again, at most every 10 minutes, while a fast clock is ahead of the server", async () => {
     // Device already says 23 Oct, the server still recorded 22 Oct.
     const serverDay = { current: "2026-10-22" };
     const { client, rpc } = makeClient(serverDay);
-    await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:00:30Z") });
-    await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:01:00Z") });
-    expect(rpc).toHaveBeenCalledTimes(2);
-    // Once the server agrees, the day is recorded and remembered.
+    expect(await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:00:30Z") })).toBe(false);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:05:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    // Ten minutes later the server agrees: recorded and remembered.
     serverDay.current = "2026-10-23";
-    await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:02:00Z") });
-    await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:03:00Z") });
-    expect(rpc).toHaveBeenCalledTimes(3);
+    expect(await recordDailyAppOpen(client, { now: new Date("2026-10-22T22:11:00Z") })).toBe(true);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T23:00:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it("still records a different person signing in on the same day", async () => {
@@ -141,10 +141,12 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("asks again while setup is not finished (the RPC answers null)", async () => {
+  it("asks again while setup is not finished (the RPC answers null), rate-limited", async () => {
     const { client, rpc } = makeClient({ current: null });
-    await recordDailyAppOpen(client);
-    await recordDailyAppOpen(client);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:00:00Z") });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:01:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:11:00Z") });
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 

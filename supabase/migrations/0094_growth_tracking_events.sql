@@ -64,6 +64,8 @@ as $$
   ) as request;
 $$;
 
+revoke execute on function public.request_product_platform() from public, anon, authenticated;
+
 create or replace function public.record_invite_created_event()
 returns trigger
 language plpgsql
@@ -280,7 +282,7 @@ create policy "product_events_insert_own" on public.product_events
 -- fraction of the rows.
 
 -- Returned as one JSON array so the dashboard reads it in a single call:
--- paging a SECURITY DEFINER set-returning function would rerun the whole
+-- paging a set-returning function through PostgREST would rerun the whole
 -- aggregation for every page.
 drop function if exists public.admin_growth_event_days(timestamptz, text[]);
 create function public.admin_growth_event_days(
@@ -367,6 +369,8 @@ as $$
     and value !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}'
     and (value !~ '^(\+|0)[0-9 ()./-]{6,}$' or value ~ '^[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}$');
 $$;
+
+revoke execute on function public.clean_signup_attribution(jsonb) from public, anon, authenticated;
 
 create or replace function public.store_signup_attribution()
 returns trigger

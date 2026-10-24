@@ -122,7 +122,12 @@ export async function recordOnboardingStartedIfFirstTime(
 // record.
 // The day key comes from this device's clock; the database answers with
 // the day it actually recorded, and the memo is only set when both agree.
-let lastRecordedAppOpen: string | null = null;
+let lastRecordedAppOpen: { key: string; verified: boolean; at: number } | null = null;
+/**
+ * When the server's day did not match (clock skew, no time zone data) or
+ * setup is not finished, ask again at most this often.
+ */
+const UNVERIFIED_RETRY_MS = 10 * 60 * 1000;
 
 // The mobile package cannot import the web's src/lib/berlin-date.ts; this
 // day is only the memo key — the database index decides the real day.
@@ -167,15 +172,20 @@ export async function recordDailyAppOpen(
 
     const day = berlinDay(now);
     const key = `${userId}:${day}`;
-    if (lastRecordedAppOpen === key) return;
+    const nowMs = now.getTime();
+    if (lastRecordedAppOpen?.key === key) {
+      if (lastRecordedAppOpen.verified) return;
+      if (nowMs - lastRecordedAppOpen.at < UNVERIFIED_RETRY_MS) return;
+    }
     const { data, error } = await client.rpc("record_app_open", {
       p_family_id: familyId,
       p_platform: getProductPlatform(),
     });
-    // Remember only when the database recorded *this device's* day. null
-    // (setup not finished) or another day (clock skew around midnight)
-    // means: ask again on the next open.
-    if (!error && data === day) lastRecordedAppOpen = key;
+    // null (setup not finished) or another day (clock skew, no time zone
+    // data) is unverified: asked again, at most every UNVERIFIED_RETRY_MS.
+    if (error) return;
+    // Verified only when the database recorded *this device's* day.
+    lastRecordedAppOpen = { key, verified: data === day, at: nowMs };
   } catch {
     // Analytics must never block a user-facing action.
   }

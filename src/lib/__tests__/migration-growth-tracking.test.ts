@@ -114,6 +114,15 @@ describe("growth tracking migration", () => {
     );
   });
 
+  it("locks the helper functions down like every other function", () => {
+    expect(migration).toContain(
+      "revoke execute on function public.request_product_platform() from public, anon, authenticated;",
+    );
+    expect(migration).toContain(
+      "revoke execute on function public.clean_signup_attribution(jsonb) from public, anon, authenticated;",
+    );
+  });
+
   it("returns the growth aggregate as a single JSON array", () => {
     expect(migration).toContain("coalesce(jsonb_agg(day_rows), '[]'::jsonb)");
   });
