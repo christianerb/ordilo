@@ -52,7 +52,9 @@ describe("AdminGrowthTab", () => {
     expect(getGrowthOverview).toHaveBeenCalledWith(30);
     const activationCard = screen.getAllByText("Richtig losgelegt")[0].closest("article")!;
     expect(within(activationCard).getByText("33 %")).toBeTruthy();
-    expect(within(activationCard).getByText(/1 von 3 Konten, die schon 7 Tage alt sind/)).toBeTruthy();
+    expect(
+      within(activationCard).getByText(/1 von 3 Konten, deren erste 7 Tage im Zeitraum zu Ende gingen/),
+    ).toBeTruthy();
     expect(screen.getByText("3 Std.")).toBeTruthy();
 
     const searchRow = screen.getByText("Suchmaschine").closest("tr")!;
@@ -75,7 +77,9 @@ describe("AdminGrowthTab", () => {
   it("explains a rate that has no old-enough accounts yet", async () => {
     getGrowthOverview.mockResolvedValue(overview({ activation: pending }));
     render(await AdminGrowthTab({ days: 7 }));
-    expect(screen.getByText("Noch kein Konto ist 7 Tage alt.")).toBeTruthy();
+    expect(
+      screen.getByText("Im Zeitraum hat noch kein Konto seine ersten 7 Tage hinter sich."),
+    ).toBeTruthy();
   });
 
   it("shows a calm empty state without signups", async () => {

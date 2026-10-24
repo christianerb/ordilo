@@ -1,5 +1,5 @@
 import { getGrowthOverview } from "@/lib/admin/growth-data";
-import type { Share } from "@/lib/admin/growth-metrics";
+import { ACTIVATION_WINDOW_DAYS, type Share } from "@/lib/admin/growth-metrics";
 import { ACQUISITION_CHANNEL_LABELS } from "@/lib/analytics/attribution";
 import { formatGermanDate } from "@/lib/format";
 import { AdminPeriodNav, formatAdminNumber, formatAdminPercent } from "./period-nav";
@@ -46,8 +46,8 @@ export async function AdminGrowthTab({ days }: { days: 7 | 30 | 90 }) {
       value: formatAdminPercent(growth.activation.rate, NO_DATA),
       detail:
         growth.activation.eligible === 0
-          ? "Noch kein Konto ist 7 Tage alt."
-          : `In 7 Tagen ein Dokument bestätigt und eine Frage gestellt: ${growth.activation.count} von ${growth.activation.eligible} Konten, die schon 7 Tage alt sind`,
+          ? `Im Zeitraum hat noch kein Konto seine ersten ${ACTIVATION_WINDOW_DAYS} Tage hinter sich.`
+          : `In ${ACTIVATION_WINDOW_DAYS} Tagen ein Dokument bestätigt und eine Frage gestellt: ${growth.activation.count} von ${growth.activation.eligible} Konten, deren erste ${ACTIVATION_WINDOW_DAYS} Tage im Zeitraum zu Ende gingen`,
     },
     {
       label: "Zeit bis zum ersten Dokument",
@@ -121,7 +121,7 @@ export async function AdminGrowthTab({ days }: { days: 7 | 30 | 90 }) {
       <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
         <h2 className="text-base font-semibold text-foreground">Woher die Leute kommen</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Der erste Kontakt vor der Anmeldung, ohne Cookies gemessen. Konten von vor dieser Messung stehen unter „Unbekannt“.
+          Der erste Kontakt vor der Anmeldung, ohne Cookies gemessen. Konten von vor dieser Messung stehen unter „Unbekannt“. „Konten“ und „Zahlend“ zählen Anmeldungen im Zeitraum; die Quoten zählen Konten, deren erste 7 bzw. 14 Tage im Zeitraum zu Ende gingen.
         </p>
         {growth.channels.length === 0 ? (
           <AdminEmptyNote>Noch keine Anmeldungen im Zeitraum.</AdminEmptyNote>

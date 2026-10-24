@@ -56,11 +56,9 @@ describe("readAttribution", () => {
     expect(JSON.stringify(attribution)).not.toContain("abc123secret");
   });
 
-  it("only treats an fbclid as paid when the medium is paid", () => {
+  it("never treats fbclid alone as paid; the medium decides", () => {
     expect(page({ search: "?fbclid=xyz" }).paid_click).toBeUndefined();
-    expect(page({ search: "?fbclid=xyz&utm_medium=social" }).paid_click).toBeUndefined();
-    expect(page({ search: "?fbclid=xyz&utm_medium=email" }).paid_click).toBeUndefined();
-    expect(page({ search: "?fbclid=xyz&utm_medium=paid_social" }).paid_click).toBe("meta");
+    expect(classifyChannel(page({ search: "?fbclid=xyz&utm_medium=paid_social" }))).toBe("bezahlt");
   });
 
   it("classifies an organic tagged Instagram post opened via Facebook as social", () => {

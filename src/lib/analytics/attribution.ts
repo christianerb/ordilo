@@ -32,7 +32,7 @@ export type SignupAttribution = {
    */
   via?: "invite" | "app";
   /** Set when a paid click id was present; the id itself is dropped. */
-  paid_click?: "google" | "meta" | "microsoft";
+  paid_click?: "google" | "microsoft";
 };
 
 export type AcquisitionChannel =
@@ -170,13 +170,11 @@ export function readAttribution({
   }
 
 
+  // Facebook's fbclid is not a paid signal: it is appended to every
+  // outbound click, organic posts included. Paid Meta ads say so in
+  // utm_medium, which classifyChannel already reads.
   if (params.has("gclid")) attribution.paid_click = "google";
   else if (params.has("msclkid")) attribution.paid_click = "microsoft";
-  else if (params.has("fbclid") && PAID_MEDIUMS.includes(attribution.medium ?? "")) {
-    // Facebook appends fbclid to every outbound click, organic posts and
-    // in-app browsers included; only a paid utm_medium makes it an ad.
-    attribution.paid_click = "meta";
-  }
 
   if (!attribution.referrer) {
     const host = cleanHost(referrer);
@@ -198,7 +196,6 @@ export function attributionQuery(attribution: SignupAttribution): string {
   }
   if (attribution.paid_click === "google") params.set("gclid", "1");
   if (attribution.paid_click === "microsoft") params.set("msclkid", "1");
-  if (attribution.paid_click === "meta") params.set("fbclid", "1");
   return params.toString();
 }
 
@@ -221,7 +218,7 @@ export function parseStoredAttribution(value: unknown): SignupAttribution | null
   const landing = cleanPath(text("landing"));
   if (landing) attribution.landing = landing;
   if (raw.via === "invite" || raw.via === "app") attribution.via = raw.via;
-  if (raw.paid_click === "google" || raw.paid_click === "meta" || raw.paid_click === "microsoft") {
+  if (raw.paid_click === "google" || raw.paid_click === "microsoft") {
     attribution.paid_click = raw.paid_click;
   }
   return attribution;

@@ -285,6 +285,11 @@ grant execute on function public.admin_growth_event_days(timestamptz, text[]) to
 -- Return windows before this point cannot be judged (someone who only
 -- opened the app left no trace), so the dashboard leaves them open.
 
+-- Lets min(occurred_at) for app_opened read one index entry.
+create index if not exists product_events_app_opened_occurred_idx
+  on public.product_events (occurred_at)
+  where event_name = 'app_opened';
+
 create or replace function public.admin_app_opens_tracked_since()
 returns timestamptz
 language sql

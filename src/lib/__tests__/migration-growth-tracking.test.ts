@@ -98,6 +98,7 @@ describe("growth tracking migration", () => {
   });
 
   it("lets only the service role read when app opens were first recorded", () => {
+    expect(migration).toContain("create index if not exists product_events_app_opened_occurred_idx");
     expect(migration).toContain(
       "grant execute on function public.admin_app_opens_tracked_since() to service_role;",
     );

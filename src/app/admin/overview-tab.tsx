@@ -57,9 +57,14 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
     getHappinessOverview(),
   ]);
 
-  const retention = summarizeRetention(overview.accounts);
+  // Only confirmed accounts are signups (requesting a login code already
+  // creates an auth user); their clock starts at confirmation.
+  const confirmedAccounts = overview.accounts.flatMap((account) =>
+    account.confirmedAt ? [{ ...account, createdAt: account.confirmedAt }] : [],
+  );
+  const retention = summarizeRetention(confirmedAccounts);
   const stickiness = summarizeStickiness(
-    overview.accounts,
+    confirmedAccounts,
     overview.dailyMetrics.map((metric) => metric.activeAccounts),
   );
 

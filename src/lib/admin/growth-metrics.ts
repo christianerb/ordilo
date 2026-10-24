@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { berlinDay, startOfBerlinDay, startOfBerlinWeek } from "@/lib/berlin-date";
+import {
+  berlinDay,
+  startOfBerlinDay,
+  startOfBerlinDayBefore,
+  startOfBerlinWeek,
+} from "@/lib/berlin-date";
 import { PRODUCT_USE_EVENTS } from "./event-filters";
 import { resolveEffectivePlan, type PlanCode, type EntitlementStatus } from "@/lib/billing/entitlements";
 import {
@@ -68,12 +73,10 @@ export function parseGrowthEventDays(value: unknown): GrowthEventDay[] {
 
 const QUESTION_EVENTS = new Set(["chat_question_sent", "search_completed"]);
 
-/** Real product use, shared with the other admin tabs. */
-export const CORE_ACTIONS = PRODUCT_USE_EVENTS;
 
 /** Use that counts as coming back. Onboarding and joining do not. */
 const RETURN_EVENTS = new Set([
-  ...CORE_ACTIONS,
+  ...PRODUCT_USE_EVENTS,
   "app_opened",
   "document_upload_failed",
   "chat_answer_repair_started",
@@ -110,7 +113,7 @@ function buildTimelines(events: GrowthEventDay[]): Map<string, UserTimeline> {
       timeline.first.set(event.event_name, from);
     }
     if (RETURN_EVENTS.has(event.event_name)) timeline.returns.push({ from, to });
-    if (CORE_ACTIONS.has(event.event_name)) timeline.core.push({ from, to });
+    if (PRODUCT_USE_EVENTS.has(event.event_name)) timeline.core.push({ from, to });
   }
   return timelines;
 }
@@ -256,12 +259,13 @@ export type GrowthSummary = {
   signups: number;
   /** How far the window's new accounts got so far. */
   funnel: FunnelStep[];
+  /** Activation of the accounts whose 7 days ended in the period. */
   activation: Share;
   /** Median hours from signup to the first confirmed document. */
   medianHoursToFirstConfirm: number | null;
   channels: ChannelRow[];
   cohorts: CohortRow[];
-  /** Distinct people with any use in the last 7 days. */
+  /** Distinct people with any use today or in the 6 Berlin days before. */
   weeklyActive: number;
   /** Distinct people with a core action in the last 7 days. */
   weeklyEngaged: number;
@@ -328,21 +332,35 @@ export function summarizeGrowth({
     );
   }
 
-  const byChannel = new Map<AcquisitionChannel, GrowthAccount[]>();
-  for (const account of inWindow) {
-    const channel = channelForAccount(account, timelines.get(account.id));
-    const members = byChannel.get(channel) ?? [];
-    members.push(account);
-    byChannel.set(channel, members);
+  // Rates for the period look at accounts whose window *ended* in it —
+  // accounts that signed up in the period would not have had their 7 or
+  // 14 days yet (with "7 Tage" none of them would).
+  const endedInPeriod = (account: GrowthAccount, windowDays: number) => {
+    const end = new Date(account.createdAt).getTime() + windowDays * DAY_MS;
+    return end >= sinceMs && end <= nowMs;
+  };
+  const activationPool = accounts.filter((account) => endedInPeriod(account, ACTIVATION_WINDOW_DAYS));
+  const week1Pool = accounts.filter((account) => endedInPeriod(account, 14));
+
+  const channelOf = new Map<string, AcquisitionChannel>();
+  for (const account of [...inWindow, ...activationPool, ...week1Pool]) {
+    if (!channelOf.has(account.id)) {
+      channelOf.set(account.id, channelForAccount(account, timelines.get(account.id)));
+    }
   }
-  const channels: ChannelRow[] = [...byChannel]
-    .map(([channel, members]) => ({
-      channel,
-      signups: members.length,
-      activation: activationOf(members, timelines, nowMs),
-      paying: members.filter((account) => payingUserIds.has(account.id)).length,
-      week1: returnedBetween(members, timelines, 7, 14, nowMs, trackedSince),
-    }))
+  const inChannel = (pool: GrowthAccount[], channel: AcquisitionChannel) =>
+    pool.filter((account) => channelOf.get(account.id) === channel);
+  const channels: ChannelRow[] = [...new Set(channelOf.values())]
+    .map((channel) => {
+      const signups = inChannel(inWindow, channel);
+      return {
+        channel,
+        signups: signups.length,
+        activation: activationOf(inChannel(activationPool, channel), timelines, nowMs),
+        paying: signups.filter((account) => payingUserIds.has(account.id)).length,
+        week1: returnedBetween(inChannel(week1Pool, channel), timelines, 7, 14, nowMs, trackedSince),
+      };
+    })
     .sort((left, right) => right.signups - left.signups);
 
   const cohorts: CohortRow[] = [];
@@ -361,7 +379,8 @@ export function summarizeGrowth({
     });
   }
 
-  const weekAgo = nowMs - 7 * DAY_MS;
+  // "7 Tage" = today and the 6 Berlin days before, as on the other tabs.
+  const weekAgo = startOfBerlinDayBefore(nowMs, 6);
   let weeklyActive = 0;
   let weeklyEngaged = 0;
   for (const timeline of timelines.values()) {
@@ -379,7 +398,7 @@ export function summarizeGrowth({
   return {
     signups: inWindow.length,
     funnel,
-    activation: activationOf(inWindow, timelines, nowMs),
+    activation: activationOf(activationPool, timelines, nowMs),
     medianHoursToFirstConfirm: median(hoursToConfirm),
     channels,
     cohorts,

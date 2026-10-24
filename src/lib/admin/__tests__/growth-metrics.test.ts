@@ -77,6 +77,29 @@ describe("summarizeGrowth — activation", () => {
     expect(summary.activation).toEqual({ eligible: 1, count: 0, rate: 0 });
   });
 
+  it("has an activation rate even for a 7-day period", () => {
+    // Signed up 10 days ago: outside the 7-day signup window, but its first
+    // 7 days ended 3 days ago — inside the period.
+    const created = daysAgo(10);
+    const summary = summarizeGrowth({
+      accounts: [account("a", created), account("new", daysAgo(1))],
+      events: [
+        event("a", "document_confirmed", after(created, 1)),
+        event("a", "chat_question_sent", after(created, 2)),
+      ],
+      payingUserIds: new Set(),
+      since: daysAgo(7),
+      appOpensSince: daysAgo(400),
+      now: NOW,
+    });
+    expect(summary.signups).toBe(1);
+    expect(summary.activation).toEqual({ eligible: 1, count: 1, rate: 1 });
+    // The channel table shows the rate for the same accounts.
+    const direct = summary.channels.find((row) => row.channel === "direkt")!;
+    expect(direct.signups).toBe(1);
+    expect(direct.activation).toEqual({ eligible: 1, count: 1, rate: 1 });
+  });
+
   it("counts funnel steps per person, not per event", () => {
     const created = daysAgo(5);
     const summary = summarize(

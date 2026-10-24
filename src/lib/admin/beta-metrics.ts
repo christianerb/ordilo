@@ -2,10 +2,21 @@ import { berlinDay } from "@/lib/berlin-date";
 import { PRODUCT_USE_EVENTS } from "./event-filters";
 
 export type BetaEvent = { user_id: string; event_name: string; occurred_at: string; properties?: unknown };
-const ACTIONS = PRODUCT_USE_EVENTS;
 
 /** Counts people, not events. Funnel completion must follow cohort entry. */
 export function summarizeBetaEvents(events: BetaEvent[], since: string) {
+  // Berlin day per event, cached per UTC hour: one Intl call per hour of
+  // data instead of one per event (Berlin offsets are whole hours).
+  const dayByHour = new Map<string, string>();
+  const dayOf = (occurredAt: string) => {
+    const hour = occurredAt.slice(0, 13);
+    let day = dayByHour.get(hour);
+    if (day === undefined) {
+      day = berlinDay(new Date(occurredAt));
+      dayByHour.set(hour, day);
+    }
+    return day;
+  };
   const entrants = new Map<string, string>();
   for (const event of events) {
     if (event.event_name === "onboarding_started" && event.occurred_at >= since) {
@@ -35,8 +46,8 @@ export function summarizeBetaEvents(events: BetaEvent[], since: string) {
       }
       if (step && (!latest.has(event.user_id) || latest.get(event.user_id)!.at < event.occurred_at)) latest.set(event.user_id, { step, at: event.occurred_at });
     }
-    if (ACTIONS.has(event.event_name)) {
-      const day = berlinDay(new Date(event.occurred_at));
+    if (PRODUCT_USE_EVENTS.has(event.event_name)) {
+      const day = dayOf(event.occurred_at);
       const people = activeByDay.get(day) ?? new Set<string>();
       people.add(event.user_id);
       activeByDay.set(day, people);
