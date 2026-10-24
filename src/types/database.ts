@@ -501,9 +501,9 @@ export type Database = {
         Relationships: [];
       };
       signup_attributions: {
-        Row: { user_id: string; attribution: unknown; created_at: string };
-        Insert: { user_id: string; attribution: unknown; created_at?: string };
-        Update: { user_id?: string; attribution?: unknown; created_at?: string };
+        Row: { user_id: string; attribution: unknown; created_at: string; updated_at: string };
+        Insert: { user_id: string; attribution: unknown; created_at?: string; updated_at?: string };
+        Update: { user_id?: string; attribution?: unknown; created_at?: string; updated_at?: string };
         Relationships: [];
       };
       inbound_emails: {

@@ -40,26 +40,29 @@ async function listAttributions(since: string): Promise<Map<string, unknown>> {
   return new Map(rows.map((row) => [row.user_id, row.attribution]));
 }
 
-/** Owners of these families, queried in chunks (paying families are few). */
+/** Owners of these families, queried in chunks that run in parallel. */
 async function listOwnerIds(familyIds: string[]): Promise<Set<string>> {
   const client = createClient();
-  const owners = new Set<string>();
+  const chunks: string[][] = [];
   for (let index = 0; index < familyIds.length; index += FAMILY_ID_CHUNK) {
-    const chunk = familyIds.slice(index, index + FAMILY_ID_CHUNK);
-    const rows = await fetchAllRows<{ user_id: string }>((from, to) =>
-      client
-        .from("family_memberships")
-        .select("user_id")
-        .in("family_id", chunk)
-        // The owner pays; invited relatives joining a paying family are
-        // not a new paying conversion of their channel.
-        .eq("role", "owner")
-        .order("id")
-        .range(from, to),
-    );
-    for (const row of rows) owners.add(row.user_id);
+    chunks.push(familyIds.slice(index, index + FAMILY_ID_CHUNK));
   }
-  return owners;
+  const pages = await Promise.all(
+    chunks.map((chunk) =>
+      fetchAllRows<{ user_id: string }>((from, to) =>
+        client
+          .from("family_memberships")
+          .select("user_id")
+          .in("family_id", chunk)
+          // The owner pays; invited relatives joining a paying family are
+          // not a new paying conversion of their channel.
+          .eq("role", "owner")
+          .order("id")
+          .range(from, to),
+      ),
+    ),
+  );
+  return new Set(pages.flat().map((row) => row.user_id));
 }
 
 /**

@@ -209,6 +209,16 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
+  it("skips the session read when the caller's user already recorded today", async () => {
+    const { rpc } = mockClient();
+    const now = new Date("2026-10-22T08:00:00Z");
+    await recordDailyAppOpen("family-1", now, "user-1");
+    const getSupabaseCalls = jest.mocked(getSupabase).mock.calls.length;
+    await recordDailyAppOpen("family-1", now, "user-1");
+    expect(jest.mocked(getSupabase).mock.calls.length).toBe(getSupabaseCalls);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
   it("still records a different person signing in on the same device and day", async () => {
     const { rpc, session } = mockClient();
     const now = new Date("2026-10-22T08:00:00Z");

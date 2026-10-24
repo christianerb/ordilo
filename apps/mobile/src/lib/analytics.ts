@@ -160,8 +160,14 @@ function berlinDay(now: Date): string {
 export async function recordDailyAppOpen(
   familyId: string | null,
   now: Date = new Date(),
+  knownUserId?: string,
 ): Promise<void> {
   try {
+    // The caller usually knows the user: check the memo before touching
+    // the session (a keychain read) on every screen change.
+    if (knownUserId && lastRecordedAppOpen?.verified && lastRecordedAppOpen.key === `${knownUserId}:${berlinDay(now)}`) {
+      return;
+    }
     const client = getSupabase();
     // Reads the stored session — no network round trip.
     const {

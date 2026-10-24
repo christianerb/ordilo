@@ -376,9 +376,27 @@ as $$
   select coalesce(jsonb_object_agg(key, value), '{}'::jsonb)
   from (
     -- Only plain string values; nested objects or numbers are dropped.
-    select entry.key, entry.value #>> '{}' as value
-    from jsonb_each(case when jsonb_typeof(p_raw) = 'object' then p_raw else '{}'::jsonb end) as entry
-    where jsonb_typeof(entry.value) = 'string'
+    -- Coarse like attribution.ts: a URL keeps only its host, a landing
+    -- path only a public page or its first segment.
+    select
+      raw.key,
+      case
+        when raw.key = 'landing' then
+          case
+            when raw.value ~ '^/(ratgeber|hilfe|ueber-uns|datenschutz|impressum|nutzungsbedingungen)(/|$)'
+              or raw.value in ('/', '/login')
+              then split_part(split_part(raw.value, '?', 1), '#', 1)
+            else '/' || split_part(raw.value, '/', 2)
+          end
+        when raw.value ~* '^[a-z][a-z0-9+.-]*://' or raw.key = 'referrer' then
+          lower(substring(raw.value from '^(?:[A-Za-z][A-Za-z0-9+.-]*://)?([^/:?#]+)'))
+        else raw.value
+      end as value
+    from (
+      select entry.key, entry.value #>> '{}' as value
+      from jsonb_each(case when jsonb_typeof(p_raw) = 'object' then p_raw else '{}'::jsonb end) as entry
+      where jsonb_typeof(entry.value) = 'string'
+    ) as raw
   ) as fields
   where key in (
       'source', 'medium', 'campaign', 'content', 'term',

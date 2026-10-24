@@ -150,7 +150,7 @@ function RootLayoutNav() {
     // The first record comes from the route effect below (it also runs on
     // launch), so starting here would send a second, parallel request.
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void recordDailyAppOpen(familyId);
+      if (state === "active") void recordDailyAppOpen(familyId, new Date(), userId);
     });
     return () => subscription.remove();
   }, [userId, familyId]);
@@ -161,7 +161,7 @@ function RootLayoutNav() {
   const route = segments.join("/");
   useEffect(() => {
     if (!userId || !familyId || AppState.currentState !== "active") return;
-    void recordDailyAppOpen(familyId);
+    void recordDailyAppOpen(familyId, new Date(), userId);
   }, [route, userId, familyId]);
 
   // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):
