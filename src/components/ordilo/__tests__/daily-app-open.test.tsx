@@ -74,10 +74,16 @@ describe("DailyAppOpen", () => {
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("records nothing without a family", () => {
-    pathname.current = "/home";
-    render(<DailyAppOpenTracker familyId={null} />);
+  it("records after onboarding even while the layout has no family id yet", () => {
+    pathname.current = "/onboarding";
+    const { rerender } = render(<DailyAppOpenTracker familyId={null} />);
     expect(recordDailyAppOpen).not.toHaveBeenCalled();
+
+    // Soft navigation to /home: the layout still passes null.
+    pathname.current = "/home";
+    rerender(<DailyAppOpenTracker familyId={null} />);
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    expect(recordDailyAppOpen).toHaveBeenLastCalledWith({}, { familyId: null });
   });
 
   it("does not count a tab that mounts in the background", () => {

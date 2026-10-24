@@ -81,6 +81,19 @@ export async function recordProductEvent(
 let lastRecordedAppOpen: string | null = null;
 
 /**
+ * The memo's day. Without time zone data (some older engines) fall back to
+ * the UTC day — the memo only saves round trips; the database decides the
+ * real day, so the open is still recorded.
+ */
+function memoDay(now: Date): string {
+  try {
+    return berlinDay(now);
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+/**
  * Record that the user opened the app today, so "aktiv" also counts
  * visits that trigger no other action (reading Heute, checking a date).
  * The record_app_open RPC and a unique index keep it to one row per user
@@ -102,7 +115,7 @@ export async function recordDailyAppOpen(
     const userId = session?.user.id;
     if (!userId) return;
 
-    const key = `${userId}:${berlinDay(now)}`;
+    const key = `${userId}:${memoDay(now)}`;
     if (lastRecordedAppOpen === key) return;
     const { data, error } = await client.rpc("record_app_open", {
       p_family_id: familyId,

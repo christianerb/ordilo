@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as berlinDate from "@/lib/berlin-date";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import {
@@ -140,6 +141,19 @@ describe("recordDailyAppOpen", () => {
     await recordDailyAppOpen(client);
     await recordDailyAppOpen(client);
     expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("still records on engines without time zone data", async () => {
+    const spy = vi.spyOn(berlinDate, "berlinDay").mockImplementation(() => {
+      throw new RangeError("Invalid time zone specified: Europe/Berlin");
+    });
+    try {
+      const { client, rpc } = makeClient();
+      await recordDailyAppOpen(client);
+      expect(rpc).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("never throws", async () => {

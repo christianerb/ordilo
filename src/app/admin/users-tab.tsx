@@ -28,9 +28,12 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
     inaktiv: 0,
     lange_nicht_da: 0,
   };
-  for (const account of overview.accounts) {
+  // Counts match the Übersicht: only confirmed accounts. Unconfirmed code
+  // requests stay in the list for support, marked as such.
+  for (const account of overview.signupAccounts) {
     statusCounts[classifyAccountActivity(account)] += 1;
   }
+  const unconfirmed = overview.accounts.length - overview.signupAccounts.length;
 
   return (
     <section className="overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card">
@@ -38,6 +41,7 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
         <h2 className="text-base font-semibold text-foreground">Konten für Support</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {overview.accountsTotal} Konten: {statusCounts.aktiv} aktiv (7 Tage) · {statusCounts.inaktiv} inaktiv (8–30 Tage) · {statusCounts.lange_nicht_da} lange nicht da.
+          {unconfirmed > 0 && ` Dazu ${unconfirmed} Anmeldungen ohne eingegebenen Code.`}
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -59,9 +63,15 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
                 <tr key={account.id} className="border-t border-border">
                   <td className="px-5 py-3 font-medium text-foreground">{account.email}</td>
                   <td className="px-5 py-3">
-                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASSES[status]}`}>
-                      {ACCOUNT_STATUS_LABELS[status]}
-                    </span>
+                    {account.confirmedAt ? (
+                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASSES[status]}`}>
+                        {ACCOUNT_STATUS_LABELS[status]}
+                      </span>
+                    ) : (
+                      <span className="inline-block rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        Code nicht eingegeben
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.createdAt)}</td>
                   <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastSignInAt)}</td>

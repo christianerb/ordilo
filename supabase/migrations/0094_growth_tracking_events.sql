@@ -71,7 +71,11 @@ security definer
 set search_path = public
 as $$
 begin
-  if new.created_by is not null then
+  -- Attribute the event to the creator only when that is who is signed in
+  -- (or a server-side insert without a session): a client cannot write an
+  -- invite_created event for someone else by setting created_by.
+  if new.created_by is not null
+     and (auth.uid() is null or auth.uid() = new.created_by) then
     insert into public.product_events (user_id, family_id, event_name, properties)
     values (
       new.created_by,

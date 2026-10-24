@@ -18,7 +18,7 @@ const FALLBACK_RECHECK_MS = 60 * 60 * 1000;
  * calls on the same day into no round trip.
  * Mounted through DailyAppOpenTracker, which re-mounts it per family.
  */
-export function DailyAppOpen({ familyId }: { familyId: string }) {
+export function DailyAppOpen({ familyId }: { familyId: string | null }) {
   useMountEffect(() => {
     const supabase = createClient();
     const record = () => void recordDailyAppOpen(supabase, { familyId });
@@ -54,12 +54,15 @@ export function DailyAppOpen({ familyId }: { familyId: string }) {
 }
 
 /**
- * Mounts DailyAppOpen once a family exists and setup is done. The
- * onboarding route is the only (app) page without finished setup; leaving
- * it mounts the recorder, so the day of finishing onboarding counts too.
+ * Mounts DailyAppOpen outside onboarding. Onboarding is the only (app)
+ * page without finished setup; leaving it mounts the recorder, so the day
+ * of finishing onboarding counts too.
  */
 export function DailyAppOpenTracker({ familyId }: { familyId?: string | null }) {
   const pathname = usePathname();
-  if (!familyId || pathname?.startsWith("/onboarding")) return null;
-  return <DailyAppOpen key={familyId} familyId={familyId} />;
+  if (pathname?.startsWith("/onboarding")) return null;
+  // The layout's familyId can still be null right after onboarding (a soft
+  // navigation does not re-render it); record_app_open checks setup and
+  // membership itself, so record without one rather than not at all.
+  return <DailyAppOpen key={familyId ?? "no-family"} familyId={familyId ?? null} />;
 }

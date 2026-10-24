@@ -101,6 +101,14 @@ function cleanValue(value: string | null | undefined): string | undefined {
   return cleaned || undefined;
 }
 
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function looksPersonal(value: string): boolean {
   if (value.includes("@") || /%40/i.test(value)) return true;
   // Phone numbers start with "+" or "0" (dates like 2026-10-24 do not).
@@ -143,6 +151,11 @@ function cleanPath(value: string | null | undefined): string | undefined {
   if (!/^\/(?:[\p{L}\p{N}\-/_.]|%[0-9a-f]{2})*$/iu.test(path)) return undefined;
   const firstSegment = `/${path.split("/")[1]}`;
   if (path.length > MAX_PATH_LENGTH) return firstSegment;
+  // A segment that looks like personal data (an e-mail, an id from a mail
+  // tool) never goes into account metadata, even under a public page.
+  if (path.split("/").slice(2).some((segment) => looksPersonal(safeDecode(segment)))) {
+    return firstSegment;
+  }
   if (path === "/" || path === "/login" || isPublicMarketingPath(path)) return path;
   return firstSegment;
 }

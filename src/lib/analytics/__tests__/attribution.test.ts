@@ -135,6 +135,12 @@ describe("readAttribution", () => {
     expect(page({ pathname: `/${"a".repeat(1200)}` }).landing).toBeUndefined();
   });
 
+  it("drops path segments that look like personal data, also under public pages", () => {
+    expect(page({ pathname: "/ratgeber/max%40example.de" }).landing).toBe("/ratgeber");
+    expect(page({ search: "?lp=/ratgeber/550e8400-e29b-41d4-a716-446655440000" }).landing).toBe("/ratgeber");
+    expect(page({ pathname: "/ratgeber/kindergeld-2026" }).landing).toBe("/ratgeber/kindergeld-2026");
+  });
+
   it("keeps only the first segment of non-public paths", () => {
     const token = "a".repeat(64);
     expect(page({ pathname: `/invite/${token}` }).landing).toBe("/invite");

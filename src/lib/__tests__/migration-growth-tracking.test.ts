@@ -37,6 +37,10 @@ describe("growth tracking migration", () => {
     expect(migration.match(/exception when others then/g)).toHaveLength(2);
   });
 
+  it("only attributes invite_created to the signed-in creator", () => {
+    expect(migration).toContain("and (auth.uid() is null or auth.uid() = new.created_by) then");
+  });
+
   it("does not count the family creator's own membership as an accepted invite", () => {
     expect(migration).toContain("if new.role <> 'owner' then");
   });
