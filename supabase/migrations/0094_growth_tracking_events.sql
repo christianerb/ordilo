@@ -168,8 +168,9 @@ where event_name = 'app_opened'
 having min(occurred_at) is not null
 on conflict (key) do nothing;
 
--- Returns true when today's open is recorded (now or earlier today), false
--- when the caller does not count yet: no session, or only an own family
+-- Returns the Berlin day (YYYY-MM-DD) whose open is recorded — now or
+-- earlier that day — so a client can tell whether its own clock agrees;
+-- null when the caller does not count yet: no session, or only an own family
 -- whose setup is unfinished — reopening onboarding is not "coming back".
 -- Invited members are set up the moment they join, whatever the owner's
 -- setup state (the same rule both clients use).
@@ -178,7 +179,7 @@ create function public.record_app_open(
   p_family_id uuid default null,
   p_platform text default 'unknown'
 )
-returns boolean
+returns text
 language plpgsql
 security definer
 set search_path = public
@@ -187,7 +188,7 @@ declare
   v_user_id uuid := auth.uid();
 begin
   if v_user_id is null then
-    return false;
+    return null;
   end if;
 
   if not exists (
@@ -197,7 +198,7 @@ begin
     where m.user_id = v_user_id
       and (f.onboarding_completed_at is not null or m.role <> 'owner')
   ) then
-    return false;
+    return null;
   end if;
 
   insert into public.product_events (user_id, family_id, event_name, properties)
@@ -220,7 +221,7 @@ begin
     insert into public.analytics_markers (key) values ('app_opened_since')
     on conflict (key) do nothing;
   end if;
-  return true;
+  return to_char((now() at time zone 'Europe/Berlin')::date, 'YYYY-MM-DD');
 end;
 $$;
 
@@ -328,3 +329,51 @@ $$;
 
 revoke execute on function public.admin_app_opens_tracked_since() from public, anon, authenticated;
 grant execute on function public.admin_app_opens_tracked_since() to service_role;
+
+-- ---------------------------------------------------------------------------
+-- First touch, stored where the user cannot change it
+-- ---------------------------------------------------------------------------
+-- The login form sends signup_attribution as user metadata on the request
+-- that creates the account. User metadata stays editable by its owner
+-- (auth.updateUser), so it is copied once, when the auth user is created,
+-- into a table only the service role reads. No policies.
+
+create table if not exists public.signup_attributions (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  attribution jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.signup_attributions enable row level security;
+
+create or replace function public.store_signup_attribution()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if jsonb_typeof(new.raw_user_meta_data -> 'signup_attribution') = 'object' then
+    insert into public.signup_attributions (user_id, attribution)
+    values (new.id, new.raw_user_meta_data -> 'signup_attribution')
+    on conflict (user_id) do nothing;
+  end if;
+  return new;
+exception when others then
+  -- Analytics must never block creating an account.
+  return new;
+end;
+$$;
+
+revoke execute on function public.store_signup_attribution() from public, anon, authenticated;
+
+drop trigger if exists store_signup_attribution_on_auth_user on auth.users;
+create trigger store_signup_attribution_on_auth_user
+  after insert on auth.users
+  for each row execute function public.store_signup_attribution();
+
+-- Accounts created before this migration: copy what their metadata holds.
+insert into public.signup_attributions (user_id, attribution)
+select id, raw_user_meta_data -> 'signup_attribution'
+from auth.users
+where jsonb_typeof(raw_user_meta_data -> 'signup_attribution') = 'object'
+on conflict (user_id) do nothing;

@@ -82,7 +82,9 @@ describe("readAttribution", () => {
     expect(page({ search: "?utm_term=max%40example.de" }).term).toBeUndefined();
     expect(page({ search: "?utm_content=550e8400-e29b-41d4-a716-446655440000" }).content).toBeUndefined();
     expect(page({ search: "?utm_content=5f2b9c1d8e7a6f30" }).content).toBeUndefined();
-    // Ordinary campaign names stay.
+    // Ordinary campaign names stay, also long ones with a year.
+    expect(page({ search: "?utm_source=newsletteroktober2026" }).source).toBe("newsletteroktober2026");
+    expect(page({ search: "?utm_campaign=blackfriday2026promo" }).campaign).toBe("blackfriday2026promo");
     expect(page({ search: "?utm_campaign=herbst-2026&utm_content=banner-oben" })).toMatchObject({
       campaign: "herbst-2026",
       content: "banner-oben",

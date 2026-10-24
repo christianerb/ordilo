@@ -9,8 +9,8 @@ import { isPublicMarketingPath } from "@/lib/public-routes";
  * referring host, the landing path) as query parameters on their link to
  * /login, and the login form hands that to Supabase as user metadata on
  * the one request that creates the account. Supabase only applies that
- * metadata at signup, so returning users never overwrite their first
- * touch.
+ * metadata at signup, and a database trigger copies it at that moment into
+ * signup_attributions, which users cannot change (migration 0094).
  *
  * Only coarse, content-free values are kept: a referrer is reduced to its
  * host, a landing page to its path.
@@ -116,8 +116,12 @@ function looksPersonal(value: string): boolean {
   // UUIDs and other hex ids, with or without separators.
   if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(value)) return true;
   if (/^[0-9a-f]{16,}$/i.test(value.replace(/[-_.]/g, ""))) return true;
-  // Other ids and tokens: a long run of letters and digits mixed together.
-  return /(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{20,}/i.test(value);
+  // Other ids and tokens: a long run of letters and digits where digits
+  // make up a good share — "a8f3k2m9x7q1w5e4r6t2", but not campaign names
+  // like "blackfriday2026promo".
+  return (value.match(/[a-z0-9]{20,}/gi) ?? []).some(
+    (run) => /[a-z]/i.test(run) && (run.match(/\d/g) ?? []).length / run.length >= 0.3,
+  );
 }
 
 /** Reduce a referrer (host or URL) to a bare host without "www.". */

@@ -120,9 +120,8 @@ export async function recordOnboardingStartedIfFirstTime(
 // the round trip once today's open was recorded for this user in this app
 // session. Keyed by user so a sign-out and a different sign-in still
 // record.
-// The day key comes from this device's clock and the database decides the
-// real day. A clock a few minutes off only delays the next day's record
-// until the device's own midnight — the day still gets recorded.
+// The day key comes from this device's clock; the database answers with
+// the day it actually recorded, and the memo is only set when both agree.
 let lastRecordedAppOpen: string | null = null;
 
 // The mobile package cannot import the web's src/lib/berlin-date.ts; this
@@ -166,14 +165,17 @@ export async function recordDailyAppOpen(
     const userId = session?.user.id;
     if (!userId) return;
 
-    const key = `${userId}:${berlinDay(now)}`;
+    const day = berlinDay(now);
+    const key = `${userId}:${day}`;
     if (lastRecordedAppOpen === key) return;
     const { data, error } = await client.rpc("record_app_open", {
       p_family_id: familyId,
       p_platform: getProductPlatform(),
     });
-    // false: setup not finished yet — ask again on the next open.
-    if (!error && data === true) lastRecordedAppOpen = key;
+    // Remember only when the database recorded *this device's* day. null
+    // (setup not finished) or another day (clock skew around midnight)
+    // means: ask again on the next open.
+    if (!error && data === day) lastRecordedAppOpen = key;
   } catch {
     // Analytics must never block a user-facing action.
   }

@@ -41,6 +41,17 @@ export const LONGEST_RATE_WINDOW_DAYS = 14;
 /** Week-1 return: days 7 up to (not including) 14 after signup. */
 const WEEK1_START_DAYS = 7;
 const WEEK1_END_DAYS = 14;
+// Parsed once per account object: summarizeGrowth reads it many times.
+const createdMsCache = new WeakMap<GrowthAccount, number>();
+function createdMs(account: GrowthAccount): number {
+  let ms = createdMsCache.get(account);
+  if (ms === undefined) {
+    ms = new Date(account.createdAt).getTime();
+    createdMsCache.set(account, ms);
+  }
+  return ms;
+}
+
 /** An invite accepted this soon after signup means the invite brought them. */
 const INVITE_SIGNUP_WINDOW_MS = DAY_MS;
 /** Stored channels that do not explain why someone came. */
@@ -142,7 +153,7 @@ function firstOf(timeline: UserTimeline | undefined, names: Iterable<string>): n
 }
 
 function isActivated(account: GrowthAccount, timeline: UserTimeline | undefined): boolean {
-  const start = new Date(account.createdAt).getTime();
+  const start = createdMs(account);
   const deadline = start + ACTIVATION_WINDOW_DAYS * DAY_MS;
   const confirmed = firstOf(timeline, ["document_confirmed"]);
   const asked = firstOf(timeline, QUESTION_EVENTS);
@@ -160,7 +171,7 @@ function channelForAccount(
   // signup explain it.
   if (!WEAK_CHANNELS.has(stored)) return stored;
   const joined = firstOf(timeline, ["invite_accepted"]);
-  const created = new Date(account.createdAt).getTime();
+  const created = createdMs(account);
   if (joined !== null && joined - created <= INVITE_SIGNUP_WINDOW_MS) return "einladung";
   return stored;
 }
@@ -182,7 +193,7 @@ function shareOf(
   let eligible = 0;
   let count = 0;
   for (const account of accounts) {
-    const created = new Date(account.createdAt).getTime();
+    const created = createdMs(account);
     if (now < created + windowDays * DAY_MS || !measurableFrom(created)) continue;
     eligible += 1;
     if (hit(account, created)) count += 1;
@@ -308,7 +319,7 @@ export function summarizeGrowth({
   // The exact first record, not its day: opens earlier that day left no trace.
   const trackedSince = appOpensSince === null ? null : new Date(appOpensSince).getTime();
   const inWindow = accounts.filter(
-    (account) => new Date(account.createdAt).getTime() >= sinceMs,
+    (account) => createdMs(account) >= sinceMs,
   );
 
   const reached = (names: string[]) =>
@@ -336,7 +347,7 @@ export function summarizeGrowth({
     const confirmed = firstOf(timelines.get(account.id), ["document_confirmed"]);
     if (confirmed === null) continue;
     hoursToConfirm.push(
-      Math.max(0, (confirmed - new Date(account.createdAt).getTime()) / (60 * 60 * 1000)),
+      Math.max(0, (confirmed - createdMs(account)) / (60 * 60 * 1000)),
     );
   }
 
@@ -344,7 +355,7 @@ export function summarizeGrowth({
   // accounts that signed up in the period would not have had their 7 or
   // 14 days yet (with "7 Tage" none of them would).
   const endedInPeriod = (account: GrowthAccount, windowDays: number) => {
-    const end = new Date(account.createdAt).getTime() + windowDays * DAY_MS;
+    const end = createdMs(account) + windowDays * DAY_MS;
     return end >= sinceMs && end <= nowMs;
   };
   const activationPool = accounts.filter((account) => endedInPeriod(account, ACTIVATION_WINDOW_DAYS));
@@ -393,7 +404,7 @@ export function summarizeGrowth({
   for (const start of cohortWeekStarts(nowMs, cohortWeeks)) {
     const end = startOfBerlinWeek(start + 10 * DAY_MS);
     const members = accounts.filter((account) => {
-      const created = new Date(account.createdAt).getTime();
+      const created = createdMs(account);
       return created >= start && created < end;
     });
     cohorts.push({

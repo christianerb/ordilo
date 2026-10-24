@@ -5,12 +5,16 @@ export type BetaEvent = { user_id: string; event_name: string; occurred_at: stri
 
 /** Counts people, not events. Funnel completion must follow cohort entry. */
 export function summarizeBetaEvents(events: BetaEvent[], since: string) {
+  // Compare instants, not strings: the database prints "+00:00" and JS
+  // prints ".000Z", which sort differently at the exact boundary second.
+  const sinceMs = Date.parse(since);
+  const at = (iso: string) => Date.parse(iso);
   const dayOf = createBerlinDayCache();
   const entrants = new Map<string, string>();
   for (const event of events) {
-    if (event.event_name === "onboarding_started" && event.occurred_at >= since) {
+    if (event.event_name === "onboarding_started" && at(event.occurred_at) >= sinceMs) {
       const previous = entrants.get(event.user_id);
-      if (!previous || event.occurred_at < previous) entrants.set(event.user_id, event.occurred_at);
+      if (!previous || at(event.occurred_at) < at(previous)) entrants.set(event.user_id, event.occurred_at);
     }
   }
   const completed = new Set<string>();
@@ -21,9 +25,9 @@ export function summarizeBetaEvents(events: BetaEvent[], since: string) {
   let searches = 0;
   let questions = 0;
   for (const event of events) {
-    if (event.occurred_at < since) continue;
+    if (at(event.occurred_at) < sinceMs) continue;
     const entry = entrants.get(event.user_id);
-    if (entry && event.occurred_at >= entry) {
+    if (entry && at(event.occurred_at) >= at(entry)) {
       if (event.event_name === "onboarding_completed") completed.add(event.user_id);
       if (event.event_name === "document_upload_succeeded") firstUpload.add(event.user_id);
       let step: string | null = null;

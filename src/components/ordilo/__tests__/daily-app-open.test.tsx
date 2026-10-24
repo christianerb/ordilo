@@ -46,20 +46,31 @@ describe("DailyAppOpen", () => {
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(2);
   });
 
-  it("records again at Berlin midnight while the tab stays visible", () => {
+  it("after Berlin midnight records on the first interaction, not by itself", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-22T21:59:00Z")); // 23:59 Berlin
     setVisibility("visible");
     const { unmount } = render(<DailyAppOpen familyId="family-1" />);
     recordDailyAppOpen.mockClear();
 
-    act(() => vi.advanceTimersByTime(30_000));
+    act(() => vi.advanceTimersByTime(2 * 60 * 1000)); // past midnight
     expect(recordDailyAppOpen).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(60_000));
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    // Only the first interaction after midnight records.
+    act(() => {
+      window.dispatchEvent(new Event("keydown"));
+    });
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
 
     unmount();
     act(() => vi.advanceTimersByTime(48 * 60 * 60 * 1000));
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
   });
 

@@ -76,9 +76,6 @@ const ordiloTheme = {
   },
 };
 
-/** How often an open app checks whether a new day began (no request until then). */
-const APP_OPEN_RECHECK_MS = 15 * 60 * 1000;
-
 function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Figtree_400Regular,
@@ -142,12 +139,10 @@ function RootLayoutNav() {
   const segments = useSegments();
   const router = useRouter();
 
-  // One "app opened" per user and German day, on start, on every return to
-  // the foreground — whichever screen opens (push, deep link, share) — and
-  // periodically while it stays open, so a session across midnight counts
-  // the new day. Repeat calls on the same day cost no round trip.
-  // Only once setup is done (reopening onboarding is not "coming back");
-  // keyed by ids so a token refresh does not restart the listeners.
+  // One "app opened" per user and German day, on start and on every return
+  // to the foreground — whichever screen opens (push, deep link, share).
+  // Only setup-complete families count (reopening onboarding is not "coming
+  // back"); keyed by ids so a token refresh does not restart the listener.
   const userId = session?.user.id ?? null;
   const familyId = family && isOnboardingComplete(family) ? family.id : null;
   useEffect(() => {
@@ -157,15 +152,7 @@ function RootLayoutNav() {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void recordDailyAppOpen(familyId);
     });
-    const interval = setInterval(() => {
-      if (AppState.currentState === "active") {
-        void recordDailyAppOpen(familyId);
-      }
-    }, APP_OPEN_RECHECK_MS);
-    return () => {
-      subscription.remove();
-      clearInterval(interval);
-    };
+    return () => subscription.remove();
   }, [userId, familyId]);
 
   // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):

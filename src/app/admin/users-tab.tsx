@@ -73,7 +73,8 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
                       </span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.createdAt)}</td>
+                  {/* Signup time as everywhere else: when the code was confirmed. */}
+                  <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.confirmedAt ?? account.createdAt)}</td>
                   <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastSignInAt)}</td>
                   <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastActivityAt)}</td>
                   <td className="px-5 py-3 text-muted-foreground">{account.familyCount}</td>

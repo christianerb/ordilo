@@ -500,6 +500,12 @@ export type Database = {
         };
         Relationships: [];
       };
+      signup_attributions: {
+        Row: { user_id: string; attribution: unknown; created_at: string };
+        Insert: { user_id: string; attribution: unknown; created_at?: string };
+        Update: { user_id?: string; attribution?: unknown; created_at?: string };
+        Relationships: [];
+      };
       inbound_emails: {
         Row: {
           id: string;
@@ -1790,8 +1796,8 @@ export type Database = {
     Functions: {
       record_app_open: {
         Args: { p_family_id?: string | null; p_platform?: string };
-        /** true once today's open is recorded; false before setup is done. */
-        Returns: boolean;
+        /** The Berlin day (YYYY-MM-DD) whose open is recorded; null before setup. */
+        Returns: string | null;
       };
       admin_app_opens_tracked_since: {
         Args: Record<string, never>;

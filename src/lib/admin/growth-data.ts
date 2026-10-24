@@ -60,7 +60,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   const ratePoolStart = startOfBerlinDayBefore(now.getTime(), days - 1 + LONGEST_RATE_WINDOW_DAYS);
   const eventsSince = new Date(Math.min(ratePoolStart, cohortStart)).toISOString();
 
-  const [users, eventDays, billing, forwardingFamilies, familyCount, appOpensSince] =
+  const [users, eventDays, billing, forwardingFamilies, familyCount, appOpensSince, attributions] =
     await Promise.all([
       listAllUsers(),
       // Aggregated per user, event and Berlin day in SQL and returned as
@@ -88,7 +88,17 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
       client.from("families").select("id", { count: "exact", head: true }),
       // The real start of app-open tracking, not the loaded window's start.
       client.rpc("admin_app_opens_tracked_since"),
+      // First touch as copied at account creation; user metadata itself
+      // stays editable by its owner and is not trusted here.
+      fetchAllRows<{ user_id: string; attribution: unknown }>((from, to) =>
+        client
+          .from("signup_attributions")
+          .select("user_id,attribution")
+          .order("user_id")
+          .range(from, to),
+      ),
     ]);
+  const attributionByUser = new Map(attributions.map((row) => [row.user_id, row.attribution]));
   if (appOpensSince.error) throw appOpensSince.error;
   if (eventDays.error) throw eventDays.error;
   if (forwardingFamilies.error) throw forwardingFamilies.error;
@@ -104,7 +114,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
           {
             id: user.id,
             createdAt: confirmedAt,
-            attribution: parseStoredAttribution(user.user_metadata?.signup_attribution),
+            attribution: parseStoredAttribution(attributionByUser.get(user.id)),
           },
         ]
       : [];

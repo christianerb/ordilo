@@ -23,8 +23,8 @@ describe("growth tracking migration", () => {
 
   it("can be reapplied", () => {
     expect(migration).toContain("drop constraint if exists");
-    expect(migration.match(/drop trigger if exists/g)).toHaveLength(2);
-    expect(migration.match(/create (or replace )?function/g)).toHaveLength(7);
+    expect(migration.match(/drop trigger if exists/g)).toHaveLength(3);
+    expect(migration.match(/create (or replace )?function/g)).toHaveLength(8);
     // Functions whose return type changed are dropped first so reapplying works.
     expect(migration).toContain("drop function if exists public.record_app_open(uuid, text);");
     expect(migration).toContain(
@@ -34,7 +34,7 @@ describe("growth tracking migration", () => {
   });
 
   it("never lets analytics block an invite", () => {
-    expect(migration.match(/exception when others then/g)).toHaveLength(2);
+    expect(migration.match(/exception when others then/g)).toHaveLength(3);
   });
 
   it("only attributes invite_created to the signed-in creator", () => {
@@ -46,7 +46,7 @@ describe("growth tracking migration", () => {
   });
 
   it("runs every definer function with a fixed search path and tight grants", () => {
-    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(3);
+    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(4);
     // Admin readers run as the service role, which bypasses (forced) RLS.
     expect(migration.match(/security invoker\s+set search_path = public/g)).toHaveLength(3);
     expect(migration).toMatch(/revoke execute on function public\.record_invite_created_event\(\)/);
@@ -92,7 +92,8 @@ describe("growth tracking migration", () => {
   });
 
   it("does not count reopening an unfinished setup as an app open", () => {
-    expect(migration).toContain("returns boolean");
+    expect(migration).toContain("returns text");
+    expect(migration).toContain("return to_char((now() at time zone 'Europe/Berlin')::date, 'YYYY-MM-DD');");
     expect(migration).toContain("and (f.onboarding_completed_at is not null or m.role <> 'owner')");
   });
 
@@ -123,6 +124,15 @@ describe("growth tracking migration", () => {
     expect(dedupe).toBeGreaterThan(-1);
     expect(dedupe).toBeLessThan(index);
     expect(migration).toContain("and (earlier.occurred_at, earlier.id) < (e.occurred_at, e.id);");
+  });
+
+  it("copies the first touch at account creation into a table users cannot change", () => {
+    expect(migration).toContain("create table if not exists public.signup_attributions");
+    expect(migration).toContain("alter table public.signup_attributions enable row level security;");
+    expect(migration).toContain("after insert on auth.users");
+    expect(migration).not.toMatch(/create policy[^;]*signup_attributions/);
+    // Existing accounts are backfilled once.
+    expect(migration).toContain("from auth.users\nwhere jsonb_typeof(raw_user_meta_data -> 'signup_attribution') = 'object'");
   });
 });
 

@@ -156,11 +156,13 @@ describe("platform metadata", () => {
 describe("recordDailyAppOpen", () => {
   beforeEach(() => resetDailyAppOpenForTests());
 
+  /** The RPC answers with the Berlin day it recorded (or null). */
   function mockClient(
-    result: { data?: boolean | null; error: { message: string } | null } = { data: true, error: null },
+    serverDay: { current: string | null } = { current: "2026-10-22" },
+    error: { message: string } | null = null,
   ) {
     const session = { current: "user-1" as string | null };
-    const rpc = jest.fn(async () => result);
+    const rpc = jest.fn(async (..._args: unknown[]) => ({ data: serverDay.current, error }));
     jest.mocked(getSupabase).mockReturnValue({
       rpc,
       auth: {
@@ -169,7 +171,7 @@ describe("recordDailyAppOpen", () => {
         })),
       },
     } as never);
-    return { rpc, session };
+    return { rpc, session, serverDay };
   }
 
   it("records the open through the deduplicating RPC once per day", async () => {
@@ -184,12 +186,22 @@ describe("recordDailyAppOpen", () => {
   });
 
   it("asks again once the Berlin day changes", async () => {
-    const { rpc } = mockClient();
+    const serverDay = { current: "2026-10-22" as string | null };
+    const { rpc } = mockClient(serverDay);
     await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
     await recordDailyAppOpen("family-1", new Date("2026-10-22T21:00:00Z"));
     expect(rpc).toHaveBeenCalledTimes(1);
+    serverDay.current = "2026-10-23";
     // 22:05 UTC is the next day in Berlin.
     await recordDailyAppOpen("family-1", new Date("2026-10-22T22:05:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps asking while the phone's clock is ahead of the server's day", async () => {
+    const serverDay = { current: "2026-10-22" as string | null };
+    const { rpc } = mockClient(serverDay);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:01:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T22:02:00Z"));
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
@@ -202,8 +214,8 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 
-  it("asks again while setup is not finished (the RPC answers false)", async () => {
-    const { rpc } = mockClient({ data: false, error: null });
+  it("asks again while setup is not finished (the RPC answers null)", async () => {
+    const { rpc } = mockClient({ current: null });
     await recordDailyAppOpen("family-1");
     await recordDailyAppOpen("family-1");
     expect(rpc).toHaveBeenCalledTimes(2);
@@ -217,7 +229,7 @@ describe("recordDailyAppOpen", () => {
   });
 
   it("retries on the next load when the RPC failed", async () => {
-    const { rpc } = mockClient({ data: null, error: { message: "offline" } });
+    const { rpc } = mockClient({ current: null }, { message: "offline" });
     await recordDailyAppOpen("family-1");
     await recordDailyAppOpen("family-1");
     expect(rpc).toHaveBeenCalledTimes(2);

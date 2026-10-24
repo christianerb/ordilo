@@ -8,13 +8,15 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /** Slack after midnight so the new Berlin day has surely begun. */
 const MIDNIGHT_SLACK_MS = 5_000;
+/** What counts as using an already open tab. */
+const INTERACTION_EVENTS = ["pointerdown", "keydown"] as const;
 /** Re-check interval when the Berlin midnight cannot be computed. */
 const FALLBACK_RECHECK_MS = 60 * 60 * 1000;
 
 /**
  * Records "app opened" on a visible mount, whenever the tab becomes visible,
- * and at Berlin midnight while the tab stays visible — so a tab left open
- * overnight still counts the new day. recordDailyAppOpen turns repeat
+ * and — after Berlin midnight — on the first click or key press in a tab
+ * that stayed open, so the new day counts only when someone uses it. recordDailyAppOpen turns repeat
  * calls on the same day into no round trip.
  * Mounted through DailyAppOpenTracker, which re-mounts it per family.
  */
@@ -24,6 +26,21 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
     const record = () => void recordDailyAppOpen(supabase, { familyId });
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") record();
+    };
+
+    // After midnight an open tab only counts once someone uses it: a tab
+    // left on screen overnight is not a visit.
+    const onInteraction = () => {
+      disarmInteraction();
+      record();
+    };
+    const armInteraction = () => {
+      for (const type of INTERACTION_EVENTS) {
+        window.addEventListener(type, onInteraction, { passive: true });
+      }
+    };
+    const disarmInteraction = () => {
+      for (const type of INTERACTION_EVENTS) window.removeEventListener(type, onInteraction);
     };
 
     let midnightTimer: ReturnType<typeof setTimeout>;
@@ -36,7 +53,7 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
         // the page, so fall back to a plain periodic check.
       }
       midnightTimer = setTimeout(() => {
-        if (document.visibilityState === "visible") record();
+        armInteraction();
         scheduleMidnight();
       }, delay);
     };
@@ -47,6 +64,7 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       clearTimeout(midnightTimer);
+      disarmInteraction();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   });
