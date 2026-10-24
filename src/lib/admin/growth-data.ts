@@ -19,7 +19,7 @@ const COHORT_WEEKS = 8;
 /** Family ids per `in` filter, so the request URL stays short. */
 const FAMILY_ID_CHUNK = 100;
 
-/** Accounts that belong to any of these families (chunks run in parallel). */
+/** Owners of these families (chunks run in parallel). */
 async function listMemberIds(familyIds: string[]): Promise<Set<string>> {
   const client = createClient();
   const chunks: string[][] = [];
@@ -33,6 +33,9 @@ async function listMemberIds(familyIds: string[]): Promise<Set<string>> {
           .from("family_memberships")
           .select("user_id")
           .in("family_id", chunk)
+          // The owner pays; invited relatives joining a paying family are
+          // not a new paying conversion of their channel.
+          .eq("role", "owner")
           .order("id")
           .range(from, to),
       ),

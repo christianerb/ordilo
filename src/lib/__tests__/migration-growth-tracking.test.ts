@@ -42,7 +42,9 @@ describe("growth tracking migration", () => {
   });
 
   it("runs every definer function with a fixed search path and tight grants", () => {
-    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(6);
+    expect(migration.match(/security definer\s+set search_path = public/g)).toHaveLength(3);
+    // Admin readers run as the service role, which bypasses (forced) RLS.
+    expect(migration.match(/security invoker\s+set search_path = public/g)).toHaveLength(3);
     expect(migration).toMatch(/revoke execute on function public\.record_invite_created_event\(\)/);
     expect(migration).toMatch(/revoke execute on function public\.record_invite_accepted_event\(\)/);
     expect(migration).toContain(

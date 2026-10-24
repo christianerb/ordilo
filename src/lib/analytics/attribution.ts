@@ -103,8 +103,8 @@ function cleanValue(value: string | null | undefined): string | undefined {
 
 function looksPersonal(value: string): boolean {
   if (value.includes("@") || /%40/i.test(value)) return true;
-  // Phone numbers: 7 or more digits, maybe separated.
-  if ((value.match(/\d/g) ?? []).length >= 7 && /^[\d\s+()./-]+$/.test(value)) return true;
+  // Phone numbers start with "+" or "0" (dates like 2026-10-24 do not).
+  if ((value.match(/\d/g) ?? []).length >= 7 && /^(\+|0)[\d\s()./-]+$/.test(value)) return true;
   // UUIDs and other hex ids, with or without separators.
   if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(value)) return true;
   if (/^[0-9a-f]{16,}$/i.test(value.replace(/[-_.]/g, ""))) return true;
@@ -174,10 +174,12 @@ export function readAttribution({
   for (const [param, key] of Object.entries(CARRIED_PARAMS)) {
     const raw = params.get(param);
     if (key === "referrer") {
-      const host = cleanHost(raw);
+      // "?ref=producthunt.com/posts/ordilo" — keep the host, drop the path.
+      const host = cleanHost(raw) ?? (raw?.includes("/") ? cleanHost(raw.split("/")[0]) : undefined);
       if (host && !isOwnHost(host, ownHost)) attribution.referrer = host;
-      // "?ref=producthunt" names a source rather than a host.
-      else if (!host && !params.get("utm_source")) {
+      // "?ref=producthunt" names a source rather than a host. utm_source is
+      // read earlier; a value dropped as personal leaves room for ref.
+      else if (!host && !attribution.source) {
         const source = cleanValue(raw);
         if (source) attribution.source = source;
       }
@@ -194,7 +196,10 @@ export function readAttribution({
   // Facebook's fbclid is not a paid signal: it is appended to every
   // outbound click, organic posts included. Paid Meta ads say so in
   // utm_medium, which classifyChannel already reads.
-  if (params.has("gclid")) attribution.paid_click = "google";
+  // gbraid/wbraid: Google Ads clicks on iOS; dclid: Display & Video 360.
+  if (["gclid", "gbraid", "wbraid", "dclid"].some((id) => params.has(id))) {
+    attribution.paid_click = "google";
+  }
   else if (params.has("msclkid")) attribution.paid_click = "microsoft";
 
   if (!attribution.referrer) {
@@ -291,7 +296,8 @@ function matchesHost(host: string, list: string[]): boolean {
  */
 export function classifyChannel(attribution: SignupAttribution | null): AcquisitionChannel {
   if (!attribution) return "unbekannt";
-  if (attribution.via === "invite") return "einladung";
+  // Entered through an invite link (also when finishing via /login).
+  if (attribution.via === "invite" || attribution.landing === "/invite") return "einladung";
   if (attribution.via === "app") return "app";
 
   const medium = attribution.medium ?? "";

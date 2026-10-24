@@ -226,12 +226,16 @@ grant execute on function public.record_app_open(uuid, text) to authenticated;
 -- ---------------------------------------------------------------------------
 -- Admin: families that ever forwarded an email (with or without attachment)
 -- ---------------------------------------------------------------------------
+-- The admin functions run as the caller (security invoker). Only the
+-- service role may call them, and it bypasses RLS — whereas a definer
+-- function runs as the owner, which FORCE RLS on documents (0031) would
+-- limit to the families of auth.uid(), i.e. none.
 
 create or replace function public.admin_forwarding_family_count()
 returns bigint
 language sql
 stable
-security definer
+security invoker
 set search_path = public
 as $$
   select count(*) from (
@@ -280,7 +284,7 @@ create function public.admin_growth_event_days(
 returns jsonb
 language sql
 stable
-security definer
+security invoker
 set search_path = public
 as $$
   select coalesce(jsonb_agg(day_rows), '[]'::jsonb)
@@ -312,7 +316,7 @@ create or replace function public.admin_app_opens_tracked_since()
 returns timestamptz
 language sql
 stable
-security definer
+security invoker
 set search_path = public
 as $$
   select at from public.analytics_markers where key = 'app_opened_since';

@@ -89,6 +89,25 @@ describe("readAttribution", () => {
     });
   });
 
+  it("detects Google ad clicks by any of their click ids", () => {
+    for (const id of ["gclid", "gbraid", "wbraid", "dclid"]) {
+      expect(classifyChannel(page({ search: `?${id}=0AAAA`, referrer: "https://www.google.com/" }))).toBe(
+        "bezahlt",
+      );
+    }
+  });
+
+  it("keeps dates as campaign names and drops phone numbers", () => {
+    expect(page({ search: "?utm_campaign=2026-10-24" }).campaign).toBe("2026-10-24");
+    expect(page({ search: "?utm_campaign=20261024" }).campaign).toBe("20261024");
+    expect(page({ search: "?utm_term=%2B49%20170%201234567" }).term).toBeUndefined();
+  });
+
+  it("reads ref values with a path as their host, and falls back when utm_source was dropped", () => {
+    expect(page({ search: "?ref=producthunt.com/posts/ordilo" }).referrer).toBe("producthunt.com");
+    expect(page({ search: "?utm_source=max@example.de&ref=producthunt" }).source).toBe("producthunt");
+  });
+
   it("reduces a URL in a campaign tag to its host", () => {
     expect(page({ search: "?utm_campaign=https://evil.com/private/path" }).campaign).toBe("evil.com");
     expect(page({ search: "?utm_source=https://www.elternforum.de/thread/123" }).source).toBe("elternforum.de");
@@ -190,6 +209,7 @@ describe("classifyChannel", () => {
     [{ landing: "/" }, "direkt"],
     [{ via: "invite" as const, referrer: "google.com" }, "einladung"],
     [{ via: "app" as const }, "app"],
+    [{ landing: "/invite", referrer: "wa.me" }, "einladung"],
     [{ paid_click: "google" as const, referrer: "google.com" }, "bezahlt"],
     [{ source: "google", medium: "cpc" }, "bezahlt"],
     [{ source: "brevo", medium: "newsletter" }, "email"],

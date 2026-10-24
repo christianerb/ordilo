@@ -12,7 +12,8 @@ import {
 export async function getBetaOverview(days: number) {
   const client = createClient();
   // Berlin calendar days, like the other admin tabs.
-  const start = new Date(startOfBerlinDayBefore(Date.now(), days - 1));
+  const now = Date.now();
+  const start = new Date(startOfBerlinDayBefore(now, days - 1));
   const since = start.toISOString();
   const events: BetaEvent[] = await fetchAllRows<BetaEvent>((from, to) =>
     client.from("product_events")
@@ -30,7 +31,7 @@ export async function getBetaOverview(days: number) {
   return {
     ...summary,
     daily: Array.from({ length: days }, (_, index) => {
-      const day = berlinDay(new Date(startOfBerlinDayBefore(start.getTime(), -index)));
+      const day = berlinDay(new Date(startOfBerlinDayBefore(now, days - 1 - index)));
       return { day, users: daily.get(day) ?? 0 };
     }),
     documents: documents.length,

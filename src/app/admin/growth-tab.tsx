@@ -121,7 +121,7 @@ export async function AdminGrowthTab({ days }: { days: 7 | 30 | 90 }) {
       <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
         <h2 className="text-base font-semibold text-foreground">Woher die Leute kommen</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Der erste Kontakt vor der Anmeldung, ohne Cookies gemessen. Konten von vor dieser Messung stehen unter „Unbekannt“. „Konten“ und „Zahlend“ zählen Anmeldungen im Zeitraum; die Quoten zählen Konten, deren erste 7 bzw. 14 Tage im Zeitraum zu Ende gingen.
+          Der erste Kontakt vor der Anmeldung, ohne Cookies gemessen. Konten von vor dieser Messung stehen unter „Unbekannt“. „Konten“ zählt Anmeldungen im Zeitraum, „Zahlend“ davon die, deren eigene Familie zahlt. Die Quoten zählen Konten, deren erste 7 bzw. 14 Tage im Zeitraum zu Ende gingen.
         </p>
         {growth.channels.length === 0 ? (
           <AdminEmptyNote>Noch keine Anmeldungen im Zeitraum.</AdminEmptyNote>
