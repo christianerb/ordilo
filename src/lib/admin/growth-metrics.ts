@@ -38,6 +38,9 @@ export const ACTIVATION_WINDOW_DAYS = 7;
  * still be in it, so their events must be loaded too.
  */
 export const LONGEST_RATE_WINDOW_DAYS = 14;
+/** Week-1 return: days 7 up to (not including) 14 after signup. */
+const WEEK1_START_DAYS = 7;
+const WEEK1_END_DAYS = 14;
 /** An invite accepted this soon after signup means the invite brought them. */
 const INVITE_SIGNUP_WINDOW_MS = DAY_MS;
 /** Stored channels that do not explain why someone came. */
@@ -345,25 +348,43 @@ export function summarizeGrowth({
     return end >= sinceMs && end <= nowMs;
   };
   const activationPool = accounts.filter((account) => endedInPeriod(account, ACTIVATION_WINDOW_DAYS));
-  const week1Pool = accounts.filter((account) => endedInPeriod(account, LONGEST_RATE_WINDOW_DAYS));
+  const week1Pool = accounts.filter((account) => endedInPeriod(account, WEEK1_END_DAYS));
 
+  // Group each pool by channel once; an account's channel is computed once.
   const channelOf = new Map<string, AcquisitionChannel>();
-  for (const account of [...inWindow, ...activationPool, ...week1Pool]) {
-    if (!channelOf.has(account.id)) {
-      channelOf.set(account.id, channelForAccount(account, timelines.get(account.id)));
+  const groupByChannel = (pool: GrowthAccount[]) => {
+    const groups = new Map<AcquisitionChannel, GrowthAccount[]>();
+    for (const account of pool) {
+      let channel = channelOf.get(account.id);
+      if (channel === undefined) {
+        channel = channelForAccount(account, timelines.get(account.id));
+        channelOf.set(account.id, channel);
+      }
+      const members = groups.get(channel) ?? [];
+      members.push(account);
+      groups.set(channel, members);
     }
-  }
-  const inChannel = (pool: GrowthAccount[], channel: AcquisitionChannel) =>
-    pool.filter((account) => channelOf.get(account.id) === channel);
-  const channels: ChannelRow[] = [...new Set(channelOf.values())]
+    return groups;
+  };
+  const signupsBy = groupByChannel(inWindow);
+  const activationBy = groupByChannel(activationPool);
+  const week1By = groupByChannel(week1Pool);
+  const channels: ChannelRow[] = [...new Set([...signupsBy.keys(), ...activationBy.keys(), ...week1By.keys()])]
     .map((channel) => {
-      const signups = inChannel(inWindow, channel);
+      const signups = signupsBy.get(channel) ?? [];
       return {
         channel,
         signups: signups.length,
-        activation: activationOf(inChannel(activationPool, channel), timelines, nowMs),
+        activation: activationOf(activationBy.get(channel) ?? [], timelines, nowMs),
         paying: signups.filter((account) => payingUserIds.has(account.id)).length,
-        week1: returnedBetween(inChannel(week1Pool, channel), timelines, 7, 14, nowMs, trackedSince),
+        week1: returnedBetween(
+          week1By.get(channel) ?? [],
+          timelines,
+          WEEK1_START_DAYS,
+          WEEK1_END_DAYS,
+          nowMs,
+          trackedSince,
+        ),
       };
     })
     .sort((left, right) => right.signups - left.signups);
@@ -379,7 +400,7 @@ export function summarizeGrowth({
       weekStart: berlinDay(new Date(start)),
       signups: members.length,
       activation: activationOf(members, timelines, nowMs),
-      week1: returnedBetween(members, timelines, 7, 14, nowMs, trackedSince),
+      week1: returnedBetween(members, timelines, WEEK1_START_DAYS, WEEK1_END_DAYS, nowMs, trackedSince),
       week4: returnedBetween(members, timelines, 28, 35, nowMs, trackedSince),
     });
   }

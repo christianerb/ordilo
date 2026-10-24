@@ -57,7 +57,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   const ratePoolStart = startOfBerlinDayBefore(now.getTime(), days - 1 + LONGEST_RATE_WINDOW_DAYS);
   const eventsSince = new Date(Math.min(ratePoolStart, cohortStart)).toISOString();
 
-  const [users, eventDays, entitlements, forwardingFamilies, familyCount, appOpensSince] =
+  const [users, eventDays, billing, forwardingFamilies, familyCount, appOpensSince] =
     await Promise.all([
       listAllUsers(),
       // Aggregated per user, event and Berlin day in SQL and returned as
@@ -66,6 +66,8 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
         p_since: eventsSince,
         p_event_names: GROWTH_EVENT_NAMES,
       }),
+      // Billing, then the members of paying families — chained, so it runs
+      // alongside the other requests instead of after all of them.
       fetchAllRows((from, to) =>
         client
           .from("family_entitlements")
@@ -74,7 +76,10 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
           )
           .order("family_id")
           .range(from, to),
-      ),
+      ).then(async (rows) => {
+        const billing = summarizeFamilyBilling(rows, now);
+        return { ...billing, payingUserIds: await listMemberIds([...billing.paidFamilies]) };
+      }),
       // Families that ever forwarded an email, counted in SQL.
       client.rpc("admin_forwarding_family_count"),
       client.from("families").select("id", { count: "exact", head: true }),
@@ -87,8 +92,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   if (familyCount.error) throw familyCount.error;
   const events = parseGrowthEventDays(eventDays.data);
 
-  const { paidFamilies, trialingFamilies } = summarizeFamilyBilling(entitlements, now);
-  const payingUserIds = await listMemberIds([...paidFamilies]);
+  const { paidFamilies, trialingFamilies, payingUserIds } = billing;
 
   const accounts: GrowthAccount[] = users.flatMap((user) => {
     const confirmedAt = signupConfirmedAt(user);

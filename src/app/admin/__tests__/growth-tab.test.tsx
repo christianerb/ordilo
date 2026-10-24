@@ -60,7 +60,7 @@ describe("AdminGrowthTab", () => {
     const searchRow = screen.getByText("Suchmaschine").closest("tr")!;
     expect(within(searchRow).getAllByText("50 %")).toHaveLength(2);
     expect(within(searchRow).getAllByTitle("1 von 2")).toHaveLength(2);
-    const unknownRow = screen.getByText("Unbekannt (älteres Konto)").closest("tr")!;
+    const unknownRow = screen.getByText("Unbekannt (älteres Konto oder ältere App)").closest("tr")!;
     expect(within(unknownRow).getAllByText("noch offen")).toHaveLength(2);
 
     // Newest cohort first; open windows are labelled, not 0 %.

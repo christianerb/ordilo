@@ -59,7 +59,7 @@ export const ACQUISITION_CHANNEL_LABELS: Record<AcquisitionChannel, string> = {
   verweis: "Andere Website",
   kampagne: "Sonstige Kampagne",
   direkt: "Direkt",
-  unbekannt: "Unbekannt (älteres Konto)",
+  unbekannt: "Unbekannt (älteres Konto oder ältere App)",
 };
 
 /** Query parameters a link to /login may carry. */
@@ -90,8 +90,11 @@ function cleanValue(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
   const raw = value.trim();
   if (looksPersonal(raw)) return undefined;
+  // A URL in a campaign tag is reduced to its host, like a referrer: the
+  // path can name a private page.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return cleanHost(raw);
   const cleaned = raw
-    .replace(/[^\p{L}\p{N} ._\-+/:]/gu, "")
+    .replace(/[^\p{L}\p{N} ._\-+]/gu, "")
     .trim()
     .toLowerCase()
     .slice(0, MAX_VALUE_LENGTH);
@@ -102,7 +105,10 @@ function looksPersonal(value: string): boolean {
   if (value.includes("@") || /%40/i.test(value)) return true;
   // Phone numbers: 7 or more digits, maybe separated.
   if ((value.match(/\d/g) ?? []).length >= 7 && /^[\d\s+()./-]+$/.test(value)) return true;
-  // Ids and tokens: a long run of letters and digits mixed together.
+  // UUIDs and other hex ids, with or without separators.
+  if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(value)) return true;
+  if (/^[0-9a-f]{16,}$/i.test(value.replace(/[-_.]/g, ""))) return true;
+  // Other ids and tokens: a long run of letters and digits mixed together.
   return /(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{20,}/i.test(value);
 }
 
