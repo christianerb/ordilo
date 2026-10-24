@@ -1,22 +1,11 @@
-import { berlinDay } from "@/lib/berlin-date";
+import { createBerlinDayCache } from "@/lib/berlin-date";
 import { PRODUCT_USE_EVENTS } from "./event-filters";
 
 export type BetaEvent = { user_id: string; event_name: string; occurred_at: string; properties?: unknown };
 
 /** Counts people, not events. Funnel completion must follow cohort entry. */
 export function summarizeBetaEvents(events: BetaEvent[], since: string) {
-  // Berlin day per event, cached per UTC hour: one Intl call per hour of
-  // data instead of one per event (Berlin offsets are whole hours).
-  const dayByHour = new Map<string, string>();
-  const dayOf = (occurredAt: string) => {
-    const hour = occurredAt.slice(0, 13);
-    let day = dayByHour.get(hour);
-    if (day === undefined) {
-      day = berlinDay(new Date(occurredAt));
-      dayByHour.set(hour, day);
-    }
-    return day;
-  };
+  const dayOf = createBerlinDayCache();
   const entrants = new Map<string, string>();
   for (const event of events) {
     if (event.event_name === "onboarding_started" && event.occurred_at >= since) {

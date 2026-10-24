@@ -98,7 +98,10 @@ describe("growth tracking migration", () => {
   });
 
   it("lets only the service role read when app opens were first recorded", () => {
-    expect(migration).toContain("create index if not exists product_events_app_opened_occurred_idx");
+    // Stored once, so deleted rows cannot move the start forward.
+    expect(migration).toContain("create table if not exists public.analytics_markers");
+    expect(migration).toContain("alter table public.analytics_markers enable row level security;");
+    expect(migration).toContain("select at from public.analytics_markers where key = 'app_opened_since';");
     expect(migration).toContain(
       "grant execute on function public.admin_app_opens_tracked_since() to service_role;",
     );

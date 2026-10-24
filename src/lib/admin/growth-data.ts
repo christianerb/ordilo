@@ -9,6 +9,7 @@ import {
   summarizeFamilyBilling,
   summarizeGrowth,
   GROWTH_EVENT_NAMES,
+  LONGEST_RATE_WINDOW_DAYS,
   parseGrowthEventDays,
   type GrowthAccount,
 } from "./growth-metrics";
@@ -50,7 +51,10 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   // Berlin calendar days, like the cohorts and the app_opened index.
   const windowStart = new Date(startOfBerlinDayBefore(now.getTime(), days - 1));
   const cohortStart = cohortWeekStarts(now.getTime(), COHORT_WEEKS)[0];
-  const eventsSince = new Date(Math.min(windowStart.getTime(), cohortStart)).toISOString();
+  // Period rates include accounts that signed up up to 14 days before the
+  // period (their window ended in it), so their early events are needed.
+  const ratePoolStart = startOfBerlinDayBefore(now.getTime(), days - 1 + LONGEST_RATE_WINDOW_DAYS);
+  const eventsSince = new Date(Math.min(ratePoolStart, cohortStart)).toISOString();
 
   const [users, eventDays, entitlements, forwardingFamilies, familyCount, appOpensSince] =
     await Promise.all([

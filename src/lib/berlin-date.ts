@@ -102,3 +102,23 @@ export function nextBerlinMidnight(time: number): number {
 export function startOfBerlinDayBefore(time: number, days: number): number {
   return startOfBerlinDay(startOfBerlinDay(time) + DAY_MS / 2 - days * DAY_MS);
 }
+
+/**
+ * A Berlin-day function with a per-UTC-hour cache, for summarizing many
+ * timestamps: one Intl call per hour of data instead of one per row.
+ * Berlin's UTC offset is always a whole hour, so an hour never spans two
+ * Berlin days.
+ */
+export function createBerlinDayCache(): (time: Date | string) => string {
+  const dayByHour = new Map<string, string>();
+  return (time) => {
+    const date = typeof time === "string" ? new Date(time) : time;
+    const hour = date.toISOString().slice(0, 13);
+    let day = dayByHour.get(hour);
+    if (day === undefined) {
+      day = berlinDay(date);
+      dayByHour.set(hour, day);
+    }
+    return day;
+  };
+}

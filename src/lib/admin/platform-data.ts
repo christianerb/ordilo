@@ -2,7 +2,7 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
-import { berlinDay, startOfBerlinDayBefore } from "@/lib/berlin-date";
+import { createBerlinDayCache, startOfBerlinDayBefore } from "@/lib/berlin-date";
 import { fetchAllRows } from "./paginate";
 import { eventNameList, NOT_PRODUCT_USE_EVENTS } from "./event-filters";
 
@@ -42,9 +42,7 @@ export type PlatformOverview = {
 
 // Days follow German time, like the Wachstum tab, so "7/30/90 Tage" means
 // the same hours on every admin tab.
-function dateKey(date: Date): string {
-  return berlinDay(date);
-}
+const dateKey = createBerlinDayCache();
 
 export async function listAllUsers(): Promise<User[]> {
   const admin = createAdminClient();

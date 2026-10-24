@@ -127,15 +127,23 @@ const APP_OPEN_MEMO_MS = 30 * 60 * 1000;
 
 // The mobile package cannot import the web's src/lib/berlin-date.ts; this
 // day is only the memo key — the database index decides the real day.
+let berlinDayFormatter: Intl.DateTimeFormat | null = null;
+
 function berlinDay(now: Date): string {
   try {
-    return new Intl.DateTimeFormat("en-CA", {
+    berlinDayFormatter ??= new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Berlin",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    }).format(now);
+    });
+    // Built from parts: the joined format differs between engines.
+    const parts: Record<string, string> = {};
+    for (const part of berlinDayFormatter.formatToParts(now)) parts[part.type] = part.value;
+    return `${parts.year}-${parts.month}-${parts.day}`;
   } catch {
+    // No time zone data: the memo key is only an optimization (and expires
+    // after APP_OPEN_MEMO_MS); the database decides the real day.
     return now.toISOString().slice(0, 10);
   }
 }

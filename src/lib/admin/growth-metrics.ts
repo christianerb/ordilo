@@ -33,6 +33,12 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const ACTIVATION_WINDOW_DAYS = 7;
+/**
+ * The longest per-account window a period rate looks at (week-1 return:
+ * days 7–13). Accounts that signed up this long before the period can
+ * still be in it, so their events must be loaded too.
+ */
+export const LONGEST_RATE_WINDOW_DAYS = 14;
 /** An invite accepted this soon after signup means the invite brought them. */
 const INVITE_SIGNUP_WINDOW_MS = DAY_MS;
 /** Stored channels that do not explain why someone came. */
@@ -340,7 +346,7 @@ export function summarizeGrowth({
     return end >= sinceMs && end <= nowMs;
   };
   const activationPool = accounts.filter((account) => endedInPeriod(account, ACTIVATION_WINDOW_DAYS));
-  const week1Pool = accounts.filter((account) => endedInPeriod(account, 14));
+  const week1Pool = accounts.filter((account) => endedInPeriod(account, LONGEST_RATE_WINDOW_DAYS));
 
   const channelOf = new Map<string, AcquisitionChannel>();
   for (const account of [...inWindow, ...activationPool, ...week1Pool]) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   berlinDay,
+  createBerlinDayCache,
   nextBerlinMidnight,
   startOfBerlinDay,
   startOfBerlinDayBefore,
@@ -76,5 +77,21 @@ describe("startOfBerlinDayBefore", () => {
     expect(iso(startOfBerlinDayBefore(now, 0))).toBe("2026-10-26T23:00:00.000Z");
     // Two days back is Sun 25.10., the switch day, which starts in CEST.
     expect(iso(startOfBerlinDayBefore(now, 2))).toBe("2026-10-24T22:00:00.000Z");
+  });
+});
+
+describe("createBerlinDayCache", () => {
+  it("returns the same days as berlinDay, also around midnight", () => {
+    const dayOf = createBerlinDayCache();
+    for (const iso of [
+      "2026-10-22T21:59:59Z",
+      "2026-10-22T22:00:00Z",
+      "2026-10-22T22:30:00Z",
+      "2026-01-15T22:59:00Z",
+      "2026-01-15T23:00:00Z",
+    ]) {
+      expect(dayOf(iso)).toBe(berlinDay(new Date(iso)));
+      expect(dayOf(new Date(iso))).toBe(berlinDay(new Date(iso)));
+    }
   });
 });

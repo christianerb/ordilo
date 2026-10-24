@@ -147,6 +147,23 @@ create unique index if not exists product_events_app_opened_daily_idx
   )
   where event_name = 'app_opened';
 
+-- When app opens were first recorded. Stored once, because deriving it
+-- from product_events would move it forward whenever the earliest rows go
+-- (account deletion cascades, the 12-month purge). No policies: only the
+-- definer functions below read or write it.
+create table if not exists public.analytics_markers (
+  key text primary key,
+  at timestamptz not null default now()
+);
+alter table public.analytics_markers enable row level security;
+
+insert into public.analytics_markers (key, at)
+select 'app_opened_since', min(occurred_at)
+from public.product_events
+where event_name = 'app_opened'
+having min(occurred_at) is not null
+on conflict (key) do nothing;
+
 -- Returns true when today's open is recorded (now or earlier today), false
 -- when the caller does not count yet: no session, or only an own family
 -- whose setup is unfinished — reopening onboarding is not "coming back".
@@ -194,6 +211,11 @@ begin
     )
   )
   on conflict do nothing;
+
+  if found then
+    insert into public.analytics_markers (key) values ('app_opened_since')
+    on conflict (key) do nothing;
+  end if;
   return true;
 end;
 $$;
@@ -284,11 +306,7 @@ grant execute on function public.admin_growth_event_days(timestamptz, text[]) to
 -- ---------------------------------------------------------------------------
 -- Return windows before this point cannot be judged (someone who only
 -- opened the app left no trace), so the dashboard leaves them open.
-
--- Lets min(occurred_at) for app_opened read one index entry.
-create index if not exists product_events_app_opened_occurred_idx
-  on public.product_events (occurred_at)
-  where event_name = 'app_opened';
+-- Read from analytics_markers, set by the first recorded app open.
 
 create or replace function public.admin_app_opens_tracked_since()
 returns timestamptz
@@ -297,7 +315,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select min(occurred_at) from public.product_events where event_name = 'app_opened';
+  select at from public.analytics_markers where key = 'app_opened_since';
 $$;
 
 revoke execute on function public.admin_app_opens_tracked_since() from public, anon, authenticated;
