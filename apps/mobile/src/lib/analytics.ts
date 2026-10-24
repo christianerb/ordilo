@@ -183,9 +183,9 @@ export async function recordDailyAppOpen(
     });
     // null (setup not finished) or another day (clock skew, no time zone
     // data) is unverified: asked again, at most every UNVERIFIED_RETRY_MS.
-    if (error) return;
-    // Verified only when the database recorded *this device's* day.
-    lastRecordedAppOpen = { key, verified: data === day, at: nowMs };
+    // Verified only when the database recorded *this device's* day. A
+    // failed call (offline, 5xx) is unverified too, so it is rate-limited.
+    lastRecordedAppOpen = { key, verified: !error && data === day, at: nowMs };
   } catch {
     // Analytics must never block a user-facing action.
   }

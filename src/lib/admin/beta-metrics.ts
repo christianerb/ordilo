@@ -37,7 +37,7 @@ export function summarizeBetaEvents(events: BetaEvent[], since: string) {
         const names: Record<string, string> = { family_name: "Familie angelegt", self_member_added: "Eigenes Profil angelegt", member_added: "Weiteres Mitglied angelegt" };
         if (typeof event.properties.step === "string") step = names[event.properties.step] ?? null;
       }
-      if (step && (!latest.has(event.user_id) || latest.get(event.user_id)!.at < event.occurred_at)) latest.set(event.user_id, { step, at: event.occurred_at });
+      if (step && (!latest.has(event.user_id) || at(latest.get(event.user_id)!.at) < at(event.occurred_at))) latest.set(event.user_id, { step, at: event.occurred_at });
     }
     if (PRODUCT_USE_EVENTS.has(event.event_name)) {
       const day = dayOf(event.occurred_at);

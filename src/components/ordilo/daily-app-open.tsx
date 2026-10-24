@@ -24,7 +24,12 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
   useMountEffect(() => {
     const supabase = createClient();
     let unmounted = false;
-    const record = () => void recordDailyAppOpen(supabase, { familyId });
+    // Not recorded (offline, server error, clock skew): try again on the
+    // next click or key press instead of losing the day.
+    const record = () =>
+      void recordDailyAppOpen(supabase, { familyId }).then((recorded) => {
+        if (!recorded && !unmounted) armInteraction();
+      });
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") record();
     };
@@ -33,11 +38,7 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
     // left on screen overnight is not a visit.
     const onInteraction = () => {
       disarmInteraction();
-      // Offline or the clock a moment ahead of the server: wait for the
-      // next interaction instead of giving up for the day.
-      void recordDailyAppOpen(supabase, { familyId }).then((recorded) => {
-        if (!recorded && !unmounted) armInteraction();
-      });
+      record();
     };
     const armInteraction = () => {
       for (const type of INTERACTION_EVENTS) {

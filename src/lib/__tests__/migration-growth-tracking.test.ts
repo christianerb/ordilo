@@ -37,8 +37,9 @@ describe("growth tracking migration", () => {
     expect(migration.match(/exception when others then/g)).toHaveLength(3);
   });
 
-  it("only attributes invite_created to the signed-in creator", () => {
+  it("only attributes invite events to the signed-in person", () => {
     expect(migration).toContain("and (auth.uid() is null or auth.uid() = new.created_by) then");
+    expect(migration).toContain("and (auth.uid() is null or auth.uid() = new.user_id) then");
   });
 
   it("does not count the family creator's own membership as an accepted invite", () => {
@@ -150,6 +151,7 @@ describe("growth tracking migration", () => {
     );
     // Untrusted client JSON is reduced to known keys without personal data.
     expect(migration).toContain("and value not like '%@%'");
+    expect(migration).toContain("and value !~* '%40'");
     expect(migration).toContain("and length(value) between 1 and 200");
   });
 });

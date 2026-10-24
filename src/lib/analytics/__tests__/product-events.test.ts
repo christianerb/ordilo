@@ -156,10 +156,12 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("retries later when the RPC failed", async () => {
+  it("retries a failed call, at most every 10 minutes", async () => {
     const { client, rpc } = makeClient({ current: null }, { message: "offline" });
-    await recordDailyAppOpen(client);
-    await recordDailyAppOpen(client);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:00:00Z") });
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:01:00Z") });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen(client, { now: new Date("2026-10-22T08:11:00Z") });
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 

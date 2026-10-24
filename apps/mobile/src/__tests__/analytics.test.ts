@@ -234,10 +234,12 @@ describe("recordDailyAppOpen", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("retries on the next load when the RPC failed", async () => {
+  it("retries a failed call, at most every 10 minutes", async () => {
     const { rpc } = mockClient({ current: null }, { message: "offline" });
-    await recordDailyAppOpen("family-1");
-    await recordDailyAppOpen("family-1");
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:01:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:11:00Z"));
     expect(rpc).toHaveBeenCalledTimes(2);
   });
 

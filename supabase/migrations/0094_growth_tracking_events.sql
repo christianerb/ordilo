@@ -105,7 +105,11 @@ security definer
 set search_path = public
 as $$
 begin
-  if new.role <> 'owner' then
+  -- Only the person joining (accept_family_invite runs as them) or a
+  -- server-side insert without a session: an owner adding someone's
+  -- membership directly is not that person accepting an invite.
+  if new.role <> 'owner'
+     and (auth.uid() is null or auth.uid() = new.user_id) then
     insert into public.product_events (user_id, family_id, event_name, properties)
     values (
       new.user_id,
@@ -206,10 +210,20 @@ begin
   insert into public.product_events (user_id, family_id, event_name, properties)
   values (
     v_user_id,
-    -- Same rule as the insert policy: only a family the user belongs to.
+    -- Same rule as the insert policy: only a family the user belongs to;
+    -- without one (e.g. right after onboarding), their own set-up family.
     case
       when p_family_id is not null and public.user_belongs_to_family(p_family_id)
         then p_family_id
+      else (
+        select m.family_id
+        from public.family_memberships m
+        join public.families f on f.id = m.family_id
+        where m.user_id = v_user_id
+          and (f.onboarding_completed_at is not null or m.role <> 'owner')
+        order by (m.role = 'owner') desc, m.created_at
+        limit 1
+      )
     end,
     'app_opened',
     jsonb_build_object(
@@ -366,7 +380,17 @@ as $$
     )
     and length(value) between 1 and 200
     and value not like '%@%'
+    and value !~* '%40'
     and value !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}'
+    -- Hex ids without dashes, and long letter-digit tokens that are at
+    -- least 30 % digits (same rule as looksPersonal in attribution.ts).
+    and regexp_replace(value, '[-_.]', '', 'g') !~* '^[0-9a-f]{16,}$'
+    and not exists (
+      select 1
+      from regexp_matches(value, '[A-Za-z0-9]{20,}', 'g') as run(parts)
+      where run.parts[1] ~ '[A-Za-z]'
+        and length(regexp_replace(run.parts[1], '[^0-9]', '', 'g')) >= 0.3 * length(run.parts[1])
+    )
     and (value !~ '^(\+|0)[0-9 ()./-]{6,}$' or value ~ '^[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}$');
 $$;
 

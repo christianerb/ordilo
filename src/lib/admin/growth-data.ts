@@ -16,8 +16,6 @@ import {
 } from "./growth-metrics";
 
 const COHORT_WEEKS = 8;
-/** Ids per `in` filter, so the request URL stays short. */
-const ID_CHUNK = 100;
 
 /**
  * First touch as stored at signup (signup_attributions, one row per
@@ -33,29 +31,22 @@ async function listAttributions(): Promise<Map<string, unknown>> {
   return new Map(rows.map((row) => [row.user_id, row.attribution]));
 }
 
-/** Owners of these families (chunks run in parallel). */
+/** Owners of these families: one paged query, filtered in memory. */
 async function listMemberIds(familyIds: string[]): Promise<Set<string>> {
+  if (familyIds.length === 0) return new Set();
   const client = createClient();
-  const chunks: string[][] = [];
-  for (let index = 0; index < familyIds.length; index += ID_CHUNK) {
-    chunks.push(familyIds.slice(index, index + ID_CHUNK));
-  }
-  const pages = await Promise.all(
-    chunks.map((chunk) =>
-      fetchAllRows<{ user_id: string }>((from, to) =>
-        client
-          .from("family_memberships")
-          .select("user_id")
-          .in("family_id", chunk)
-          // The owner pays; invited relatives joining a paying family are
-          // not a new paying conversion of their channel.
-          .eq("role", "owner")
-          .order("id")
-          .range(from, to),
-      ),
-    ),
+  const wanted = new Set(familyIds);
+  const owners = await fetchAllRows<{ family_id: string; user_id: string }>((from, to) =>
+    client
+      .from("family_memberships")
+      .select("family_id,user_id")
+      // The owner pays; invited relatives joining a paying family are not
+      // a new paying conversion of their channel.
+      .eq("role", "owner")
+      .order("id")
+      .range(from, to),
   );
-  return new Set(pages.flat().map((row) => row.user_id));
+  return new Set(owners.filter((row) => wanted.has(row.family_id)).map((row) => row.user_id));
 }
 
 /**

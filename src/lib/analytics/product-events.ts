@@ -135,9 +135,9 @@ export async function recordDailyAppOpen(
     });
     // null (setup not finished) or another day (clock skew, no time zone
     // data) is unverified: asked again, at most every UNVERIFIED_RETRY_MS.
-    if (error) return false;
-    // Verified only when the database recorded *this device's* day.
-    const verified = data === day;
+    // Verified only when the database recorded *this device's* day. A
+    // failed call (offline, 5xx) is unverified too, so it is rate-limited.
+    const verified = !error && data === day;
     lastRecordedAppOpen = { key, verified, at: nowMs };
     return verified;
   } catch {

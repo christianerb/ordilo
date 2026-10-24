@@ -139,4 +139,18 @@ describe("DailyAppOpen", () => {
     });
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(2);
   });
+
+  it("retries on the next interaction when the record on load failed", async () => {
+    pathname.current = "/home";
+    setVisibility("visible");
+    recordDailyAppOpen.mockResolvedValueOnce(false);
+    await act(async () => {
+      render(<DailyAppOpen familyId="family-1" />);
+    });
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(2);
+  });
 });
