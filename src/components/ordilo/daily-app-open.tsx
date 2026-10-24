@@ -8,6 +8,8 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /** Slack after midnight so the new Berlin day has surely begun. */
 const MIDNIGHT_SLACK_MS = 5_000;
+/** Matches UNVERIFIED_RETRY_MS in product-events.ts. */
+const RETRY_AFTER_MS = 10 * 60 * 1000;
 /** What counts as using an already open tab. */
 const INTERACTION_EVENTS = ["pointerdown", "keydown"] as const;
 /** Re-check interval when the Berlin midnight cannot be computed. */
@@ -26,9 +28,14 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
     let unmounted = false;
     // Not recorded (offline, server error, clock skew): try again on the
     // next click or key press instead of losing the day.
+    // Re-armed only after the retry window, so key presses in between do
+    // not each trigger a call (recordDailyAppOpen rate-limits as well).
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const record = () =>
       void recordDailyAppOpen(supabase, { familyId }).then((recorded) => {
-        if (!recorded && !unmounted) armInteraction();
+        if (recorded || unmounted) return;
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(armInteraction, RETRY_AFTER_MS);
       });
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") record();
@@ -71,6 +78,7 @@ export function DailyAppOpen({ familyId }: { familyId: string | null }) {
     return () => {
       unmounted = true;
       clearTimeout(midnightTimer);
+      clearTimeout(retryTimer);
       disarmInteraction();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };

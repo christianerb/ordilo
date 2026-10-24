@@ -192,18 +192,23 @@ set search_path = public
 as $$
 declare
   v_user_id uuid := auth.uid();
+  v_family_id uuid;
 begin
   if v_user_id is null then
     return null;
   end if;
 
-  if not exists (
-    select 1
-    from public.family_memberships m
-    join public.families f on f.id = m.family_id
-    where m.user_id = v_user_id
-      and (f.onboarding_completed_at is not null or m.role <> 'owner')
-  ) then
+  -- The user's set-up family (own, finished setup, or one they joined) —
+  -- one rule for "counts at all" and for the fallback family below.
+  select m.family_id into v_family_id
+  from public.family_memberships m
+  join public.families f on f.id = m.family_id
+  where m.user_id = v_user_id
+    and (f.onboarding_completed_at is not null or m.role <> 'owner')
+  order by (m.role = 'owner') desc, m.created_at
+  limit 1;
+
+  if v_family_id is null then
     return null;
   end if;
 
@@ -215,15 +220,7 @@ begin
     case
       when p_family_id is not null and public.user_belongs_to_family(p_family_id)
         then p_family_id
-      else (
-        select m.family_id
-        from public.family_memberships m
-        join public.families f on f.id = m.family_id
-        where m.user_id = v_user_id
-          and (f.onboarding_completed_at is not null or m.role <> 'owner')
-        order by (m.role = 'owner') desc, m.created_at
-        limit 1
-      )
+      else v_family_id
     end,
     'app_opened',
     jsonb_build_object(
@@ -359,8 +356,12 @@ grant execute on function public.admin_app_opens_tracked_since() to service_role
 create table if not exists public.signup_attributions (
   user_id uuid primary key references auth.users (id) on delete cascade,
   attribution jsonb not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Last write: the confirmation at the latest, after that frozen.
+  updated_at timestamptz not null default now()
 );
+alter table public.signup_attributions
+  add column if not exists updated_at timestamptz not null default now();
 alter table public.signup_attributions enable row level security;
 
 -- Client-sent metadata is untrusted: keep only the known keys as short
@@ -396,7 +397,13 @@ as $$
       where run.parts[1] ~ '[A-Za-z]'
         and length(regexp_replace(run.parts[1], '[^0-9]', '', 'g')) >= 0.3 * length(run.parts[1])
     )
-    and (value !~ '^(\+|0)[0-9 ()./-]{6,}$' or value ~ '^[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}$');
+    -- Phone numbers, as in looksPersonal: start with "+" or "0", only
+    -- digits and separators, at least 7 digits — dates are fine.
+    and not (
+      value ~ '^(\+|0)[0-9[:space:]()./-]+$'
+      and length(regexp_replace(value, '[^0-9]', '', 'g')) >= 7
+      and value !~ '^[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}$'
+    );
 $$;
 
 revoke execute on function public.clean_signup_attribution(jsonb) from public, anon, authenticated;
@@ -422,7 +429,12 @@ begin
           or (old.email_confirmed_at is null and new.email_confirmed_at is not null)) then
     insert into public.signup_attributions (user_id, attribution)
     values (new.id, v_attribution)
-    on conflict (user_id) do update set attribution = excluded.attribution;
+    on conflict (user_id) do update
+      set attribution = excluded.attribution, updated_at = now();
+  elsif tg_op = 'UPDATE' and old.email_confirmed_at is null and new.email_confirmed_at is not null then
+    -- Confirmed without metadata on this request: the stored row stays,
+    -- but its time marks the signup (the admin page filters by it).
+    update public.signup_attributions set updated_at = now() where user_id = new.id;
   end if;
   return new;
 exception when others then

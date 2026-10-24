@@ -111,7 +111,8 @@ function safeDecode(value: string): string {
 
 function looksPersonal(value: string): boolean {
   if (value.includes("@") || /%40/i.test(value)) return true;
-  // Phone numbers start with "+" or "0"; dates ("2026-10-24", "05.10.2026") are fine.
+  // Phone numbers start with "+" or "0"; dates ("2026-10-24", "05.10.2026")
+  // are fine. Same rule as clean_signup_attribution in migration 0094.
   const isDate = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(value);
   if (!isDate && (value.match(/\d/g) ?? []).length >= 7 && /^(\+|0)[\d\s()./-]+$/.test(value)) {
     return true;

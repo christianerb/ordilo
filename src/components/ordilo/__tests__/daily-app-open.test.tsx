@@ -121,7 +121,7 @@ describe("DailyAppOpen", () => {
     }
   });
 
-  it("waits for the next interaction when the first one could not record", async () => {
+  it("after a failed record waits out the retry window, then the next interaction", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-22T21:59:00Z"));
     setVisibility("visible");
@@ -134,13 +134,21 @@ describe("DailyAppOpen", () => {
       window.dispatchEvent(new Event("pointerdown"));
     });
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    // Key presses inside the retry window send nothing.
+    await act(async () => {
+      window.dispatchEvent(new Event("keydown"));
+    });
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+
+    act(() => vi.advanceTimersByTime(10 * 60 * 1000));
     await act(async () => {
       window.dispatchEvent(new Event("keydown"));
     });
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(2);
   });
 
-  it("retries on the next interaction when the record on load failed", async () => {
+  it("retries after the window on the next interaction when the record on load failed", async () => {
+    vi.useFakeTimers();
     pathname.current = "/home";
     setVisibility("visible");
     recordDailyAppOpen.mockResolvedValueOnce(false);
@@ -148,6 +156,7 @@ describe("DailyAppOpen", () => {
       render(<DailyAppOpen familyId="family-1" />);
     });
     expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(10 * 60 * 1000));
     await act(async () => {
       window.dispatchEvent(new Event("pointerdown"));
     });

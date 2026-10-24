@@ -16,6 +16,8 @@ import {
 } from "./growth-metrics";
 
 const COHORT_WEEKS = 8;
+/** Family ids per `in` filter, so the request URL stays short. */
+const FAMILY_ID_CHUNK = 100;
 
 /**
  * First touch as stored at signup (signup_attributions, one row per
@@ -23,35 +25,46 @@ const COHORT_WEEKS = 8;
  * trusted here. Paged directly — far fewer requests than id filters, and
  * independent of the user list, so both load in parallel.
  */
-async function listAttributions(): Promise<Map<string, unknown>> {
+async function listAttributions(since: string): Promise<Map<string, unknown>> {
   const client = createClient();
   const rows = await fetchAllRows<{ user_id: string; attribution: unknown }>((from, to) =>
-    client.from("signup_attributions").select("user_id,attribution").order("user_id").range(from, to),
+    client
+      .from("signup_attributions")
+      .select("user_id,attribution")
+      // Rows are last written at confirmation, so older rows belong to
+      // accounts that can never reach the window, a pool or a cohort.
+      .gte("updated_at", since)
+      .order("user_id")
+      .range(from, to),
   );
   return new Map(rows.map((row) => [row.user_id, row.attribution]));
 }
 
-/** Owners of these families: one paged query, filtered in memory. */
-async function listMemberIds(familyIds: string[]): Promise<Set<string>> {
-  if (familyIds.length === 0) return new Set();
+/** Owners of these families, queried in chunks (paying families are few). */
+async function listOwnerIds(familyIds: string[]): Promise<Set<string>> {
   const client = createClient();
-  const wanted = new Set(familyIds);
-  const owners = await fetchAllRows<{ family_id: string; user_id: string }>((from, to) =>
-    client
-      .from("family_memberships")
-      .select("family_id,user_id")
-      // The owner pays; invited relatives joining a paying family are not
-      // a new paying conversion of their channel.
-      .eq("role", "owner")
-      .order("id")
-      .range(from, to),
-  );
-  return new Set(owners.filter((row) => wanted.has(row.family_id)).map((row) => row.user_id));
+  const owners = new Set<string>();
+  for (let index = 0; index < familyIds.length; index += FAMILY_ID_CHUNK) {
+    const chunk = familyIds.slice(index, index + FAMILY_ID_CHUNK);
+    const rows = await fetchAllRows<{ user_id: string }>((from, to) =>
+      client
+        .from("family_memberships")
+        .select("user_id")
+        .in("family_id", chunk)
+        // The owner pays; invited relatives joining a paying family are
+        // not a new paying conversion of their channel.
+        .eq("role", "owner")
+        .order("id")
+        .range(from, to),
+    );
+    for (const row of rows) owners.add(row.user_id);
+  }
+  return owners;
 }
 
 /**
  * Everything the "Wachstum" tab needs. Accounts, aggregated events and
- * entitlements are loaded once (memberships only for paying families) and
+ * entitlements are loaded once (owners only for paying families) and
  * summarized in growth-metrics.ts.
  */
 export async function getGrowthOverview(days: 7 | 30 | 90) {
@@ -72,7 +85,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
       listAllUsers(),
       // signup_attributions is one row per account; loaded alongside the
       // users and narrowed to the relevant accounts below.
-      listAttributions(),
+      listAttributions(eventsSince),
       // Aggregated per user, event and Berlin day in SQL and returned as
       // one JSON array — a fraction of the raw rows, in a single call.
       client.rpc("admin_growth_event_days", {
@@ -91,7 +104,7 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
           .range(from, to),
       ).then(async (rows) => {
         const billing = summarizeFamilyBilling(rows, now);
-        return { ...billing, payingUserIds: await listMemberIds([...billing.paidFamilies]) };
+        return { ...billing, payingUserIds: await listOwnerIds([...billing.paidFamilies]) };
       }),
       // Families that ever forwarded an email, counted in SQL.
       client.rpc("admin_forwarding_family_count"),

@@ -150,7 +150,7 @@ describe("growth tracking migration", () => {
       "after insert or update of raw_user_meta_data, email_confirmed_at on auth.users",
     );
     // Follows the metadata until confirmation, then frozen.
-    expect(migration).toContain("on conflict (user_id) do update set attribution = excluded.attribution;");
+    expect(migration).toContain("set attribution = excluded.attribution, updated_at = now();");
     expect(migration).not.toMatch(/create policy[^;]*signup_attributions/);
     // Existing accounts are backfilled once.
     expect(migration).toContain(

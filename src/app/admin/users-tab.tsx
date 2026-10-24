@@ -30,10 +30,11 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
   };
   // Counts match the Übersicht: only confirmed accounts. Unconfirmed code
   // requests stay in the list for support, marked as such.
-  for (const account of overview.signupAccounts) {
+  const signups = overview.accounts.filter((account) => account.confirmedAt);
+  for (const account of signups) {
     statusCounts[classifyAccountActivity(account)] += 1;
   }
-  const unconfirmed = overview.accounts.length - overview.signupAccounts.length;
+  const unconfirmed = overview.accounts.length - signups.length;
 
   return (
     <section className="overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card">

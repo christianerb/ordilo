@@ -47,7 +47,7 @@ Findings nach Schwere einordnen: **P1** = echter Fehler mit Auswirkung (falsche 
 - **TypeScript**: Strict mode, keine `any` ohne Begründung.
 - **Komponenten**: shadcn/ui + Radix UI als Basis. Eigene Komponenten unter `src/components/ordilo/`.
 - **Schemas**: Zod für Validierung (Server und Client), siehe `src/lib/schemas/`.
-- **Supabase-Clients**: Browser-Client über `@/lib/supabase/client`, Server-Client über `@/lib/supabase/server`, Admin-Client über `@/lib/supabase/admin` (nur serverseitig: API Routes und die admin-geschützten Datenmodule unter `src/lib/admin/`, nie im Client).
+- **Supabase-Clients**: Browser-Client über `@/lib/supabase/client`, Server-Client über `@/lib/supabase/server`, Admin-Client über `@/lib/supabase/admin` (nur in API Routes, nie im Client).
 - **Keine Server-Secrets im Client**: `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `DATALAB_API_KEY` dürfen nie im Browser-Code erscheinen.
 
 ## PR-Checklist

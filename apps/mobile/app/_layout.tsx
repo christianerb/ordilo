@@ -147,8 +147,8 @@ function RootLayoutNav() {
   const familyId = family && isOnboardingComplete(family) ? family.id : null;
   useEffect(() => {
     if (!userId || !familyId) return;
-    // Launched in the background (e.g. by the OS) is not a visit yet.
-    if (AppState.currentState === "active") void recordDailyAppOpen(familyId);
+    // The first record comes from the route effect below (it also runs on
+    // launch), so starting here would send a second, parallel request.
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void recordDailyAppOpen(familyId);
     });

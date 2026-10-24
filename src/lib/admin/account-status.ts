@@ -24,13 +24,15 @@ export function classifyAccountActivity(
     lastSignInAt?: string | null;
     lastActivityAt?: string | null;
     createdAt?: string | null;
+    /** Signup time (code confirmed); preferred over createdAt when set. */
+    confirmedAt?: string | null;
   },
   now: Date = new Date(),
 ): AccountActivityStatus {
   const candidates = [
     timestamps.lastSignInAt,
     timestamps.lastActivityAt,
-    timestamps.createdAt,
+    timestamps.confirmedAt ?? timestamps.createdAt,
   ]
     .filter((value): value is string => Boolean(value))
     .map((value) => new Date(value).getTime())
@@ -46,6 +48,8 @@ export function classifyAccountActivity(
 
 type AccountTimestamps = {
   createdAt: string;
+  /** Signup time (code confirmed); preferred over createdAt when set. */
+  confirmedAt?: string | null;
   lastSignInAt: string | null;
   lastActivityAt: string | null;
 };
@@ -67,7 +71,8 @@ export function summarizeRetention(
   now: Date = new Date(),
 ): { eligible: number; returned: number; rate: number | null } {
   const eligible = accounts.filter(
-    (account) => now.getTime() - new Date(account.createdAt).getTime() > 7 * DAY_MS,
+    (account) =>
+      now.getTime() - new Date(account.confirmedAt ?? account.createdAt).getTime() > 7 * DAY_MS,
   );
   const returned = eligible.filter((account) => {
     const lastUse = lastUseTime(account);

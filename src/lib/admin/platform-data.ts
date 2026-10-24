@@ -38,8 +38,6 @@ export type PlatformOverview = {
   averageMembersPerFamily: number;
   documentsTotal: number;
   accounts: PlatformAccount[];
-  /** Confirmed accounts only, with createdAt = confirmation (see signups). */
-  signupAccounts: PlatformAccount[];
   dailyMetrics: DailyPlatformMetric[];
 };
 
@@ -222,9 +220,6 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
         : Math.round(((memberCountResult.count ?? 0) / familiesTotal) * 10) / 10,
     documentsTotal: documentCountResult.count ?? 0,
     accounts,
-    signupAccounts: accounts.flatMap((account) =>
-      account.confirmedAt ? [{ ...account, createdAt: account.confirmedAt }] : [],
-    ),
     dailyMetrics: [...metricsByDate.entries()].map(([date, metric]) => ({
       date,
       registrations: metric.registrations,

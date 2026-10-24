@@ -61,3 +61,21 @@ it("computes stickiness as average daily actives over 30-day actives", () => {
   expect(result.averageDailyActive).toBe(3);
   expect(result.ratio).toBe(1.5);
 });
+
+describe("signup time from confirmation", () => {
+  it("prefers confirmedAt over createdAt", () => {
+    const now = new Date("2026-10-22T12:00:00Z");
+    // Code requested long ago, confirmed yesterday: a new signup, not "lange nicht da".
+    expect(
+      classifyAccountActivity(
+        { createdAt: "2026-06-01T00:00:00Z", confirmedAt: "2026-10-21T12:00:00Z" },
+        now,
+      ),
+    ).toBe("aktiv");
+    const retention = summarizeRetention(
+      [{ createdAt: "2026-06-01T00:00:00Z", confirmedAt: "2026-10-20T00:00:00Z", lastSignInAt: null, lastActivityAt: null }],
+      now,
+    );
+    expect(retention.eligible).toBe(0);
+  });
+});
