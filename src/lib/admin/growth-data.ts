@@ -107,9 +107,12 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
 
   const { paidFamilies, trialingFamilies, payingUserIds } = billing;
 
+  // Only accounts confirmed since the earliest loaded event can reach the
+  // window, a rate pool or a cohort; older ones are never classified.
+  const eventsSinceMs = Date.parse(eventsSince);
   const accounts: GrowthAccount[] = users.flatMap((user) => {
     const confirmedAt = signupConfirmedAt(user);
-    return confirmedAt
+    return confirmedAt && Date.parse(confirmedAt) >= eventsSinceMs
       ? [
           {
             id: user.id,

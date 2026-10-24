@@ -263,6 +263,8 @@ const SEARCH_ENGINES = [
   "bing.com", "duckduckgo.com", "ecosia.org", "startpage.com",
   "search.yahoo.com", "qwant.com", "search.brave.com", "yandex.",
   "baidu.com",
+  // Android Google app ("android-app://com.google.android.googlequicksearchbox/…").
+  "com.google.android.googlequicksearchbox",
 ];
 const AI_ASSISTANTS = [
   "chatgpt.com", "chat.openai.com", "perplexity.ai", "claude.ai",

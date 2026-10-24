@@ -155,6 +155,15 @@ function RootLayoutNav() {
     return () => subscription.remove();
   }, [userId, familyId]);
 
+  // Moving between screens is use too: covers a new day (or a failed
+  // call) while the app stayed in the foreground. Same-day repeats cost no
+  // request (memoized), failed ones are rate-limited.
+  const route = segments.join("/");
+  useEffect(() => {
+    if (!userId || !familyId || AppState.currentState !== "active") return;
+    void recordDailyAppOpen(familyId);
+  }, [route, userId, familyId]);
+
   // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):
   // no session → einstieg intro (which links to login); no family or
   // unfinished owner setup → onboarding; invited member with a pending

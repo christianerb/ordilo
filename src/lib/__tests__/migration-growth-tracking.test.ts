@@ -136,6 +136,13 @@ describe("growth tracking migration", () => {
     expect(migration).toContain("and (earlier.occurred_at, earlier.id) < (e.occurred_at, e.id);");
   });
 
+  it("cleans the attribution inside the exception-guarded block", () => {
+    expect(migration).toContain(
+      "  v_attribution := public.clean_signup_attribution(new.raw_user_meta_data -> 'signup_attribution');",
+    );
+    expect(migration).not.toContain("v_attribution jsonb := ");
+  });
+
   it("copies the first touch at account creation into a table users cannot change", () => {
     expect(migration).toContain("create table if not exists public.signup_attributions");
     expect(migration).toContain("alter table public.signup_attributions enable row level security;");

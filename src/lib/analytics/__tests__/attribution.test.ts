@@ -232,6 +232,7 @@ describe("classifyChannel", () => {
     [{ referrer: "google.de" }, "suche"],
     [{ referrer: "news.google.com" }, "suche"],
     [{ referrer: "google.co.uk" }, "suche"],
+    [{ referrer: "com.google.android.googlequicksearchbox" }, "suche"],
     [{ referrer: "docs.google.com" }, "verweis"],
     [{ referrer: "sites.google.com" }, "verweis"],
     [{ referrer: "ecosia.org" }, "suche"],

@@ -373,7 +373,12 @@ immutable
 set search_path = public
 as $$
   select coalesce(jsonb_object_agg(key, value), '{}'::jsonb)
-  from jsonb_each_text(case when jsonb_typeof(p_raw) = 'object' then p_raw else '{}'::jsonb end)
+  from (
+    -- Only plain string values; nested objects or numbers are dropped.
+    select entry.key, entry.value #>> '{}' as value
+    from jsonb_each(case when jsonb_typeof(p_raw) = 'object' then p_raw else '{}'::jsonb end) as entry
+    where jsonb_typeof(entry.value) = 'string'
+  ) as fields
   where key in (
       'source', 'medium', 'campaign', 'content', 'term',
       'referrer', 'landing', 'via', 'paid_click'
@@ -403,8 +408,11 @@ security definer
 set search_path = public
 as $$
 declare
-  v_attribution jsonb := public.clean_signup_attribution(new.raw_user_meta_data -> 'signup_attribution');
+  v_attribution jsonb;
 begin
+  -- Assigned inside the block so the exception handler below also covers
+  -- the cleaning: analytics must never block creating an account.
+  v_attribution := public.clean_signup_attribution(new.raw_user_meta_data -> 'signup_attribution');
   -- Follow the metadata while the account is unconfirmed: a code request
   -- that was abandoned must not win over the one that led to the signup.
   -- Once confirmed, the first touch is frozen (later auth.updateUser calls
