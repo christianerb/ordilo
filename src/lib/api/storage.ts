@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { jsonError } from "@/lib/api/respond";
 
 /**
@@ -58,4 +59,20 @@ export async function readFileHeaderBytes(
       response: jsonError(errorMessage, "FILE_READ_ERROR", 400),
     };
   }
+}
+
+/**
+ * Deterministic document ID for an idempotent import: stable within one
+ * family/user/upload key, so a retried upload lands on the same Storage
+ * object and documents row instead of creating a duplicate.
+ */
+export function documentIdForUploadKey(
+  familyId: string,
+  userId: string,
+  uploadKey: string,
+): string {
+  const hash = createHash("sha256")
+    .update(`${familyId}:${userId}:${uploadKey}`)
+    .digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }

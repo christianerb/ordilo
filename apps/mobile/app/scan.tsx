@@ -2,11 +2,6 @@ import { launchScanner } from "@dariyd/react-native-document-scanner";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
-import {
-  manipulateAsync,
-  SaveFormat,
-} from "expo-image-manipulator";
-import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -81,6 +76,7 @@ import {
   validateScannedDocument,
   waitForScannedDocumentAnalysis,
 } from "@/src/lib/scan";
+import { prepareScan } from "@/src/lib/scan-encode";
 import { recordScanFailure } from "@/src/lib/analytics";
 import {
   completionEntering,
@@ -179,49 +175,6 @@ function isPersistedQueueItem(
 
 function createDocumentId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-async function prepareImage(uri: string, name: string): Promise<ScannedDocument> {
-  const image = await manipulateAsync(
-    uri,
-    [{ resize: { width: 1600 } }],
-    { compress: 0.72, format: SaveFormat.JPEG },
-  );
-  const info = await FileSystem.getInfoAsync(image.uri);
-  return {
-    id: createDocumentId(),
-    uri: image.uri,
-    name: name.replace(/\.[^.]+$/, "") + ".jpg",
-    mimeType: "image/jpeg",
-    size: info.exists ? info.size : undefined,
-  };
-}
-
-async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> {
-  if (pages.length === 1) return pages[0];
-  const imageTags = await Promise.all(
-    pages.map(async (page) => {
-      const base64 = await FileSystem.readAsStringAsync(page.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      return `<section><img src="data:image/jpeg;base64,${base64}" /></section>`;
-    }),
-  );
-  const result = await Print.printToFileAsync({
-    html: `<html><head><style>
-      @page { margin: 0; } body { margin: 0; }
-      section { page-break-after: always; height: 100vh; display: flex; align-items: center; justify-content: center; }
-      img { width: 100%; height: auto; }
-    </style></head><body>${imageTags.join("")}</body></html>`,
-  });
-  const info = await FileSystem.getInfoAsync(result.uri);
-  return {
-    id: createDocumentId(),
-    uri: result.uri,
-    name: `Scan-${new Date().toISOString().slice(0, 10)}.pdf`,
-    mimeType: "application/pdf",
-    size: info.exists ? info.size : undefined,
-  };
 }
 
 /**
@@ -682,18 +635,24 @@ function ScanModalContent({ consentSheet }: { consentSheet: ReactNode }) {
     if (scannerBusy) return;
     setScannerBusy(true);
     try {
-      const result = await launchScanner({ quality: 0.78 });
+      // The scanner's JPEG is the one and only encode: prepareScan uploads
+      // it untouched unless the document would exceed the upload limit.
+      const result = await launchScanner({ quality: 0.92 });
       if (result.didCancel) return;
       if (result.error || !result.images?.length) {
         throw new Error(result.errorMessage ?? "Scanner returned no images.");
       }
 
-      const pages = await Promise.all(
-        result.images.map((image, index) =>
-          prepareImage(image.uri, image.fileName || `Scan-${index + 1}.jpg`),
-        ),
+      const document = await prepareScan(
+        result.images.map((image, index) => ({
+          uri: image.uri,
+          name: image.fileName || `Scan-${index + 1}.jpg`,
+          width: image.width,
+          height: image.height,
+          scannerJpeg: true,
+        })),
       );
-      const queued = await addToQueue(await combinePages(pages));
+      const queued = await addToQueue(document);
       if (queued) {
         void success();
         await reviewSingle(queued);
@@ -745,13 +704,20 @@ function ScanModalContent({ consentSheet }: { consentSheet: ReactNode }) {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
       mediaTypes: ["images"],
-      quality: 0.8,
+      quality: 1,
     });
     if (result.canceled) return;
     try {
       const images = await Promise.all(
         result.assets.map((asset, index) =>
-          prepareImage(asset.uri, asset.fileName ?? `Foto-${index + 1}.jpg`),
+          prepareScan([
+            {
+              uri: asset.uri,
+              name: asset.fileName ?? `Foto-${index + 1}.jpg`,
+              width: asset.width,
+              height: asset.height,
+            },
+          ]),
         ),
       );
       const queued: QueueItem[] = [];

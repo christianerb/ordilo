@@ -6,6 +6,8 @@ import {
   DOCUMENT_PIPELINE_STEPS,
   DOCUMENT_PIPELINE_STATUSES,
   getDocumentPipelineStepsCompleted,
+  MAX_DIRECT_UPLOAD_FILE_SIZE,
+  MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
   MAX_DOCUMENT_FILE_SIZE,
   MAX_DOCUMENT_FILE_SIZE_LABEL,
   type AcceptedDocumentMimeType,
@@ -204,6 +206,10 @@ export type FileValidationResult =
 export function validateFile(
   mimeType: string,
   fileSize: number,
+  limit: { bytes: number; label: string } = {
+    bytes: MAX_FILE_SIZE,
+    label: MAX_FILE_SIZE_LABEL,
+  },
 ): FileValidationResult {
   // Check MIME type — accept images and PDF only.
   const acceptedMimes = ACCEPTED_MIME_TYPES as readonly string[];
@@ -216,10 +222,10 @@ export function validateFile(
   }
 
   // Check file size.
-  if (fileSize > MAX_FILE_SIZE) {
+  if (fileSize > limit.bytes) {
     return {
       valid: false,
-      error: `Die Datei ist zu groß. Maximum: ${MAX_FILE_SIZE_LABEL}.`,
+      error: `Die Datei ist zu groß. Maximum: ${limit.label}.`,
       code: "FILE_TOO_LARGE",
     };
   }
@@ -344,9 +350,10 @@ export function validateFileWithSignature(
   mimeType: string,
   fileSize: number,
   bytes: Uint8Array,
+  limit?: { bytes: number; label: string },
 ): FileValidationResult {
   // 1. Check MIME type and size (existing logic).
-  const baseResult = validateFile(mimeType, fileSize);
+  const baseResult = validateFile(mimeType, fileSize, limit);
   if (!baseResult.valid) return baseResult;
 
   // 2. Check magic-byte signature.
@@ -431,6 +438,30 @@ export const uploadFamilyIdSchema = z.object({
 });
 
 export type UploadFamilyIdInput = z.infer<typeof uploadFamilyIdSchema>;
+
+/** Size limit for files uploaded straight to Storage via a signed URL. */
+export const DIRECT_UPLOAD_LIMIT = {
+  bytes: MAX_DIRECT_UPLOAD_FILE_SIZE,
+  label: MAX_DIRECT_UPLOAD_FILE_SIZE_LABEL,
+};
+
+/** Idempotency key a client attaches to one import (retries reuse it). */
+export const uploadKeySchema = z.string().regex(/^[a-zA-Z0-9_-]{8,120}$/);
+
+/**
+ * Body of POST /api/documents/upload-url and of the JSON variant of
+ * POST /api/documents/upload (finalize after the direct Storage upload).
+ */
+export const directUploadSchema = z.object({
+  family_id: z.string().uuid("Ungültige Familien-ID"),
+  upload_key: uploadKeySchema,
+  filename: z.string().min(1).max(255),
+  mime_type: z.string().min(1),
+  size: z.number().int().nonnegative().optional(),
+  client: z.string().optional(),
+});
+
+export type DirectUploadInput = z.infer<typeof directUploadSchema>;
 
 // ---------------------------------------------------------------------------
 // Failed-stage derivation (retry routing)
