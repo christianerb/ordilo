@@ -121,6 +121,8 @@ describe("summarizeGrowth — channels", () => {
       account("legacy", created, null),
     ];
     const events = [
+      // App opens are measured since before these accounts signed up.
+      event("someone", "app_opened", daysAgo(60)),
       event("s1", "document_confirmed", after(created, 1)),
       event("s1", "chat_question_sent", after(created, 1)),
       event("s1", "app_opened", after(created, 8)),
@@ -340,5 +342,21 @@ describe("parseGrowthEventDays", () => {
     expect(parseGrowthEventDays(null)).toEqual([]);
     expect(() => parseGrowthEventDays([{ ...row, event_count: -1 }])).toThrow();
     expect(() => parseGrowthEventDays({ rows: [] })).toThrow();
+  });
+});
+
+describe("summarizeGrowth — start of app-open measurement", () => {
+  it("leaves return windows before the first recorded app open open", () => {
+    const created = daysAgo(20);
+    const accounts = [account("a", created)];
+    // Measuring started 10 days after signup: week 1 lies before it.
+    const late = summarize(accounts, [event("a", "app_opened", after(created, 10))]);
+    expect(late.channels[0].week1).toEqual({ eligible: 0, count: 0, rate: null });
+    expect(late.returnsTrackedSince).toBe(berlinDay(new Date(after(created, 10))));
+
+    // Without any recorded app open nothing can be measured yet.
+    const never = summarize(accounts, [event("a", "search_completed", after(created, 8))]);
+    expect(never.channels[0].week1.rate).toBeNull();
+    expect(never.returnsTrackedSince).toBeNull();
   });
 });

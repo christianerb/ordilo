@@ -82,11 +82,19 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   const { paidFamilies, trialingFamilies } = summarizeFamilyBilling(entitlements, now);
   const payingUserIds = await listMemberIds([...paidFamilies]);
 
-  const accounts: GrowthAccount[] = users.map((user) => ({
-    id: user.id,
-    createdAt: user.created_at,
-    attribution: parseStoredAttribution(user.user_metadata?.signup_attribution),
-  }));
+  // Requesting a login code already creates the auth user. Only accounts
+  // whose code was confirmed are real signups; their clock starts then.
+  const accounts: GrowthAccount[] = users.flatMap((user) =>
+    user.email_confirmed_at
+      ? [
+          {
+            id: user.id,
+            createdAt: user.email_confirmed_at,
+            attribution: parseStoredAttribution(user.user_metadata?.signup_attribution),
+          },
+        ]
+      : [],
+  );
 
   return {
     ...summarizeGrowth({

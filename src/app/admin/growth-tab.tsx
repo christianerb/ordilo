@@ -33,6 +33,7 @@ function ShareCell({ value }: { value: Share }) {
 
 export async function AdminGrowthTab({ days }: { days: 7 | 30 | 90 }) {
   const growth = await getGrowthOverview(days);
+  const confirmedCount = growth.funnel.find((step) => step.key === "confirm")?.count ?? 0;
 
   const metrics = [
     {
@@ -51,7 +52,7 @@ export async function AdminGrowthTab({ days }: { days: 7 | 30 | 90 }) {
     {
       label: "Zeit bis zum ersten Dokument",
       value: formatHours(growth.medianHoursToFirstConfirm),
-      detail: "Die Hälfte der Konten schafft das erste bestätigte Dokument in dieser Zeit",
+      detail: `Mittlerer Wert der ${formatAdminNumber(confirmedCount)} neuen Konten, die schon ein Dokument bestätigt haben`,
     },
     {
       label: "Aktiv in den letzten 7 Tagen",
@@ -159,7 +160,12 @@ export async function AdminGrowthTab({ days }: { days: 7 | 30 | 90 }) {
       <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
         <h2 className="text-base font-semibold text-foreground">Kommen neue Konten wieder?</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Anmeldungen pro Woche. „Woche 1“ heißt: an Tag 7 bis 13 nach der Anmeldung wieder da, „Woche 4“: an Tag 28 bis 34. „Noch offen“ heißt: Die Zeit ist noch nicht um.
+          Anmeldungen pro Woche. „Woche 1“ heißt: an Tag 7 bis 13 nach der Anmeldung wieder da, „Woche 4“: an Tag 28 bis 34. „Noch offen“ heißt: Die Zeit ist noch nicht um oder lag vor dem Start der Messung.
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {growth.returnsTrackedSince
+            ? `„App geöffnet“ wird seit dem ${formatGermanDate(growth.returnsTrackedSince)} gemessen.`
+            : "„App geöffnet“ wurde noch nicht gemessen."}
         </p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[520px] text-left text-sm">

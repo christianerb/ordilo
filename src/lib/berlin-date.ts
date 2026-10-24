@@ -40,9 +40,15 @@ function getWallClockFormatter(): Intl.DateTimeFormat {
   return wallClockFormatter;
 }
 
-/** The Berlin calendar day as YYYY-MM-DD. */
+/**
+ * The Berlin calendar day as YYYY-MM-DD, built from the formatter's parts:
+ * the joined string's shape depends on the engine's locale data (some
+ * versions print en-CA as "10/24/2026").
+ */
 export function berlinDay(now: Date = new Date()): string {
-  return getDayFormatter().format(now);
+  const parts: Record<string, string> = {};
+  for (const part of getDayFormatter().formatToParts(now)) parts[part.type] = part.value;
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 /**

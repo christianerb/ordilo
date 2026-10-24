@@ -10,7 +10,7 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 const MIDNIGHT_SLACK_MS = 5_000;
 
 /**
- * Records "app opened" on mount, whenever the tab becomes visible again,
+ * Records "app opened" on a visible mount, whenever the tab becomes visible,
  * and at Berlin midnight while the tab stays visible — so a tab left open
  * overnight still counts the new day. recordDailyAppOpen turns repeat
  * calls on the same day into no round trip.
@@ -32,7 +32,8 @@ export function DailyAppOpen({ familyId }: { familyId: string }) {
       }, nextBerlinMidnight(Date.now()) - Date.now() + MIDNIGHT_SLACK_MS);
     };
 
-    record();
+    // A tab restored or opened in the background is not a visit yet.
+    if (document.visibilityState === "visible") record();
     scheduleMidnight();
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {

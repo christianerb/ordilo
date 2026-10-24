@@ -75,7 +75,10 @@ export async function recordProductEvent(
 // In-memory only (no browser storage): skips the round trip after the
 // first successful call of the day for this user within one page session.
 // Keyed by user so a sign-out and a different sign-in still record.
-let lastRecordedAppOpen: string | null = null;
+let lastRecordedAppOpen: { key: string; at: number } | null = null;
+// The day key comes from this device's clock; the database decides the real
+// day. Expiring the memo bounds how long a skewed clock can skip a new day.
+const APP_OPEN_MEMO_MS = 30 * 60 * 1000;
 
 /**
  * Record that the user opened the app today, so "aktiv" also counts
@@ -100,13 +103,14 @@ export async function recordDailyAppOpen(
     if (!userId) return;
 
     const key = `${userId}:${berlinDay(now)}`;
-    if (lastRecordedAppOpen === key) return;
+    const nowMs = now.getTime();
+    if (lastRecordedAppOpen?.key === key && nowMs - lastRecordedAppOpen.at < APP_OPEN_MEMO_MS) return;
     const { data, error } = await client.rpc("record_app_open", {
       p_family_id: familyId,
       p_platform: platform,
     });
     // false: setup not finished yet — ask again on the next open.
-    if (!error && data === true) lastRecordedAppOpen = key;
+    if (!error && data === true) lastRecordedAppOpen = { key, at: nowMs };
   } catch {
     // Analytics must never block a user-facing action.
   }

@@ -78,6 +78,8 @@ const PAID_MEDIUMS = ["cpc", "ppc", "paid", "paidsocial", "paid_social", "paid-s
 
 const MAX_VALUE_LENGTH = 100;
 const MAX_PATH_LENGTH = 200;
+/** Longer paths are not a page anyone landed on; drop them. */
+const MAX_RAW_PATH_LENGTH = 1000;
 
 function cleanValue(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -113,11 +115,15 @@ export function cleanHost(value: string | null | undefined): string | undefined 
  */
 function cleanPath(value: string | null | undefined): string | undefined {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
-  const path = value.split(/[?#]/)[0].slice(0, MAX_PATH_LENGTH);
+  const path = value.split(/[?#]/)[0];
+  // Check the whole path first: cutting first could split a "%C3" escape.
+  if (path.length > MAX_RAW_PATH_LENGTH) return undefined;
   // Letters in any script and percent-encoding (e.g. "%C3%BC"), nothing else.
   if (!/^\/(?:[\p{L}\p{N}\-/_.]|%[0-9a-f]{2})*$/iu.test(path)) return undefined;
+  const firstSegment = `/${path.split("/")[1]}`;
+  if (path.length > MAX_PATH_LENGTH) return firstSegment;
   if (path === "/" || path === "/login" || isPublicMarketingPath(path)) return path;
-  return `/${path.split("/")[1]}`;
+  return firstSegment;
 }
 
 function isOwnHost(host: string, ownHost: string): boolean {

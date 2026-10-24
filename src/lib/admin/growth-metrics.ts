@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { berlinDay, startOfBerlinWeek } from "@/lib/berlin-date";
+import { berlinDay, startOfBerlinDay, startOfBerlinWeek } from "@/lib/berlin-date";
 import { resolveEffectivePlan, type PlanCode, type EntitlementStatus } from "@/lib/billing/entitlements";
 import {
   classifyChannel,
@@ -19,7 +19,8 @@ import {
  * - Zurückgekommen in Woche 1 / Woche 4: any use (including just opening
  *   the app) on days 7–13 / 28–34 after signup. Onboarding steps and
  *   joining a family do not count as coming back.
- * - Rates only count people whose window has fully passed (see Share).
+ * - Rates only count people whose window has fully passed (see Share);
+ *   return rates also only windows after app opens were first recorded.
  * - Aktiv genutzt: a core action (upload, confirm, question, task, …),
  *   as opposed to only opening the app.
  */
@@ -175,29 +176,52 @@ function shareOf(
   now: number,
   windowDays: number,
   hit: (account: GrowthAccount, created: number) => boolean,
+  measurableFrom: (created: number) => boolean = () => true,
 ): Share {
   let eligible = 0;
   let count = 0;
   for (const account of accounts) {
     const created = new Date(account.createdAt).getTime();
-    if (now < created + windowDays * DAY_MS) continue;
+    if (now < created + windowDays * DAY_MS || !measurableFrom(created)) continue;
     eligible += 1;
     if (hit(account, created)) count += 1;
   }
   return { eligible, count, rate: eligible === 0 ? null : count / eligible };
 }
 
-/** Came back on days [startDay, endDay) after signup. */
+/**
+ * Came back on days [startDay, endDay) after signup. Only windows that
+ * start after app opens were first recorded count: before that, someone
+ * who only opened the app left no trace and would look like they never
+ * came back. `trackedSince` null means no app open was recorded yet.
+ */
 function returnedBetween(
   accounts: GrowthAccount[],
   timelines: Map<string, UserTimeline>,
   startDay: number,
   endDay: number,
   now: number,
+  trackedSince: number | null,
 ): Share {
-  return shareOf(accounts, now, endDay, (account, created) =>
-    anyBetween(timelines.get(account.id)?.returns, created + startDay * DAY_MS, created + endDay * DAY_MS),
+  return shareOf(
+    accounts,
+    now,
+    endDay,
+    (account, created) =>
+      anyBetween(timelines.get(account.id)?.returns, created + startDay * DAY_MS, created + endDay * DAY_MS),
+    (created) => trackedSince !== null && created + startDay * DAY_MS >= trackedSince,
   );
+}
+
+/** Start of the Berlin day of the first recorded app open, or null. */
+function appOpensTrackedSince(events: GrowthEventDay[]): number | null {
+  let earliest: number | null = null;
+  for (const event of events) {
+    if (event.event_name !== "app_opened") continue;
+    const time = new Date(event.first_at).getTime();
+    if (!Number.isNaN(time) && (earliest === null || time < earliest)) earliest = time;
+  }
+  return earliest === null ? null : startOfBerlinDay(earliest);
 }
 
 /** Activated, among accounts whose 7-day window has passed. */
@@ -261,6 +285,8 @@ export type GrowthSummary = {
   weeklyActive: number;
   /** Distinct people with a core action in the last 7 days. */
   weeklyEngaged: number;
+  /** Berlin day (YYYY-MM-DD) app opens were first recorded, or null. */
+  returnsTrackedSince: string | null;
   invitesCreated: number;
   invitesAccepted: number;
 };
@@ -284,6 +310,7 @@ export function summarizeGrowth({
   const nowMs = now.getTime();
   const sinceMs = new Date(since).getTime();
   const timelines = buildTimelines(events);
+  const trackedSince = appOpensTrackedSince(events);
   const inWindow = accounts.filter(
     (account) => new Date(account.createdAt).getTime() >= sinceMs,
   );
@@ -330,7 +357,7 @@ export function summarizeGrowth({
       signups: members.length,
       activation: activationOf(members, timelines, nowMs),
       paying: members.filter((account) => payingUserIds.has(account.id)).length,
-      week1: returnedBetween(members, timelines, 7, 14, nowMs),
+      week1: returnedBetween(members, timelines, 7, 14, nowMs, trackedSince),
     }))
     .sort((left, right) => right.signups - left.signups);
 
@@ -345,8 +372,8 @@ export function summarizeGrowth({
       weekStart: berlinDay(new Date(start)),
       signups: members.length,
       activation: activationOf(members, timelines, nowMs),
-      week1: returnedBetween(members, timelines, 7, 14, nowMs),
-      week4: returnedBetween(members, timelines, 28, 35, nowMs),
+      week1: returnedBetween(members, timelines, 7, 14, nowMs, trackedSince),
+      week4: returnedBetween(members, timelines, 28, 35, nowMs, trackedSince),
     });
   }
 
@@ -376,6 +403,7 @@ export function summarizeGrowth({
     weeklyEngaged,
     invitesCreated: countInWindow("invite_created"),
     invitesAccepted: countInWindow("invite_accepted"),
+    returnsTrackedSince: trackedSince === null ? null : berlinDay(new Date(trackedSince)),
   };
 }
 

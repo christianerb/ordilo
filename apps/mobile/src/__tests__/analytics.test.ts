@@ -175,8 +175,11 @@ describe("recordDailyAppOpen", () => {
   it("records the open through the deduplicating RPC once per day", async () => {
     const { rpc } = mockClient();
     await recordDailyAppOpen("family-1", new Date("2026-10-22T08:00:00Z"));
-    await recordDailyAppOpen("family-1", new Date("2026-10-22T12:00:00Z"));
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:20:00Z"));
     expect(rpc).toHaveBeenCalledTimes(1);
+    // The memo expires, so a skewed device clock cannot skip a day for long.
+    await recordDailyAppOpen("family-1", new Date("2026-10-22T08:40:00Z"));
+    expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc).toHaveBeenCalledWith("record_app_open", {
       p_family_id: "family-1",
       p_platform: Platform.OS,

@@ -39,6 +39,7 @@ function overview(overrides: Record<string, unknown> = {}) {
     payingFamilies: 2,
     trialingFamilies: 1,
     forwardingFamilies: 3,
+    returnsTrackedSince: "2026-10-24",
     ...overrides,
   };
 }
@@ -65,6 +66,8 @@ describe("AdminGrowthTab", () => {
     expect(cohortRows[0].textContent).toContain("19.10.2026");
     expect(within(cohortRows[0] as HTMLElement).getAllByText("noch offen")).toHaveLength(3);
 
+    expect(screen.getByText("„App geöffnet“ wird seit dem 24.10.2026 gemessen.")).toBeTruthy();
+    expect(screen.getByText(/Mittlerer Wert der 0 neuen Konten/)).toBeTruthy();
     expect(screen.getByText("2 → 1")).toBeTruthy();
     expect(screen.getByText(/20 % aller Familien · 1 im Test/)).toBeTruthy();
   });

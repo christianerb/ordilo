@@ -90,6 +90,13 @@ describe("readAttribution", () => {
     expect(page({ pathname: "/ratgeber/elterngeld-übersicht" }).landing).toBe("/ratgeber/elterngeld-übersicht");
   });
 
+  it("checks long paths whole and shortens them to their first segment", () => {
+    const longSlug = `/ratgeber/${"elterngeld-%C3%BC".repeat(15)}`;
+    expect(longSlug.length).toBeGreaterThan(200);
+    expect(page({ pathname: longSlug }).landing).toBe("/ratgeber");
+    expect(page({ pathname: `/${"a".repeat(1200)}` }).landing).toBeUndefined();
+  });
+
   it("keeps only the first segment of non-public paths", () => {
     const token = "a".repeat(64);
     expect(page({ pathname: `/invite/${token}` }).landing).toBe("/invite");

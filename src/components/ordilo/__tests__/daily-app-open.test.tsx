@@ -68,4 +68,13 @@ describe("DailyAppOpen", () => {
     render(<DailyAppOpenTracker familyId={null} />);
     expect(recordDailyAppOpen).not.toHaveBeenCalled();
   });
+
+  it("does not count a tab that mounts in the background", () => {
+    pathname.current = "/home";
+    setVisibility("hidden");
+    render(<DailyAppOpen familyId="family-1" />);
+    expect(recordDailyAppOpen).not.toHaveBeenCalled();
+    act(() => setVisibility("visible"));
+    expect(recordDailyAppOpen).toHaveBeenCalledTimes(1);
+  });
 });

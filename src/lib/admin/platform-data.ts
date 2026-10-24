@@ -172,15 +172,23 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
     const day = new Date(startOfBerlinDayBefore(now.getTime(), offset));
     metricsByDate.set(dateKey(day), { registrations: 0, active: new Set(), uploads: 0 });
   }
+  // Only rows inside the chart can land in a bucket; skip the rest before
+  // the (Intl-based) day formatting.
+  const chartStart = startOfBerlinDayBefore(now.getTime(), days - 1);
+  const inChart = (iso: string) => new Date(iso).getTime() >= chartStart;
   for (const account of accounts) {
-    const bucket = metricsByDate.get(dateKey(new Date(account.createdAt)));
-    if (bucket) bucket.registrations += 1;
-    if (account.lastSignInAt) {
+    if (inChart(account.createdAt)) {
+      const bucket = metricsByDate.get(dateKey(new Date(account.createdAt)));
+      if (bucket) bucket.registrations += 1;
+    }
+    if (account.lastSignInAt && inChart(account.lastSignInAt)) {
       const activeBucket = metricsByDate.get(dateKey(new Date(account.lastSignInAt)));
       activeBucket?.active.add(account.id);
     }
   }
   for (const activity of activityRows) {
+    // Newest first: everything after the first older row is older too.
+    if (!inChart(activity.occurred_at)) break;
     const bucket = metricsByDate.get(dateKey(new Date(activity.occurred_at)));
     bucket?.active.add(activity.user_id);
   }
