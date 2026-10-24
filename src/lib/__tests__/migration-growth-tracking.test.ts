@@ -129,7 +129,11 @@ describe("growth tracking migration", () => {
   it("copies the first touch at account creation into a table users cannot change", () => {
     expect(migration).toContain("create table if not exists public.signup_attributions");
     expect(migration).toContain("alter table public.signup_attributions enable row level security;");
-    expect(migration).toContain("after insert on auth.users");
+    expect(migration).toContain(
+      "after insert or update of raw_user_meta_data, email_confirmed_at on auth.users",
+    );
+    // Follows the metadata until confirmation, then frozen.
+    expect(migration).toContain("on conflict (user_id) do update set attribution = excluded.attribution;");
     expect(migration).not.toMatch(/create policy[^;]*signup_attributions/);
     // Existing accounts are backfilled once.
     expect(migration).toContain(

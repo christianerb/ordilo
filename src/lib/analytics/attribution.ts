@@ -1,5 +1,4 @@
 import { isPublicMarketingPath } from "@/lib/public-routes";
-import { storedAttributionSchema } from "@/lib/schemas/growth";
 
 /**
  * Signup attribution without cookies or browser storage.
@@ -87,7 +86,7 @@ const MAX_RAW_PATH_LENGTH = 1000;
  * an email address, a phone number, or a long id/token some mail tools put
  * into utm_term or utm_content — are dropped entirely, not reshaped.
  */
-function cleanValue(value: string | null | undefined): string | undefined {
+export function cleanValue(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
   const raw = value.trim();
   if (looksPersonal(raw)) return undefined;
@@ -112,8 +111,11 @@ function safeDecode(value: string): string {
 
 function looksPersonal(value: string): boolean {
   if (value.includes("@") || /%40/i.test(value)) return true;
-  // Phone numbers start with "+" or "0" (dates like 2026-10-24 do not).
-  if ((value.match(/\d/g) ?? []).length >= 7 && /^(\+|0)[\d\s()./-]+$/.test(value)) return true;
+  // Phone numbers start with "+" or "0"; dates ("2026-10-24", "05.10.2026") are fine.
+  const isDate = /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(value);
+  if (!isDate && (value.match(/\d/g) ?? []).length >= 7 && /^(\+|0)[\d\s()./-]+$/.test(value)) {
+    return true;
+  }
   // UUIDs and other hex ids, with or without separators.
   if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(value)) return true;
   if (/^[0-9a-f]{16,}$/i.test(value.replace(/[-_.]/g, ""))) return true;
@@ -147,7 +149,7 @@ export function cleanHost(value: string | null | undefined): string | undefined 
  * anything else only its first segment — "/invite/<token>" becomes
  * "/invite", "/dokumente/<id>" becomes "/dokumente".
  */
-function cleanPath(value: string | null | undefined): string | undefined {
+export function cleanPath(value: string | null | undefined): string | undefined {
   if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
   const path = value.split(/[?#]/)[0];
   // Check the whole path first: cutting first could split a "%C3" escape.
@@ -246,36 +248,17 @@ export function attributionQuery(attribution: SignupAttribution): string {
   return params.toString();
 }
 
-/**
- * Narrow untrusted user metadata back to a SignupAttribution. Metadata is
- * client-writable at signup, so every field is re-cleaned before use.
- */
-export function parseStoredAttribution(value: unknown): SignupAttribution | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const parsed = storedAttributionSchema.safeParse(value);
-  if (!parsed.success) return null;
-  const raw = parsed.data;
-  const attribution: SignupAttribution = {};
-  for (const key of ["source", "medium", "campaign", "content", "term"] as const) {
-    const cleaned = cleanValue(raw[key]);
-    if (cleaned) attribution[key] = cleaned;
-  }
-  const referrer = cleanHost(raw.referrer);
-  if (referrer) attribution.referrer = referrer;
-  const landing = cleanPath(raw.landing);
-  if (landing) attribution.landing = landing;
-  if (raw.via) attribution.via = raw.via;
-  if (raw.paid_click) attribution.paid_click = raw.paid_click;
-  return attribution;
-}
 
 /** Webmail and mail apps — checked before search, they share domains. */
 const EMAIL_HOSTS = [
+  // Webmail hosts only — the bare portal domains (web.de, gmx.net,
+  // t-online.de) also carry news, which is a referral, not an e-mail.
   "mail.google.com", "com.google.android.gm", "outlook.live.com",
   "outlook.office.com", "outlook.office365.com", "mail.yahoo.com",
-  "web.de", "gmx.net", "gmx.de", "gmx.at", "gmx.ch", "t-online.de",
-  "freenet.de", "mail.proton.me", "icloud.com", "posteo.de", "mailbox.org",
-];
+  "navigator.web.de", "3c.web.de", "navigator.gmx.net", "3c.gmx.net",
+  "navigator.gmx.de", "email.t-online.de", "mail.freenet.de",
+  "mail.proton.me", "www.icloud.com", "posteo.de", "office.mailbox.org",
+]
 const SEARCH_ENGINES = [
   "bing.com", "duckduckgo.com", "ecosia.org", "startpage.com",
   "search.yahoo.com", "yahoo.com", "qwant.com", "search.brave.com", "yandex.",

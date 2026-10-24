@@ -3,9 +3,9 @@ import {
   attributionQuery,
   classifyChannel,
   cleanHost,
-  parseStoredAttribution,
   readAttribution,
 } from "../attribution";
+import { parseStoredAttribution } from "../stored-attribution";
 
 const page = (overrides: Partial<Parameters<typeof readAttribution>[0]> = {}) =>
   readAttribution({
@@ -102,6 +102,7 @@ describe("readAttribution", () => {
   it("keeps dates as campaign names and drops phone numbers", () => {
     expect(page({ search: "?utm_campaign=2026-10-24" }).campaign).toBe("2026-10-24");
     expect(page({ search: "?utm_campaign=20261024" }).campaign).toBe("20261024");
+    expect(page({ search: "?utm_campaign=05.10.2026" }).campaign).toBe("05.10.2026");
     expect(page({ search: "?utm_term=%2B49%20170%201234567" }).term).toBeUndefined();
   });
 
@@ -236,8 +237,11 @@ describe("classifyChannel", () => {
     [{ referrer: "ecosia.org" }, "suche"],
     [{ referrer: "mail.google.com" }, "email"],
     [{ referrer: "com.google.android.gm" }, "email"],
-    [{ referrer: "web.de" }, "email"],
+    [{ referrer: "navigator.web.de" }, "email"],
     [{ referrer: "email.t-online.de" }, "email"],
+    // Portal news articles are referrals, not e-mail.
+    [{ referrer: "web.de" }, "verweis"],
+    [{ referrer: "t-online.de" }, "verweis"],
     [{ referrer: "chatgpt.com" }, "ki_assistent"],
     [{ referrer: "gemini.google.com" }, "ki_assistent"],
     [{ source: "chatgpt" }, "ki_assistent"],

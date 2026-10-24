@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/admin";
-import { parseStoredAttribution } from "@/lib/analytics/attribution";
+import { parseStoredAttribution } from "@/lib/analytics/stored-attribution";
 import { startOfBerlinDayBefore } from "@/lib/berlin-date";
 import { fetchAllRows } from "./paginate";
 import { listAllUsers } from "./platform-data";
@@ -20,28 +20,16 @@ const COHORT_WEEKS = 8;
 const ID_CHUNK = 100;
 
 /**
- * First touch as copied at account creation (signup_attributions); user
- * metadata itself stays editable by its owner and is not trusted here.
+ * First touch as stored at signup (signup_attributions, one row per
+ * account); user metadata itself stays editable by its owner and is not
+ * trusted here. Paged directly — far fewer requests than id filters.
  */
-async function listAttributions(userIds: string[]): Promise<{ user_id: string; attribution: unknown }[]> {
+async function listAttributions(userIds: Set<string>): Promise<Map<string, unknown>> {
   const client = createClient();
-  const chunks: string[][] = [];
-  for (let index = 0; index < userIds.length; index += ID_CHUNK) {
-    chunks.push(userIds.slice(index, index + ID_CHUNK));
-  }
-  const pages = await Promise.all(
-    chunks.map((chunk) =>
-      fetchAllRows<{ user_id: string; attribution: unknown }>((from, to) =>
-        client
-          .from("signup_attributions")
-          .select("user_id,attribution")
-          .in("user_id", chunk)
-          .order("user_id")
-          .range(from, to),
-      ),
-    ),
+  const rows = await fetchAllRows<{ user_id: string; attribution: unknown }>((from, to) =>
+    client.from("signup_attributions").select("user_id,attribution").order("user_id").range(from, to),
   );
-  return pages.flat();
+  return new Map(rows.filter((row) => userIds.has(row.user_id)).map((row) => [row.user_id, row.attribution]));
 }
 
 /** Owners of these families (chunks run in parallel). */
@@ -82,22 +70,26 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
   const cohortStart = cohortWeekStarts(now.getTime(), COHORT_WEEKS)[0];
   // Period rates include accounts that signed up up to 14 days before the
   // period (their window ended in it), so their early events are needed.
-  const ratePoolStart = startOfBerlinDayBefore(now.getTime(), days - 1 + LONGEST_RATE_WINDOW_DAYS);
+  // One extra day: the pools count 14×24 h, which a DST change can stretch
+  // past 14 calendar days by an hour.
+  const ratePoolStart = startOfBerlinDayBefore(now.getTime(), days + LONGEST_RATE_WINDOW_DAYS);
   const eventsSince = new Date(Math.min(ratePoolStart, cohortStart)).toISOString();
 
-  const [{ users, attributions }, eventDays, billing, forwardingFamilies, familyCount, appOpensSince] =
+  const [{ users, attributionByUser }, eventDays, billing, forwardingFamilies, familyCount, appOpensSince] =
     await Promise.all([
-      // Users, then the first touch of only those who can reach a cohort or
-      // a rate pool (confirmed since the earliest loaded event).
+      // Users, then the first touch of those who can reach a cohort or a
+      // rate pool (confirmed since the earliest loaded event).
       listAllUsers().then(async (allUsers) => ({
         users: allUsers,
-        attributions: await listAttributions(
-          allUsers
-            .filter((user) => {
-              const confirmedAt = signupConfirmedAt(user);
-              return confirmedAt !== null && Date.parse(confirmedAt) >= Date.parse(eventsSince);
-            })
-            .map((user) => user.id),
+        attributionByUser: await listAttributions(
+          new Set(
+            allUsers
+              .filter((user) => {
+                const confirmedAt = signupConfirmedAt(user);
+                return confirmedAt !== null && Date.parse(confirmedAt) >= Date.parse(eventsSince);
+              })
+              .map((user) => user.id),
+          ),
         ),
       })),
       // Aggregated per user, event and Berlin day in SQL and returned as
@@ -126,7 +118,6 @@ export async function getGrowthOverview(days: 7 | 30 | 90) {
       // The real start of app-open tracking, not the loaded window's start.
       client.rpc("admin_app_opens_tracked_since"),
     ]);
-  const attributionByUser = new Map(attributions.map((row) => [row.user_id, row.attribution]));
   if (appOpensSince.error) throw appOpensSince.error;
   if (eventDays.error) throw eventDays.error;
   if (forwardingFamilies.error) throw forwardingFamilies.error;

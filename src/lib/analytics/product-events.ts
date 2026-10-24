@@ -93,8 +93,10 @@ function memoDay(now: Date): string {
 }
 
 /**
- * Record that the user opened the app today, so "aktiv" also counts
- * visits that trigger no other action (reading Heute, checking a date).
+ * Record that the user opened the app today, so the Wachstum tab's
+ * "aktiv" and return rates also count visits with no other action
+ * (reading Heute, checking a date). The overview's "aktiv" numbers stay
+ * about real product use and leave app_opened out (event-filters.ts).
  * The record_app_open RPC and a unique index keep it to one row per user
  * and German calendar day, even with concurrent tabs. Resolves to whether
  * today's open is known to be recorded. Never throws.

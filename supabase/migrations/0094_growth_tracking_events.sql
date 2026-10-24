@@ -217,7 +217,8 @@ begin
   )
   on conflict do nothing;
 
-  if found then
+  -- Set once; afterwards a cheap read instead of an insert attempt.
+  if found and not exists (select 1 from public.analytics_markers where key = 'app_opened_since') then
     insert into public.analytics_markers (key) values ('app_opened_since')
     on conflict (key) do nothing;
   end if;
@@ -335,8 +336,9 @@ grant execute on function public.admin_app_opens_tracked_since() to service_role
 -- ---------------------------------------------------------------------------
 -- The login form sends signup_attribution as user metadata on the request
 -- that creates the account. User metadata stays editable by its owner
--- (auth.updateUser), so it is copied once, when the auth user is created,
--- into a table only the service role reads. No policies.
+-- (auth.updateUser), so it is copied into a table only the service role
+-- reads — following it until the code is confirmed, then frozen. No
+-- policies.
 
 create table if not exists public.signup_attributions (
   user_id uuid primary key references auth.users (id) on delete cascade,
@@ -363,7 +365,7 @@ as $$
     and length(value) between 1 and 200
     and value not like '%@%'
     and value !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}'
-    and value !~ '^(\+|0)[0-9 ()./-]{6,}$';
+    and (value !~ '^(\+|0)[0-9 ()./-]{6,}$' or value ~ '^[0-9]{1,2}[./-][0-9]{1,2}[./-][0-9]{2,4}$');
 $$;
 
 create or replace function public.store_signup_attribution()
@@ -375,10 +377,16 @@ as $$
 declare
   v_attribution jsonb := public.clean_signup_attribution(new.raw_user_meta_data -> 'signup_attribution');
 begin
-  if v_attribution <> '{}'::jsonb then
+  -- Follow the metadata while the account is unconfirmed: a code request
+  -- that was abandoned must not win over the one that led to the signup.
+  -- Once confirmed, the first touch is frozen (later auth.updateUser calls
+  -- by the user do not change it).
+  if v_attribution <> '{}'::jsonb
+     and (tg_op = 'INSERT' or new.email_confirmed_at is null
+          or (old.email_confirmed_at is null and new.email_confirmed_at is not null)) then
     insert into public.signup_attributions (user_id, attribution)
     values (new.id, v_attribution)
-    on conflict (user_id) do nothing;
+    on conflict (user_id) do update set attribution = excluded.attribution;
   end if;
   return new;
 exception when others then
@@ -391,7 +399,7 @@ revoke execute on function public.store_signup_attribution() from public, anon, 
 
 drop trigger if exists store_signup_attribution_on_auth_user on auth.users;
 create trigger store_signup_attribution_on_auth_user
-  after insert on auth.users
+  after insert or update of raw_user_meta_data, email_confirmed_at on auth.users
   for each row execute function public.store_signup_attribution();
 
 -- Accounts created before this migration: copy what their metadata holds.
