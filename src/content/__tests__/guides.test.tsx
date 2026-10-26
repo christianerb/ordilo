@@ -31,6 +31,8 @@ describe("public guide publication", () => {
     }
     expect(urls).not.toContain(`${SITE_URL}/login`);
     expect(urls).not.toContain(`${SITE_URL}/dokumente`);
+    expect(urls).not.toContain(`${SITE_URL}/datenschutz`);
+    expect(urls).not.toContain(`${SITE_URL}/impressum`);
     expect(
       sitemap().find((page) => page.url === SITE_URL)?.lastModified,
     ).toBeUndefined();

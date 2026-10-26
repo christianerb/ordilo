@@ -4,14 +4,9 @@ import { APP_PREVIEW_VIDEO, SCREENSHOTS, SITE_URL } from "@/lib/marketing";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   // Omit lastModified where no reliable editorial date is recorded.
-  const pages = [
-    "/ratgeber",
-    "/hilfe",
-    "/ueber-uns",
-    "/datenschutz",
-    "/impressum",
-    "/nutzungsbedingungen",
-  ];
+  // Datenschutz and Impressum stay reachable via the footer but are not
+  // submitted: they carry no search intent and Google declines to index them.
+  const pages = ["/ratgeber", "/hilfe", "/ueber-uns", "/nutzungsbedingungen"];
   return [
     {
       url: SITE_URL,
